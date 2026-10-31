@@ -4101,6 +4101,111 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     assert.equal(await sessionsLeft(packageId), 9)
   })
 
+  /**
+   * Run `body` with studio two's Book in advance window set and the app's clock
+   * at 00:30 on 12 August 2031 in Sydney (UTC+10) — 22:30 on the 11th in
+   * Singapore — putting both back afterwards.
+   */
+  async function atSydneyPastMidnight(
+    window: { min_book_in_advance_days: number; book_in_advance_days: number },
+    body: () => Promise<void>,
+  ) {
+    const [before] = await harness.db
+      .select()
+      .from(schema.ptBookingConfig)
+      .where(eq(schema.ptBookingConfig.tenantId, two.id))
+    harness.clock.set(new Date('2031-08-11T14:30:00Z'))
+    try {
+      await expectStatus(
+        await harness.app.request('/api/v1/portal/admin/policy/pt', {
+          method: 'PATCH',
+          headers: { ...adminAtTwo.headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify(window),
+        }),
+        200,
+      )
+      await body()
+    } finally {
+      harness.clock.reset()
+      if (before) {
+        await harness.db
+          .update(schema.ptBookingConfig)
+          .set({
+            bookInAdvanceDays: before.bookInAdvanceDays,
+            minBookInAdvanceDays: before.minBookInAdvanceDays,
+            updatedAt: before.updatedAt,
+            updatedByStaffId: before.updatedByStaffId,
+          })
+          .where(eq(schema.ptBookingConfig.tenantId, two.id))
+      }
+    }
+  }
+
+  test('TEN-66 the Book in advance window counts the studio\'s calendar days: at 00:30 in Sydney, a slot 2 days on is too soon and 7 days on is the last day, where Singapore is still the day before', async () => {
+    await atSydneyPastMidnight({ min_book_in_advance_days: 3, book_in_advance_days: 7 }, async () => {
+      const kit = await member(two, 'Kit Sydney')
+      const solo = await givePt(two, kit, '1on1')
+      const slot = (proposedDate: string) => ({ proposedDate, startTime: '09:00', endTime: '10:00' })
+
+      // Sydney's today is 12 August: the 14th is 2 days on, the 15th is 3, the 19th is 7 and the 20th is 8.
+      const soon = await expectStatus(await submit(two, kit, { sessionType: '1on1', clientPackageId: solo, slots: [slot('2031-08-14')] }), 400)
+      assert.equal(soon.error, 'slot_date_too_soon')
+      assert.equal(soon.min_book_in_advance_days, 3)
+      const far = await expectStatus(await submit(two, kit, { sessionType: '1on1', clientPackageId: solo, slots: [slot('2031-08-20')] }), 400)
+      assert.equal(far.error, 'slot_date_too_far')
+      assert.equal((await requestsOf(kit)).length, 0)
+      assert.equal(await sessionsLeft(solo), 10)
+
+      const first = await requestOk(two, kit, { sessionType: '1on1', clientPackageId: solo, slots: [slot('2031-08-15')] })
+      const last = await requestOk(two, kit, { sessionType: '1on1', clientPackageId: solo, slots: [slot('2031-08-19')] })
+      assert.equal(await sessionsLeft(solo), 8)
+
+      // The request lapses a Book in advance window on: 7 days later at the same Sydney wall time.
+      for (const id of [first, last]) {
+        assert.equal((await requestRow(id)).expiresAt?.toISOString(), '2031-08-18T14:30:00.000Z')
+      }
+    })
+  })
+
+  test('TEN-67 a proposed slot is a wall-clock time at the studio and the package expiry is judged on that clock: at Sydney a slot at 08:30 on the expiry day is covered, one at 09:30 is refused naming 9:00 am', async () => {
+    await atSydneyPastMidnight({ min_book_in_advance_days: 1, book_in_advance_days: 14 }, async () => {
+      const lou = await member(two, 'Lou Sydney')
+      const packageId = await givePt(two, lou, '1on1')
+      // Expires at 09:00 on 20 August in Sydney, which is 23:00 UTC on the 19th.
+      const expiresAt = new Date('2031-08-20T09:00:00+10:00')
+      await setExpiry(packageId, expiresAt)
+
+      const refused = await expectStatus(
+        await submit(two, lou, {
+          sessionType: '1on1',
+          clientPackageId: packageId,
+          slots: [
+            { proposedDate: '2031-08-18', startTime: '09:00', endTime: '10:00' },
+            { proposedDate: '2031-08-20', startTime: '09:30', endTime: '10:30' },
+          ],
+        }),
+        409,
+      )
+      assert.equal(refused.error, 'package_expires_before_session')
+      assert.equal(refused.expires_at, expiresAt.toISOString())
+      assert.match(refused.message, /ends at 9:00 am on \w{3},? 20 Aug 2031\./)
+      assert.equal((await requestsOf(lou)).length, 0)
+      assert.equal(await sessionsLeft(packageId), 10)
+
+      await requestOk(two, lou, {
+        sessionType: '1on1',
+        clientPackageId: packageId,
+        slots: [{ proposedDate: '2031-08-20', startTime: '08:30', endTime: '09:00' }],
+      })
+      await requestOk(two, lou, {
+        sessionType: '1on1',
+        clientPackageId: packageId,
+        slots: [{ proposedDate: '2031-08-20', startTime: '09:00', endTime: '10:00' }],
+      })
+      assert.equal(await sessionsLeft(packageId), 8)
+    })
+  })
+
   test('PT-139 a member proposing a slot after the expiry a Dormant package would get by Activating now is refused; a slot before it is accepted and the package stays Dormant', async () => {
     await expectStatus(await setPtWindow({ min_book_in_advance_days: 1, book_in_advance_days: 14 }), 200)
     const vic = await member(one, 'Vic Dormant Short')

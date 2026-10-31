@@ -447,6 +447,24 @@ describe('leave decisions over HTTP', { skip: integrationTestsEnabled ? false : 
     assert.match(mail[0]!.html, /\d{1,2}:\d{2}/, 'with the time of day')
   })
 
+  test('TEN-77 the revoke email states the revoke time on the studio\'s own clock: a Sydney instructor reads Sydney\'s hour, a Singapore one Singapore\'s', async () => {
+    const sydney = await file(dee, 'annual')
+    assert.equal((await approve(adminTwo, sydney.id)).status, 200)
+    assert.equal((await revoke(adminTwo, sydney.id)).status, 200, 'revoked')
+    const singapore = await file(cal, 'annual')
+    assert.equal((await approve(adminOne, singapore.id)).status, 200)
+    assert.equal((await revoke(adminOne, singapore.id)).status, 200, 'revoked')
+
+    const stated = (zone: string, at: Date) =>
+      new Intl.DateTimeFormat('en-GB', { dateStyle: 'long', timeStyle: 'short', timeZone: zone }).format(at)
+    const sydneyAt = (await row(sydney.id)).updatedAt
+    const singaporeAt = (await row(singapore.id)).updatedAt
+    const html = (email: string) => mailTo(email, 'leave_revoked').at(-1)!.html
+    assert.ok(html(dee.email).includes(stated('Australia/Sydney', sydneyAt)), 'the Sydney instructor reads Sydney time')
+    assert.ok(html(cal.email).includes(stated('Asia/Singapore', singaporeAt)), 'the Singapore instructor reads Singapore time')
+    assert.ok(!html(dee.email).includes(stated('Asia/Singapore', sydneyAt)), 'and not the time it was in Singapore')
+  })
+
   test('LEV-84 a second admin revoking leave keeps the original approver, approval time and decision reason on the row', async () => {
     const req = await file(ada, 'annual')
     assert.equal((await approve(adminOne, req.id)).status, 200)

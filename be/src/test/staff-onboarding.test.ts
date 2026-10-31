@@ -160,6 +160,44 @@ describe('staff onboarding', { skip: integrationTestsEnabled ? false : SKIP_REAS
     invitationMail(email)
   })
 
+  test('TEN-78 the invitation email states when it expires on the studio\'s own clock: a Sydney studio\'s invitee reads Sydney time, a Singapore one Singapore time', async () => {
+    const adminAtTwo = await harness.signInAs('staff', at('admin-two'), two)
+    const adminUserTwo = await authUser(at('admin-two'), two.id)
+    await harness.db.insert(schema.staffUsers).values({
+      tenantId: two.id,
+      email: at('admin-two'),
+      name: 'Probe Admin Two',
+      role: 'admin',
+      status: 'active',
+      authUserId: adminUserTwo!.id,
+    })
+    const inviteeAtTwo = at('invitee-two')
+    const inviteeAtOne = at('invitee-one')
+    await expectStatus(
+      await send('/api/v1/portal/admin/staff/invite', { body: { email: inviteeAtTwo, role: 'admin' }, headers: adminAtTwo }),
+      201,
+    )
+    await invite(inviteeAtOne)
+
+    const expiresAt = async (tenantId: string, email: string) => {
+      const row = await staffRow(tenantId, email)
+      const [invitation] = await harness.db
+        .select()
+        .from(schema.staffInvitations)
+        .where(eq(schema.staffInvitations.staffUserId, row!.id))
+      return invitation!.expiresAt
+    }
+    const stated = (zone: string, at_: Date) =>
+      new Intl.DateTimeFormat('en-SG', { dateStyle: 'long', timeStyle: 'short', timeZone: zone }).format(at_)
+    const html = (email: string) => discardedMail.filter(m => m.to === email).at(-1)!.html
+    assert.ok(html(inviteeAtTwo).includes(stated('Australia/Sydney', await expiresAt(two.id, inviteeAtTwo))))
+    assert.ok(html(inviteeAtOne).includes(stated('Asia/Singapore', await expiresAt(one.id, inviteeAtOne))))
+    assert.ok(
+      !html(inviteeAtTwo).includes(stated('Asia/Singapore', await expiresAt(two.id, inviteeAtTwo))),
+      'and not the time it is in Singapore',
+    )
+  })
+
   test('the link sets a password, and that password signs into the portal with the invited role', async () => {
     const email = at('accepting-admin')
     await invite(email)

@@ -23,13 +23,15 @@ export function receiptFixtures(harness: TestApp) {
    * A ten pack at S$150.00 less a S$15.00 code, paid by a Visa ending 4242;
    * or, with `kind` and `item`, another kind of sale under another name at the
    * same price; with `billTo`, billed to that name and address, as a checkout
-   * naming the member's Billing details opens its Purchase.
+   * naming the member's Billing details opens its Purchase; with `at`, sold,
+   * paid and issued at that instant instead of now.
    */
   const issueFor = async (
     tenantId: string,
     clientId: string,
-    sale: { kind?: ReceiptRow['kind']; item?: string; billTo?: BillingAddress } = {},
+    sale: { kind?: ReceiptRow['kind']; item?: string; billTo?: BillingAddress; at?: Date } = {},
   ): Promise<ReceiptRow> => {
+    const at = sale.at?.toISOString() ?? null
     const kind = sale.kind ?? 'class_package'
     const item = sale.item ?? 'Ten pack'
     // What the payment row calls it: a standalone Add-On is paid as a class package (§15).
@@ -47,17 +49,19 @@ export function receiptFixtures(harness: TestApp) {
     const [purchase] = await harness.db.execute<{ id: string }>(sql`
       INSERT INTO purchases (tenant_id, client_id, kind, total_sgd, amount_paid_sgd, status, lines, metadata, bill_to, settled_at)
       VALUES (${tenantId}, ${clientId}, ${kind}, '135.00', '135.00', 'paid', ${JSON.stringify(lines)}::jsonb,
-              ${JSON.stringify({ item_name: item })}::jsonb, ${sale.billTo ? JSON.stringify(sale.billTo) : null}::jsonb, now())
+              ${JSON.stringify({ item_name: item })}::jsonb, ${sale.billTo ? JSON.stringify(sale.billTo) : null}::jsonb, coalesce(${at}::timestamptz, now()))
       RETURNING id`)
     purchaseIds.push(purchase!.id)
     await harness.db.execute(sql`
-      INSERT INTO stripe_payments (tenant_id, purchase_id, client_id, payment_intent_id, amount_sgd, kind, status, method, card_brand, card_last4)
+      INSERT INTO stripe_payments (tenant_id, purchase_id, client_id, payment_intent_id, amount_sgd, kind, status, method, card_brand, card_last4, created_at)
       VALUES (${tenantId}, ${purchase!.id}, ${clientId}, ${`pi_receipt_fixture_${randomUUID().slice(0, 12)}`}, '135.00',
-              ${paymentKind}, 'succeeded', 'card', 'visa', '4242')`)
+              ${paymentKind}, 'succeeded', 'card', 'visa', '4242', coalesce(${at}::timestamptz, now()))`)
 
     const { db, withTenant } = await import('../db')
     const { issueReceipt } = await import('../services/receipts/issue')
-    const { receipt } = await withTenant(tenantId, () => issueReceipt(db, tenantId, purchase!.id))
+    const { receipt } = await withTenant(tenantId, () =>
+      issueReceipt(db, tenantId, purchase!.id, sale.at ? { issuedAt: sale.at } : {}),
+    )
     return receipt
   }
 

@@ -1,12 +1,22 @@
 import assert from 'node:assert'
+import { test } from 'node:test'
 import {
   amountPaid,
   composePurchaseEmail,
   contentsLine,
   purchaseSlug,
-  validityLine,
+  validityLine as validityLineIn,
   type PurchaseEmailInput,
 } from './purchase-email'
+
+/** The studio the dates below are written for; Sydney's own case names its zone. */
+const SINGAPORE = 'Asia/Singapore'
+const validityLine = (
+  kind: Parameters<typeof validityLineIn>[0],
+  expiresAt: Date | null,
+  durationMonths: number | null,
+  validityDays: number | null,
+) => validityLineIn(kind, expiresAt, durationMonths, validityDays, SINGAPORE)
 
 const EXPIRY = new Date('2027-02-14T12:00:00Z')
 const ACCOUNT_URL = 'https://northwind.reservetoday.app/account'
@@ -23,9 +33,18 @@ function input(over: Partial<PurchaseEmailInput> = {}): PurchaseEmailInput {
     amountPaidSgd: '150.00',
     receiptUrl: null,
     accountUrl: ACCOUNT_URL,
+    timezone: SINGAPORE,
     ...over,
   }
 }
+
+test('TEN-72 the expiry a purchase email prints is the day on the studio\'s clock: 23:00 on 14 February in Singapore is already the 15th in Sydney', () => {
+  const evening = new Date('2027-02-14T15:00:00Z')
+  assert.strictEqual(validityLineIn('credit_bundle', evening, null, 90, 'Australia/Sydney'), 'Expires 15 Feb 2027')
+  assert.strictEqual(validityLineIn('credit_bundle', evening, null, 90, SINGAPORE), 'Expires 14 Feb 2027')
+  const { variables } = composePurchaseEmail(input({ expiresAt: evening, timezone: 'Australia/Sydney' }))
+  assert.strictEqual(variables.validity_line, 'Expires 15 Feb 2027')
+})
 
 // --- the contents line for each of the four package shapes -------------------
 // It replaces `credits_or_sessions`, which was null for an Unlimited Plan and

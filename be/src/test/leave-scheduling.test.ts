@@ -842,9 +842,9 @@ describe('leave on the schedule', { skip: integrationTestsEnabled ? false : SKIP
     // The Half Day boundary is 13:00 on the wall, 02:00 UTC under daylight saving.
     const morning = await staffAt(two, 'dstmorning', 'instructor')
     await leave(morning, '2029-10-07', 'approved', 'morning', two)
-    await json(await onSydney(morning, '2029-10-07T13:00:00+11:00', '2029-10-07T14:00:00+11:00'), 201)
     const overrun = await json(await onSydney(morning, '2029-10-07T12:00:00+11:00', '2029-10-07T13:30:00+11:00'), 409)
     assert.equal(overrun.conflicts[0].ends_at, '2029-10-07T02:00:00.000Z')
+    await json(await onSydney(morning, '2029-10-07T13:00:00+11:00', '2029-10-07T14:00:00+11:00'), 201)
     const afternoon = await staffAt(two, 'dstafternoon', 'instructor')
     await leave(afternoon, '2031-04-06', 'approved', 'afternoon', two)
     const beside = await json(await onSydney(afternoon, '2031-04-06T13:00:00+10:00', '2031-04-06T14:00:00+10:00'), 409)
@@ -922,6 +922,28 @@ describe('leave on the schedule', { skip: integrationTestsEnabled ? false : SKIP
         ),
       )
     assert.deepEqual(told.map(t => t.status), ['sent'])
+  })
+
+  test('TEN-80 the email an instructor\'s cancellation sends the studio names the class on the studio\'s clock: a Sydney class at 00:30 reads 00:30 on its own date', async () => {
+    const created = await json(
+      await onSydney(teacherTwo, '2031-07-15T00:30:00+10:00', '2031-07-15T01:30:00+10:00'),
+      201,
+    )
+    const reason = `${TAG} sydney sprain`
+    await json(await instructorCancel(teacherTwo, created.id, { reason }), 200)
+    const told = await harness.db
+      .select({ body: schema.emailLog.bodyRendered })
+      .from(schema.emailLog)
+      .where(
+        and(
+          eq(schema.emailLog.recipientEmail, at(`admin-${two.slug}`)),
+          eq(schema.emailLog.templateSlug, 'instructor_cancel_class'),
+          like(schema.emailLog.bodyRendered, `%Reason given: ${reason}%`),
+        ),
+      )
+    assert.equal(told.length, 1)
+    assert.match(told[0]!.body, /15 Jul 2031, 00:30/)
+    assert.doesNotMatch(told[0]!.body, /14 Jul 2031, 22:30/)
   })
 
   test('LEV-114 there is no notice window: he cancels his class ten minutes before it starts', async () => {

@@ -259,8 +259,13 @@ describe('a member sees and touches only their own studio', { skip: integrationT
   async function proposableDate(at: Studio): Promise<string> {
     const window = await expectStatus(await send('/api/v1/public/pt-booking-config', memberApp(at)), 200)
     const days = Math.min(window.book_in_advance_days as number, (window.min_book_in_advance_days as number) + 1)
-    const { sgToday } = await import('../lib/time')
-    const today = sgToday(new Date())
+    const { localDate } = await import('../lib/studio-time')
+    // The window counts the studio's own days, so today is read on its clock.
+    const [tenant] = await harness.db
+      .select({ timezone: schema.tenants.timezone })
+      .from(schema.tenants)
+      .where(eq(schema.tenants.id, at.id))
+    const today = localDate(tenant!.timezone, new Date())
     const [y, m, d] = today.split('-').map(Number) as [number, number, number]
     return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10)
   }

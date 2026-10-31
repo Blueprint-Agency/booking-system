@@ -1,22 +1,32 @@
 import assert from 'node:assert'
+import { test } from 'node:test'
 import {
   SILENT_AFTER_DAYS,
   abandonedLine,
   abandonedReturnLine,
-  attendedNotice,
-  cancelledClassesLine,
+  attendedNotice as attendedNoticeIn,
+  cancelledClassesLine as cancelledClassesLineIn,
   composeAbandonedRefundEmail,
-  composeRefundEmail,
+  composeRefundEmail as composeRefundEmailIn,
   daysSilent,
   isSilent,
   isUntouched,
-  silenceNotice,
+  silenceNotice as silenceNoticeIn,
   voidedLine,
 } from './refund-notice'
 
 // 2026-06-11T16:00Z is 12 Jun 2026 in Singapore — the offset is the whole point
 // of reading these through the studio's clock rather than the server's.
 const SINCE = new Date('2026-06-11T16:00:00Z')
+
+/** The studio the cases below are dated for; Sydney's own cases name theirs. */
+const SINGAPORE = 'Asia/Singapore'
+const attendedNotice = (count: number, since: Date | null) => attendedNoticeIn(count, since, SINGAPORE)
+const cancelledClassesLine = (sessions: Parameters<typeof cancelledClassesLineIn>[0]) =>
+  cancelledClassesLineIn(sessions, SINGAPORE)
+const silenceNotice = (last: Date, now: Date) => silenceNoticeIn(last, now, SINGAPORE)
+const composeRefundEmail = (input: Omit<Parameters<typeof composeRefundEmailIn>[0], 'timezone'>) =>
+  composeRefundEmailIn({ ...input, timezone: SINGAPORE })
 
 // --- Untouched --------------------------------------------------------------
 // A Dormant plan, and any plan whose only bookings are still ahead of it, is
@@ -144,6 +154,35 @@ const SINCE = new Date('2026-06-11T16:00:00Z')
   assert.ok(line.includes('31 days'), 'the silence is counted in days')
   assert.ok(line.includes('7 Aug 2026'), 'the last payment date is read in Singapore')
 }
+
+// --- the same sentences on a Sydney studio's clock ----------------------------
+test('TEN-71 the refund notice, the cancelled-class line and the silence notice name dates and times on the studio\'s clock: Sydney, not Singapore', () => {
+  const SYDNEY = 'Australia/Sydney'
+  // 15:30 UTC on 2 September is 01:30 on the 3rd in Sydney (UTC+10), and 23:30 on the 2nd in Singapore.
+  const late = { name: 'Late Flow', startsAt: new Date('2026-09-02T15:30:00Z') }
+  assert.ok(cancelledClassesLineIn([late], SYDNEY).includes('Late Flow on 3 Sept 2026, 01:30'))
+  assert.ok(cancelledClassesLineIn([late], SINGAPORE).includes('Late Flow on 2 Sept 2026, 23:30'))
+  assert.strictEqual(
+    attendedNoticeIn(1, new Date('2026-06-11T15:00:00Z'), SYDNEY),
+    '1 class used (attended or no-show) since 12 Jun 2026',
+  )
+  assert.strictEqual(
+    attendedNoticeIn(1, new Date('2026-06-11T15:00:00Z'), SINGAPORE),
+    '1 class used (attended or no-show) since 11 Jun 2026',
+  )
+  const now = new Date('2026-09-07T00:00:00Z')
+  assert.ok(silenceNoticeIn(new Date('2026-08-06T15:00:00Z'), now, SYDNEY).endsWith('last paid 7 Aug 2026'))
+  assert.ok(silenceNoticeIn(new Date('2026-08-06T15:00:00Z'), now, SINGAPORE).endsWith('last paid 6 Aug 2026'))
+  const { variables } = composeRefundEmailIn({
+    clientName: 'Sarah',
+    packageName: '10-Class Pack',
+    amountSgd: '280.00',
+    cancelled: [late],
+    accountUrl: 'https://example.test/account',
+    timezone: SYDNEY,
+  })
+  assert.ok(variables.cancelled_line?.includes('3 Sept 2026, 01:30'))
+})
 
 // --- what an abandoned refund returned --------------------------------------
 // The count and the total together: one button becomes one provider call per

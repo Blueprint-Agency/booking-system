@@ -17,9 +17,10 @@ type LeaveType = (typeof LEAVE_TYPES)[number]
  * staff profile (`/portal/admin/staff`, which carries Assigned Days and this
  * Leave Year's figures), and the admin Global Policy (`/portal/admin/policy`).
  *
- * The leave service reads the wall clock (`new Date()`), not `lib/clock`, so a
- * year boundary cannot be staged here. Year-boundary rules are proved with
- * fixture data instead: a Pool stored for LAST Leave Year, and the current year
+ * The Leave Year is read on the studio's clock at the app's instant
+ * (`lib/clock`), so a year boundary can be staged with `harness.clock` and is,
+ * for a Sydney and a Singapore instructor. The rollover of a Pool is also proved
+ * with fixture data: a Pool stored for LAST Leave Year, and the current year
  * left unopened, is exactly "a new Leave Year has begun and no Pool exists".
  *
  * Global Policy is one row per studio and other files read it, so every test
@@ -271,8 +272,8 @@ describe('leave balances and pools over HTTP', { skip: integrationTestsEnabled ?
   before(async () => {
     harness = await startTestApp()
     schema = await import('../db/schema')
-    const { sgToday } = await import('../lib/time')
-    Y = Number(sgToday(new Date()).slice(0, 4))
+    const { localDate } = await import('../lib/studio-time')
+    Y = Number(localDate('Asia/Singapore', new Date()).slice(0, 4))
 
     one = harness.tenants.one
     two = harness.tenants.two

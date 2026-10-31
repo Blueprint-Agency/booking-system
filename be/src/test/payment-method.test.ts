@@ -197,7 +197,7 @@ describe('payment method', { skip: integrationTestsEnabled ? false : SKIP_REASON
     })
 
     test('FIN-53 the CSV carries a Method column', async () => {
-      const file = csv.financeCsv(await read())
+      const file = csv.financeCsv(await read(), 'Asia/Singapore')
       const [header, ...lines] = file.split('\r\n')
       const at = header!.split(',').indexOf('method')
       assert.ok(at >= 0, header)

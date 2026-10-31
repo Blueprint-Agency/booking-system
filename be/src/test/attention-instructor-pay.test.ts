@@ -2,7 +2,12 @@ import assert from 'node:assert/strict'
 import { after, before, describe, test } from 'node:test'
 import { eq } from 'drizzle-orm'
 import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
-import { sgInstant, sgToday } from '../lib/time'
+import { instantAt, localDate } from '../lib/studio-time'
+
+// The studios here are provisioned on Singapore, the zone every fresh studio starts with.
+const SINGAPORE = 'Asia/Singapore'
+const sgInstant = (date: string, time: string) => instantAt(SINGAPORE, date, time)
+const sgToday = (now: Date) => localDate(SINGAPORE, now)
 import { connectPayments, usePaymentKey } from './attention-payments'
 
 /**
@@ -33,9 +38,14 @@ describe('Staff attention: instructor pay missing', { skip: integrationTestsEnab
     return (text ? JSON.parse(text) : {}) as Record<string, any>
   }
 
-  const freshStudio = async (): Promise<Studio> => {
+  const freshStudio = async (timezone?: string): Promise<Studio> => {
     const slug = `atp-${run}-${++studios}`
-    const { tenant } = await provision.provisionTenant({ slug, name: 'Attention Pay Studio', adminEmail: `owner@${slug}.test` })
+    const { tenant } = await provision.provisionTenant({
+      slug,
+      name: 'Attention Pay Studio',
+      adminEmail: `owner@${slug}.test`,
+      ...(timezone ? { timezone } : {}),
+    })
     await connectPayments(tenant.id)
     const [location] = await harness.db
       .insert(schema.locations)
@@ -248,6 +258,26 @@ describe('Staff attention: instructor pay missing', { skip: integrationTestsEnab
 
     const item = (await payItems(admin))[0]!
     assert.equal(item.title, '1 completed session has no instructor pay')
+  })
+
+  test('TEN-73 the window covers the studio\'s own days: at Sydney a session ending at 01:00 on 1 September is in, where Singapore is still on 31 August, and the link names the studio\'s today', async () => {
+    // 00:30 on 16 October 2026 in Sydney (UTC+11, daylight saving): 22:30 on the 15th in Singapore.
+    harness.clock.set(new Date('2026-10-15T14:30:00Z'))
+    const sydney = await freshStudio('Australia/Sydney')
+    const singapore = await freshStudio('Asia/Singapore')
+    for (const studio of [sydney, singapore]) {
+      const teacher = await staffAt(studio, 'teacher', 'instructor')
+      // Ending at 01:00 on 1 September and at 23:00 on 31 August in Sydney (UTC+10); both are still 31 August in Singapore.
+      await classEnded(studio, teacher, new Date('2026-08-31T15:00:00Z'))
+      await classEnded(studio, teacher, new Date('2026-08-31T13:00:00Z'))
+      await classEnded(studio, teacher, new Date('2026-10-10T03:00:00Z'))
+    }
+    const sydneyItem = (await payItems(await staffAt(sydney, 'admin', 'admin')))[0]!
+    assert.equal(sydneyItem.title, '2 completed sessions have no instructor pay')
+    assert.match(sydneyItem.href, /from=2026-09-01&to=2026-10-16$/)
+    const singaporeItem = (await payItems(await staffAt(singapore, 'admin', 'admin')))[0]!
+    assert.equal(singaporeItem.title, '1 completed session has no instructor pay')
+    assert.match(singaporeItem.href, /from=2026-09-01&to=2026-10-15$/)
   })
 
   test('ATN-103 the line disappears once every session in the window is priced', async () => {
