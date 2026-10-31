@@ -12,12 +12,12 @@ import { checkoutErrorMessage } from "@/lib/checkout-messages";
 import { blockedByPayments, NO_ONLINE_PAYMENTS, useOnlinePayments } from "@/lib/online-payments";
 import { useLocations } from "@/lib/classes";
 import { useClientPackages, type LivePackage } from "@/lib/use-client-packages";
-import { roundsUpAPartMonth } from "@/lib/add-on-months";
+import { addMonthsUtc, roundsUpAPartMonth, wholeDaysUtc } from "@/lib/add-on-months";
 import { CrossLocationBlock, type AddOnDisabledReason } from "./cross-location-block";
 import { PayButton, StripeFootnote } from "./pay-button";
 import { BillingDetailsPicker } from "./billing-details-picker";
 import { billToPayLabel, type BillToStatus } from "@/lib/bill-to-status";
-import { formatExpiryDate, plusCalendarMonths, wholeDaysBetween } from "@/lib/studio-time";
+import { formatExpiryDate } from "@/lib/studio-time";
 import { useStudioZone } from "@/components/brand/brand-provider";
 
 /**
@@ -25,19 +25,21 @@ import { useStudioZone } from "@/components/brand/brand-provider";
  * is answered before the number that provokes the question (§12). A commented
  * mirror of `crossLocationMonths` in `be/src/services/packages/validity.ts`: the
  * server's `months` is what is charged, and this only explains where it came from.
+ * The months and days are counted as the server counts them (UTC months, 24-hour
+ * days); the studio's zone only words the date the plan runs to.
  */
 function remainderSentence(expiresAt: string, months: number, tz: string, now: number = Date.now()): string {
   const end = Date.parse(expiresAt);
-  const runsTo = `Your plan runs to ${formatExpiryDate(expiresAt, tz)}`;
+  const runsTo = `Your plan runs to ${formatExpiryDate(tz, expiresAt)}`;
   // Anchored on the server's `months` rather than on a second month count of
   // this app's own, so the breakdown can never contradict the number charged:
   // the server rounded up, so all but the last month is whole and the days are
   // what is left over on top of them.
-  if (!roundsUpAPartMonth(end, months, tz, now)) {
+  if (!roundsUpAPartMonth(end, months, now)) {
     return `${runsTo} — ${months} month${months === 1 ? "" : "s"} left.`;
   }
   const whole = months - 1;
-  const days = Math.max(1, wholeDaysBetween(tz, plusCalendarMonths(tz, now, whole), end));
+  const days = Math.max(1, wholeDaysUtc(addMonthsUtc(now, whole), end));
   const left = [
     whole > 0 ? `${whole} month${whole === 1 ? "" : "s"}` : null,
     `${days} day${days === 1 ? "" : "s"}`,

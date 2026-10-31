@@ -147,7 +147,7 @@ export default function AccountReceiptsPage() {
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-semibold text-ink">{r.item}</p>
                     <p className="text-xs text-muted">
-                      <span className="tabular-nums">{r.number}</span> · {formatDate(r.issued_at, tz)} ·{" "}
+                      <span className="tabular-nums">{r.number}</span> · {formatDate(tz, r.issued_at)} ·{" "}
                       <span className={r.status === "refunded" ? "font-semibold text-error" : undefined}>
                         {receiptStatusLabel(r.status)}
                       </span>

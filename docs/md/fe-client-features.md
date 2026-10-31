@@ -77,7 +77,9 @@ Reschedule is implemented as cancel + rebook — re-evaluated against policy.
 Every date and time in the member app is read on **the studio's time zone** (`tenants.timezone`), never the member's device and never a fixed Singapore offset: a class at 6:00 pm is 6:00 pm to a member on holiday in another zone, because the room opens at the studio's 6:00 pm. The zone arrives with the slug lookup the proxy already makes, through the brand object the root layout provides (`useStudioZone`), and every screen formats and counts through one module that takes it as an argument (`fe-client/src/lib/studio-time.ts`).
 
 - **A day** is the half-open window from the studio's midnight to the next midnight, so 23 or 25 hours long on a daylight-saving change. The schedule opens at the studio's midnight and groups classes under the studio's days.
-- **"N days ahead"** (the private-session Book in advance window, a package's validity) counts calendar days, not multiples of 24 hours.
+- **"N days ahead"** (the private-session Book in advance window) counts calendar days of the studio, not multiples of 24 hours.
+- **What the server stamps, the app mirrors.** A package's end is the server's UTC arithmetic — its validity in 24-hour days from the moment it starts, and the Add-On's months as UTC calendar months — so across a daylight-saving change an end sits an hour off the studio's wall clock. The PT picker's "Runs until" and the Add-On's part-month sentence follow the server's rule, not the studio's calendar, so they never contradict what the server will accept or charge.
+- **No studio, no clock.** Outside a studio (the bare root domain) there is no zone and reading one is an error, never UTC; a zone this browser does not know shows a notice in place of the app rather than a blank screen.
 - **A wall time** the member picks for a private session (date and start time) is the studio's wall clock. One in a spring-forward gap lands an hour later; one that occurs twice takes its first occurrence.
 - **A plain date** (a proposed session day) names a day, not a moment, and is shown as that day whatever the zone.
 

@@ -17,7 +17,6 @@ import {
   localClock,
   localDate,
   plusCalendarDays,
-  plusCalendarMonths,
   requireStudioZone,
   wholeDaysBetween,
   zoneFormat,
@@ -111,15 +110,11 @@ test("TEN-85 N days ahead counts calendar days on the studio's clock, not multip
   assert.equal(isoWeekday("2026-10-04"), 7);
 });
 
-test("TEN-86 months are calendar months on the studio's clock, clamped to the month's end, and whole days are counted on its calendar", () => {
-  // 31 January 00:30 in Sydney (the 30th in UTC) plus one month is 28 February, same wall time.
-  const jan = instantAt(SYDNEY, "2027-01-31", "00:30");
-  assert.equal(iso(jan), "2027-01-30T13:30:00.000Z");
-  assert.equal(plusCalendarMonths(SYDNEY, jan, 1), instantAt(SYDNEY, "2027-02-28", "00:30"));
-  // Across the October change the wall time holds: 09:00 on 20 September plus a month is 09:00 on 20 October.
-  const sep = instantAt(SYDNEY, "2026-09-20", "09:00");
-  assert.equal(plusCalendarMonths(SYDNEY, sep, 1), instantAt(SYDNEY, "2026-10-20", "09:00"));
-  assert.equal(plusCalendarMonths(SYDNEY, sep, 0), sep);
+test("TEN-86 whole days are counted on the studio's calendar, and a day is whole only once the same wall time comes round", () => {
+  // Calendar days keep the wall time across the October change: 09:00 on 3 October plus a day is 09:00 on the 4th.
+  const eve = instantAt(SYDNEY, "2026-10-03", "09:00");
+  assert.equal(plusCalendarDays(SYDNEY, eve, 1), instantAt(SYDNEY, "2026-10-04", "09:00"));
+  assert.equal(plusCalendarDays(SYDNEY, eve, 0), eve);
   // Whole days left: a day is whole only once the same wall time comes round.
   assert.equal(wholeDaysBetween(SYDNEY, instantAt(SYDNEY, "2026-10-03", "09:00"), instantAt(SYDNEY, "2026-10-06", "09:00")), 3);
   assert.equal(wholeDaysBetween(SYDNEY, instantAt(SYDNEY, "2026-10-03", "09:00"), instantAt(SYDNEY, "2026-10-06", "08:59")), 2);

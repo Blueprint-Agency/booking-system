@@ -220,7 +220,7 @@ function WorkshopSuccess({
     return () => { cancelled = true; };
   }, [workshopId]);
 
-  const dateLine = workshop?.starts_at ? formatDayAndTime(workshop.starts_at, tz) : null;
+  const dateLine = workshop?.starts_at ? formatDayAndTime(tz, workshop.starts_at) : null;
 
   return (
     <div id="summary">

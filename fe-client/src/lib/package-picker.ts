@@ -82,7 +82,7 @@ export function reasonText(pkg: MyClassPackage): string | null {
  */
 export function activationLine(pkg: MyClassPackage, timezone: string): string | null {
   if (pkg.running || !pkg.activation_end_if_picked) return null;
-  return `Starts today, runs until ${formatExpiryDate(pkg.activation_end_if_picked, timezone)}`;
+  return `Starts today, runs until ${formatExpiryDate(timezone, pkg.activation_end_if_picked)}`;
 }
 
 /** What a row states about itself: its balance, and where its clock stands. */
@@ -95,7 +95,7 @@ export function packageMeta(pkg: MyClassPackage, timezone: string): string {
       : `${credits(pkg.remaining ?? 0)} left`;
   const clock = pkg.running
     ? pkg.expires_at
-      ? `until ${formatExpiryDate(pkg.expires_at, timezone)}`
+      ? `until ${formatExpiryDate(timezone, pkg.expires_at)}`
       : null
     : "not started yet";
   return clock ? `${balance} · ${clock}` : balance;

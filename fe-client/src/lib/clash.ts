@@ -20,13 +20,13 @@ export interface ApiClash {
 
 /** The row's button in place of Book: short enough for a phone. */
 export function clashButton(clash: ApiClash, timezone: string): string {
-  return `Clashes · ${formatClassTime(clash.starts_at, timezone)}`;
+  return `Clashes · ${formatClassTime(timezone, clash.starts_at)}`;
 }
 
 /** What the member is booked into at the time: "Inversion at 4:00 pm (Riverside)". */
 export function clashWhat(clash: ApiClash, timezone: string): string {
   const place = clash.location_name ? ` (${clash.location_name})` : "";
-  return `${clash.title} at ${formatClassTime(clash.starts_at, timezone)}${place}`;
+  return `${clash.title} at ${formatClassTime(timezone, clash.starts_at)}${place}`;
 }
 
 /** The note under the row, and in the class detail. */

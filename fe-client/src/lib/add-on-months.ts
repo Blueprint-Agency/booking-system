@@ -1,4 +1,31 @@
-import { plusCalendarMonths, wholeDaysBetween } from "./studio-time.ts";
+const DAY_MS = 86_400_000;
+
+/**
+ * Calendar months added to an instant, the way the server adds them
+ * (`addMonths` in `be/src/services/packages/validity.ts`): UTC throughout, the
+ * day of the month clamped to the target month's last, so 31 August plus six
+ * months is 28 February.
+ *
+ * Deliberately not the studio's calendar. A package's end is stamped by that
+ * UTC arithmetic, and this mirror must land on the same instants it does; a
+ * studio east of UTC reads the same plan a day off otherwise (a plan activated
+ * at 01:00 on 1 March in Sydney is 28 February in UTC).
+ */
+export function addMonthsUtc(from: number, months: number): number {
+  const d = new Date(from);
+  const day = d.getUTCDate();
+  // Park on the 1st first so the month shift can't overflow on its own.
+  d.setUTCDate(1);
+  d.setUTCMonth(d.getUTCMonth() + months);
+  const lastDayOfTargetMonth = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate();
+  d.setUTCDate(Math.min(day, lastDayOfTargetMonth));
+  return d.getTime();
+}
+
+/** Whole 24-hour days from `from` to `to`, truncated toward zero. */
+export function wholeDaysUtc(from: number, to: number): number {
+  return Math.trunc((to - from) / DAY_MS);
+}
 
 /**
  * Whether the server rounded a part month up to a whole one — the only case the
@@ -8,18 +35,12 @@ import { plusCalendarMonths, wholeDaysBetween } from "./studio-time.ts";
  * every plan, including one bought seconds ago, and manufactured the surprise
  * the sentence is there to answer.
  *
- * Months and days are counted on the studio's calendar (its zone, never the
- * device's), so a plan across a daylight-saving change is not a day out.
- *
  * A commented mirror of `crossLocationMonths` in
  * `be/src/services/packages/validity.ts` — the server prices the charge; this
- * only decides whether the member is owed an explanation of it.
+ * only decides whether the member is owed an explanation of it. It counts as
+ * the server does (UTC months, 24-hour days), not on the studio's clock.
  */
-export function roundsUpAPartMonth(
-  expiresAt: string | number,
-  months: number,
-  timezone: string,
-  now: number = Date.now(),
-): boolean {
-  return months >= 1 && wholeDaysBetween(timezone, expiresAt, plusCalendarMonths(timezone, now, months)) >= 1;
+export function roundsUpAPartMonth(expiresAt: string | number, months: number, now: number = Date.now()): boolean {
+  const end = typeof expiresAt === "number" ? expiresAt : Date.parse(expiresAt);
+  return months >= 1 && wholeDaysUtc(end, addMonthsUtc(now, months)) >= 1;
 }

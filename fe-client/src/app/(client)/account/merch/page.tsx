@@ -90,7 +90,7 @@ export default function AccountMerchPage() {
               </span>
               <div className="min-w-0 flex-1">
                 <p className="truncate font-semibold text-ink">{order.title}</p>
-                <p className="text-xs text-muted">Bought {formatDate(order.purchased_at, tz)}</p>
+                <p className="text-xs text-muted">Bought {formatDate(tz, order.purchased_at)}</p>
               </div>
               <span className="whitespace-nowrap text-sm font-bold text-ink tabular-nums">
                 {formatSgd(order.amount_sgd)}

@@ -155,43 +155,51 @@ export function datePlus(timezone: string, days: number, now: Instant = Date.now
  * change, not 168 hours later.
  */
 export function plusCalendarDays(timezone: string, instant: Instant, days: number): number {
-  return plusCalendar(timezone, toMs(instant), (date) => addDays(date, days));
-}
-
-/**
- * `instant` moved by whole calendar months, at the same wall-clock time. The
- * day of the month is kept where the target month has it and clamped to the
- * month's last day where not (31 January plus a month is the end of February).
- */
-export function plusCalendarMonths(timezone: string, instant: Instant, months: number): number {
-  return plusCalendar(timezone, toMs(instant), (date) => {
-    const [y, m, d] = date.split("-").map(Number);
-    const index = y! * 12 + (m! - 1) + months;
-    const year = Math.floor(index / 12);
-    const month = index - year * 12;
-    const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
-    return isoDay(Date.UTC(year, month, Math.min(d!, lastDay)));
-  });
-}
-
-function plusCalendar(timezone: string, instant: number, move: (date: PlainDate) => PlainDate): number {
-  const wall = new Date(wallClockAsUtc(timezone, instant)).toISOString();
-  const date = move(wall.slice(0, 10));
+  const ms = toMs(instant);
+  const wall = new Date(wallClockAsUtc(timezone, ms)).toISOString();
   // Whole minutes are placed through the zone; the seconds ride along unchanged.
-  return instantAt(timezone, date, wall.slice(11, 16)) + (instant % MS_PER_MINUTE);
+  return instantAt(timezone, addDays(wall.slice(0, 10), days), wall.slice(11, 16)) + (ms % MS_PER_MINUTE);
 }
 
 /**
  * Whole days from `from` to `to` on the studio's calendar: the calendar days
- * between them, less one when `to` has not yet reached `from`'s wall-clock time
- * on its last day. Three days later at 09:00 is 3; at 08:59, 2.
+ * between them, less one when `to` has not yet reached the same wall-clock
+ * time (seconds included) that many days on. Three days later at 09:00:00 is 3;
+ * at 08:59:59, 2.
  */
 export function wholeDaysBetween(timezone: string, from: Instant, to: Instant): number {
   const a = toMs(from);
   const b = toMs(to);
   if (b < a) return -wholeDaysBetween(timezone, b, a);
   const days = daysBetween(localDate(timezone, a), localDate(timezone, b));
-  return days > 0 && localClock(timezone, b) < localClock(timezone, a) ? days - 1 : days;
+  return plusCalendarDays(timezone, a, days) > b ? days - 1 : days;
+}
+
+// ── The studio's zone, required and checked ────────────────────────────────
+
+/**
+ * Whether this runtime knows the zone. An older WebView lacks newer IANA names
+ * (`America/Ciudad_Juarez`), and every formatter then throws; the brand
+ * provider asks once, before anything formats, so the screen can say so rather
+ * than go blank.
+ */
+export function isKnownZone(timezone: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: timezone });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The studio's zone, or an error: outside a studio (the bare root domain, a
+ * context with no provider) there is no clock, and nothing may quietly format
+ * in UTC or in the device's zone.
+ */
+export function requireStudioZone(timezone: string | null): string {
+  if (timezone === null) throw new Error("No studio is resolved, so there is no studio time zone to read dates in.");
+  return timezone;
 }
 
 // ── Formatting ─────────────────────────────────────────────────────────────
@@ -220,35 +228,36 @@ export function zoneFormat(
 /** The locale every member-facing date and time is laid out in. */
 const LOCALE = "en-SG";
 
-const inZone = (iso: Instant, timezone: string, options: Intl.DateTimeFormatOptions) =>
+// Every function here takes the zone first, as the clock functions above do.
+const inZone = (timezone: string, iso: Instant, options: Intl.DateTimeFormatOptions) =>
   zoneFormat(timezone, LOCALE, options).format(new Date(toMs(iso)));
 
 /** "Thu, 12 Jun" — the day an instant falls on at the studio. */
-export function formatDate(iso: Instant, timezone: string): string {
-  return inZone(iso, timezone, { weekday: "short", month: "short", day: "numeric" });
+export function formatDate(timezone: string, iso: Instant): string {
+  return inZone(timezone, iso, { weekday: "short", month: "short", day: "numeric" });
 }
 
 /**
  * "Tue, 24 Nov 2026" — for a package's expiry, which can be months out, so the
  * day and month alone leave the member guessing which year.
  */
-export function formatExpiryDate(iso: Instant, timezone: string): string {
-  return inZone(iso, timezone, { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+export function formatExpiryDate(timezone: string, iso: Instant): string {
+  return inZone(timezone, iso, { weekday: "short", month: "short", day: "numeric", year: "numeric" });
 }
 
 /** "24 Nov" — the day and month an instant falls on at the studio. */
-export function formatDayMonth(iso: Instant, timezone: string): string {
-  return inZone(iso, timezone, { day: "numeric", month: "short" });
+export function formatDayMonth(timezone: string, iso: Instant): string {
+  return inZone(timezone, iso, { day: "numeric", month: "short" });
 }
 
 /** "4:00 pm" — the time of day an instant falls on at the studio. */
-export function formatClassTime(iso: Instant, timezone: string): string {
-  return inZone(iso, timezone, { hour: "numeric", minute: "2-digit", hour12: true });
+export function formatClassTime(timezone: string, iso: Instant): string {
+  return inZone(timezone, iso, { hour: "numeric", minute: "2-digit", hour12: true });
 }
 
 /** "Thu, 12 Jun, 4:00 pm" — the day and time in one line, as the booking confirmation reads it. */
-export function formatDayAndTime(iso: Instant, timezone: string): string {
-  return inZone(iso, timezone, {
+export function formatDayAndTime(timezone: string, iso: Instant): string {
+  return inZone(timezone, iso, {
     weekday: "short",
     day: "numeric",
     month: "short",
@@ -267,4 +276,9 @@ export function formatPlainDate(date: PlainDate): string {
   return zoneFormat("UTC", LOCALE, { weekday: "short", month: "short", day: "numeric" }).format(
     new Date(asUtcMidnight(date)),
   );
+}
+
+/** "Fri" — the weekday of a plain date, read the same way as `formatPlainDate`. */
+export function formatPlainWeekday(date: PlainDate): string {
+  return zoneFormat("UTC", LOCALE, { weekday: "short" }).format(new Date(asUtcMidnight(date)));
 }

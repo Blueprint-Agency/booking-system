@@ -68,7 +68,7 @@ export function BookedCelebration({
     >
       <CelebrationDetails
         name={cls.class_type.name}
-        when={`${formatDate(cls.starts_at, tz)} · ${formatClassTime(cls.starts_at, tz)} – ${formatClassTime(cls.ends_at, tz)}`}
+        when={`${formatDate(tz, cls.starts_at)} · ${formatClassTime(tz, cls.starts_at)} – ${formatClassTime(tz, cls.ends_at)}`}
         place={cls.location?.name ?? null}
         person={cls.instructor.name}
         note={paidWith ? `Paid with ${paidWith}` : null}

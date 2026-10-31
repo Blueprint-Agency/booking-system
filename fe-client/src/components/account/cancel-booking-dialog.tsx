@@ -123,7 +123,7 @@ export function CancelBookingDialog({
         >
           <h3 id="cancel-booking-title" className="text-lg font-bold text-ink">Cancel this booking?</h3>
           <p className="mt-1 text-sm text-muted">
-            {booking.name} · {formatDate(booking.starts_at, tz)} · {formatClassTime(booking.starts_at, tz)}
+            {booking.name} · {formatDate(tz, booking.starts_at)} · {formatClassTime(tz, booking.starts_at)}
           </p>
           <div
             className={

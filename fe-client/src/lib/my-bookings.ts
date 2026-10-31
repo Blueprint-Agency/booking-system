@@ -56,7 +56,7 @@ function byTime(startsAt: string, endsAt: string | null, now: number): BookingPh
 }
 
 /** A PT request's first proposed slot, as an instant at midday studio time. */
-function firstSlot(r: RawPtRequest, timezone: string): string | null {
+export function firstSlotAt(r: RawPtRequest, timezone: string): string | null {
   const s = r.slots[0];
   return s ? new Date(instantAt(timezone, s.proposed_date.slice(0, 10), "12:00")).toISOString() : null;
 }
@@ -92,7 +92,7 @@ export function bookingItems(src: BookingSources, now: number, timezone: string)
   }
 
   for (const r of src.pt) {
-    const at = r.session?.starts_at ?? firstSlot(r, timezone) ?? r.created_at;
+    const at = r.session?.starts_at ?? firstSlotAt(r, timezone) ?? r.created_at;
     let phase: BookingPhase;
     if (r.status === "pending") phase = "upcoming";
     else if (r.status === "scheduled" && r.session) phase = byTime(r.session.starts_at, r.session.ends_at, now);

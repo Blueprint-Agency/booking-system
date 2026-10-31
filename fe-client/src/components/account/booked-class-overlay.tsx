@@ -98,7 +98,7 @@ export function BookedClassOverlay({
   const state = standing(b, ongoing);
   const location = detail?.location ?? null;
   const supporting = detail?.supporting_instructors ?? [];
-  const deadline = `${formatDate(b.cancel_deadline, tz)} · ${formatClassTime(b.cancel_deadline, tz)}`;
+  const deadline = `${formatDate(tz, b.cancel_deadline)} · ${formatClassTime(tz, b.cancel_deadline)}`;
 
   return (
     <Portal>
@@ -119,7 +119,7 @@ export function BookedClassOverlay({
                 {b.name}
               </h2>
               <p className="mt-1 text-sm font-medium text-ink/80 tabular-nums">
-                {formatDate(b.starts_at, tz)} · {formatClassTime(b.starts_at, tz)} – {formatClassTime(b.ends_at, tz)}
+                {formatDate(tz, b.starts_at)} · {formatClassTime(tz, b.starts_at)} – {formatClassTime(tz, b.ends_at)}
                 <span className="text-muted"> · {classLength(b.starts_at, b.ends_at)}</span>
               </p>
             </div>
@@ -212,7 +212,7 @@ export function BookedClassOverlay({
                   {b.outcome_line}
                   {b.cancelled_at && (
                     <span className="block text-muted tabular-nums">
-                      {formatDate(b.cancelled_at, tz)} · {formatClassTime(b.cancelled_at, tz)}
+                      {formatDate(tz, b.cancelled_at)} · {formatClassTime(tz, b.cancelled_at)}
                     </span>
                   )}
                 </Fact>

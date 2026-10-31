@@ -49,7 +49,7 @@ export function LeaveWaitlistDialog({
       >
         <h3 className="font-serif text-xl text-ink leading-snug">Leave this waitlist?</h3>
         <p className="mt-1 text-sm text-muted">
-          {classTitle} · {formatDate(startsAt, tz)} · {formatClassTime(startsAt, tz)}
+          {classTitle} · {formatDate(tz, startsAt)} · {formatClassTime(tz, startsAt)}
         </p>
         <p className="mt-4 rounded-xl border border-ink/10 bg-warm p-3 text-sm text-ink">
           You&apos;re #{position} in line. If you join again later, you&apos;ll go to the end of the line.

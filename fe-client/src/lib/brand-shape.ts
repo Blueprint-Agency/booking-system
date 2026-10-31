@@ -29,9 +29,11 @@ export interface Brand {
   /**
    * The studio's IANA time zone (`tenants.timezone`, from the slug lookup). Every
    * date and time on screen is read on this clock, not the device's, through
-   * `lib/studio-time.ts`.
+   * `lib/studio-time.ts`. Null where there is no studio: the platform has no
+   * clock, and nothing may format in UTC or the device's zone in its place
+   * (`useStudioZone` refuses).
    */
-  timezone: string;
+  timezone: string | null;
 }
 
 /**
@@ -48,7 +50,6 @@ export const PLATFORM_BRAND: Brand = {
   ogImageUrl: null,
   theme: {},
   copy: {},
-  // The platform has no studio and so no clock of its own; no date of a studio's
-  // is shown in this state. UTC is the zone that names nobody's.
-  timezone: "UTC",
+  // No studio, so no clock: reading a date in this state is a bug that shows.
+  timezone: null,
 };

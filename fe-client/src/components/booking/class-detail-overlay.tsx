@@ -169,7 +169,7 @@ export function ClassDetailOverlay({
                 {cls.class_type.name}
               </h2>
               <p className="mt-1 text-sm font-medium text-ink/80 tabular-nums">
-                {formatDate(cls.starts_at, tz)} · {formatClassTime(cls.starts_at, tz)} – {formatClassTime(cls.ends_at, tz)}
+                {formatDate(tz, cls.starts_at)} · {formatClassTime(tz, cls.starts_at)} – {formatClassTime(tz, cls.ends_at)}
                 <span className="text-muted"> · {classLength(cls.starts_at, cls.ends_at)}</span>
               </p>
             </div>

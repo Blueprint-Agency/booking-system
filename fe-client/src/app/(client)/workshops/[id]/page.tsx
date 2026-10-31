@@ -26,7 +26,7 @@ import {
 
 // Studio time, like the date stub beside it and every other time in the app.
 function formatTimeRange(startsAt: string, endsAt: string, timezone: string): string {
-  return `${formatClassTime(startsAt, timezone)} – ${formatClassTime(endsAt, timezone)}`;
+  return `${formatClassTime(timezone, startsAt)} – ${formatClassTime(timezone, endsAt)}`;
 }
 
 export default function WorkshopDetailPage() {
@@ -281,7 +281,7 @@ export default function WorkshopDetailPage() {
                 {priceForSelected?.isEarlyBird && selectedTier?.early_bird_cutoff_at && (
                   <p className="mt-1 text-xs font-semibold text-accent-deep">
                     Early bird until{" "}
-                    {formatDayMonth(selectedTier.early_bird_cutoff_at, tz)}
+                    {formatDayMonth(tz, selectedTier.early_bird_cutoff_at)}
                   </p>
                 )}
                 {sortedTiers.length === 1 && tierDays.length > 0 && (

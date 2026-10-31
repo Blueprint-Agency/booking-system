@@ -185,11 +185,11 @@ function PackageCard({
           <p className="mt-1 text-xs text-muted">
             {pkg.ended
               ? expired
-                ? `Expired ${formatExpiryDate(pkg.expiresAt!, tz)}`
+                ? `Expired ${formatExpiryDate(tz, pkg.expiresAt!)}`
                 : `Every ${isPt ? "session" : "credit"} used`
               : pkg.dormant
                 ? dormantLine(pkg)
-                : `Expires ${formatExpiryDate(pkg.expiresAt!, tz)}`}
+                : `Expires ${formatExpiryDate(tz, pkg.expiresAt!)}`}
           </p>
           {/* Shown only when the backend says it is bound — an open package
               says nothing rather than promising "any instructor". */}
@@ -204,7 +204,7 @@ function PackageCard({
               {pkg.crossLocationPaidSgd !== null && (
                 <LocationChip
                   name={otherLocationName ?? "Both studios"}
-                  until={pkg.expiresAt ? formatExpiryDate(pkg.expiresAt, tz) : null}
+                  until={pkg.expiresAt ? formatExpiryDate(tz, pkg.expiresAt) : null}
                 />
               )}
             </CoversRow>

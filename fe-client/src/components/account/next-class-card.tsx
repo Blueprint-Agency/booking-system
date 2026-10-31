@@ -88,7 +88,7 @@ export function NextTicketCard({
   const tone = TICKET_TONE[ticket.kind];
   const attended = ticket.attended;
   const running = new Date(ticket.starts_at).getTime() <= Date.now();
-  const when = `${formatDate(ticket.starts_at, tz)} · ${formatClassTime(ticket.starts_at, tz)}`;
+  const when = `${formatDate(tz, ticket.starts_at)} · ${formatClassTime(tz, ticket.starts_at)}`;
 
   return (
     <section
@@ -125,7 +125,7 @@ export function NextTicketCard({
             )}
           </div>
           <p className="mt-1.5 text-xl font-extrabold leading-tight break-words">{ticket.name}</p>
-          <p className="mt-1 text-sm font-semibold text-inverse/90">{formatClassTime(ticket.starts_at, tz)}</p>
+          <p className="mt-1 text-sm font-semibold text-inverse/90">{formatClassTime(tz, ticket.starts_at)}</p>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-inverse/75">
             {ticket.location && (
               <span className="inline-flex items-center gap-1 min-w-0">

@@ -134,7 +134,7 @@ export function ConfirmBookingSheet({
             Book {cls.class_type.name}?
           </h3>
           <p className="mt-1 text-sm font-medium text-ink/80 tabular-nums">
-            {formatDate(cls.starts_at, tz)} · {formatClassTime(cls.starts_at, tz)} – {formatClassTime(cls.ends_at, tz)}
+            {formatDate(tz, cls.starts_at)} · {formatClassTime(tz, cls.starts_at)} – {formatClassTime(tz, cls.ends_at)}
           </p>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
             {cls.location && (

@@ -123,7 +123,7 @@ function ApprovalCelebration({ approval, onClose }: { approval: ApiApproval; onC
     >
       <CelebrationDetails
         name={approvalName(approval)}
-        when={`${formatDate(approval.starts_at, tz)} · ${formatClassTime(approval.starts_at, tz)} – ${formatClassTime(approval.ends_at, tz)}`}
+        when={`${formatDate(tz, approval.starts_at)} · ${formatClassTime(tz, approval.starts_at)} – ${formatClassTime(tz, approval.ends_at)}`}
         place={approval.location_name}
         person={approval.instructor_name}
       />

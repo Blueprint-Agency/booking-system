@@ -59,7 +59,7 @@ export function WaitlistCard({
         <div className="min-w-0 flex-1">
           <p className="font-semibold text-ink break-words">{entry.name}</p>
           <p className="mt-0.5 text-sm font-medium text-ink/80">
-            {formatDate(entry.starts_at, tz)} · {formatClassTime(entry.starts_at, tz)}
+            {formatDate(tz, entry.starts_at)} · {formatClassTime(tz, entry.starts_at)}
           </p>
           <ul className="mt-2 flex flex-wrap gap-1.5">
             {[

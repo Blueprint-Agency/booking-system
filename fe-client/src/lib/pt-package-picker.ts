@@ -6,7 +6,7 @@
  * stated here. The server still refuses a package that cannot pay.
  */
 import { shortDate } from "./pt-booking-window.ts";
-import { formatExpiryDate, instantAt, localClock, localDate, plusCalendarDays } from "./studio-time.ts";
+import { formatClassTime, formatExpiryDate, instantAt, localDate } from "./studio-time.ts";
 
 /** The fields of a live package the picker reads (`LivePackage` in `use-client-packages`). */
 export interface PtPickable {
@@ -26,31 +26,31 @@ export function ptSlotStart(slot: { proposedDate: string; startTime: string }, t
   return instantAt(timezone, slot.proposedDate, slot.startTime);
 }
 
+/** The longest a package may run once Activated: ten years (`MAX_VALIDITY_DAYS` in the server's `validity.ts`). */
+const MAX_VALIDITY_DAYS = 3650;
+const DAY_MS = 86_400_000;
+
 /**
  * A Dormant package is judged by the end scheduling a session now would give it,
- * as the server judges it: its validity in calendar days on the studio's clock.
+ * as the server judges it (`activationExpiry` in the server's `validity.ts`):
+ * `validity_days` of 24 hours each from now, capped at ten years. That is UTC
+ * arithmetic, not the studio's calendar, so across a daylight-saving change the
+ * end sits an hour off the wall clock the member counts on.
  */
-export function ptPackageEnd(
-  pkg: Pick<PtPickable, "expiresAt" | "validityDays">,
-  timezone: string,
-  now: number = Date.now(),
-): number | null {
+export function ptPackageEnd(pkg: Pick<PtPickable, "expiresAt" | "validityDays">, now: number = Date.now()): number | null {
   if (pkg.expiresAt) return Date.parse(pkg.expiresAt);
-  return pkg.validityDays === null ? null : plusCalendarDays(timezone, now, pkg.validityDays);
+  return pkg.validityDays === null ? null : now + Math.min(pkg.validityDays, MAX_VALIDITY_DAYS) * DAY_MS;
 }
 
 export function ptEndLabel(end: number, timezone: string): string {
-  const [hours, minutes] = localClock(timezone, end).split(":").map(Number);
-  const time = `${hours! % 12 || 12}:${String(minutes).padStart(2, "0")} ${hours! < 12 ? "am" : "pm"}`;
-  return `${time} on ${shortDate(localDate(timezone, end))}`;
+  return `${formatClassTime(timezone, end)} on ${shortDate(localDate(timezone, end))}`;
 }
 
 export function ptLatestEnd(
   packages: readonly Pick<PtPickable, "expiresAt" | "validityDays">[],
-  timezone: string,
   now: number = Date.now(),
 ): number | null {
-  const ends = packages.map((p) => ptPackageEnd(p, timezone, now)).filter((e): e is number => e !== null);
+  const ends = packages.map((p) => ptPackageEnd(p, now)).filter((e): e is number => e !== null);
   return ends.length ? Math.max(...ends) : null;
 }
 
@@ -99,10 +99,10 @@ export function ptPickRows<P extends PtPickable>(
       const clock = pkg.dormant
         ? "starts when your first session is scheduled"
         : pkg.expiresAt
-          ? `until ${formatExpiryDate(pkg.expiresAt, timezone)}`
+          ? `until ${formatExpiryDate(timezone, pkg.expiresAt)}`
           : null;
       const meta = clock ? `${sessionsWord(left)} left · ${clock}` : `${sessionsWord(left)} left`;
-      const end = ptPackageEnd(pkg, timezone, now);
+      const end = ptPackageEnd(pkg, now);
       const reason =
         left < cost
           ? `Only ${sessionsWord(left)} left — this request needs ${cost}`

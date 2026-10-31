@@ -62,7 +62,7 @@ export function CreditHistoryDisclosure({ packageId, unit }: { packageId: string
                   const what = m.booking ? (m.booking.title ?? (m.booking.kind === "pt" ? "Private session" : "Booking")) : null;
                   return (
                     <li key={m.id} className="flex items-start gap-3 py-2 text-sm">
-                      <span className="w-24 shrink-0 text-xs text-muted tabular-nums">{formatDate(m.at, tz)}</span>
+                      <span className="w-24 shrink-0 text-xs text-muted tabular-nums">{formatDate(tz, m.at)}</span>
                       <span className="min-w-0 flex-1">
                         {what && <span className="block break-words text-ink">{what}</span>}
                         <span className={cn("block break-words", what ? "text-xs text-muted" : "text-ink")}>{text}</span>
@@ -75,7 +75,7 @@ export function CreditHistoryDisclosure({ packageId, unit }: { packageId: string
                 })}
               </ul>
             )}
-            <p className="pb-2 pt-1 text-xs text-muted">History from {formatExpiryDate(history.history_from, tz)}</p>
+            <p className="pb-2 pt-1 text-xs text-muted">History from {formatExpiryDate(tz, history.history_from)}</p>
           </>
         )}
       </div>

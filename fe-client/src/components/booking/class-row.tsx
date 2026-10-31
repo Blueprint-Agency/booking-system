@@ -483,7 +483,7 @@ export function ClassRow({
         {booking ? "Booking…" : "Book Now"}
       </button>
     );
-  const timeRange = `${formatClassTime(cls.starts_at, tz)} – ${formatClassTime(cls.ends_at, tz)}`;
+  const timeRange = `${formatClassTime(tz, cls.starts_at)} – ${formatClassTime(tz, cls.ends_at)}`;
 
   return (
     <div className="relative px-4 py-3.5 first:rounded-t-2xl last:rounded-b-2xl md:px-5 md:py-4">
@@ -494,7 +494,7 @@ export function ClassRow({
       <button
         type="button"
         onClick={() => setShowDetail(true)}
-        aria-label={`Details: ${cls.class_type.name}, ${formatDate(cls.starts_at, tz)} ${timeRange}`}
+        aria-label={`Details: ${cls.class_type.name}, ${formatDate(tz, cls.starts_at)} ${timeRange}`}
         className="absolute inset-0 h-full w-full cursor-pointer rounded-[inherit] hover:bg-ink/[0.025] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent transition-colors"
       />
       {/* Dim the row only — not the plan nudge below, which is the way
@@ -504,9 +504,9 @@ export function ClassRow({
         {/* Time — its own column once there is room */}
         <div className="hidden sm:block w-[76px] shrink-0 tabular-nums">
           <div className="text-[15px] font-bold tracking-tight text-ink">
-            {formatClassTime(cls.starts_at, tz)}
+            {formatClassTime(tz, cls.starts_at)}
           </div>
-          <div className="text-xs text-muted">{formatClassTime(cls.ends_at, tz)}</div>
+          <div className="text-xs text-muted">{formatClassTime(tz, cls.ends_at)}</div>
           {/* Until the cost has a column of its own. */}
           <div className="md:hidden mt-0.5 text-xs text-muted">{credits(cls.credit_cost)}</div>
         </div>

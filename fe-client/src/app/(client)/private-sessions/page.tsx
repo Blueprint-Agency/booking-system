@@ -277,8 +277,8 @@ export default function PrivateSessionsPage() {
     [ptPackages, computedSessionType, requestCost, tz, latestStart],
   );
   const latestEnd = useMemo(
-    () => ptLatestEnd(ptPackages.filter((p) => p.sessionType === computedSessionType), tz),
-    [ptPackages, computedSessionType, tz],
+    () => ptLatestEnd(ptPackages.filter((p) => p.sessionType === computedSessionType)),
+    [ptPackages, computedSessionType],
   );
   const latestDate = ptLatestDate(dateBounds.latest, latestEnd, tz);
   const hasPackageForType = pickRows.length > 0;

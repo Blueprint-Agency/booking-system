@@ -29,7 +29,7 @@ import type { ApiWorkshopBooking } from "@/components/account/workshop-bookings"
 import { useBrandCopy, useStudioZone } from "@/components/brand/brand-provider";
 import { BTN_CANCEL } from "@/components/ui/styles";
 import { cn } from "@/lib/utils";
-import { ptStanding, type BookingItem, type BookingPhase, type BookingType } from "@/lib/my-bookings";
+import { firstSlotAt, ptStanding, type BookingItem, type BookingPhase, type BookingType } from "@/lib/my-bookings";
 import {
   formatSlotRange,
   ptCancelFailure,
@@ -49,7 +49,7 @@ import {
   memberCanCancel,
   ptCancelPrompt,
 } from "@/lib/cancellation-copy";
-import { formatClassTime, formatDate, formatPlainDate, instantAt } from "@/lib/studio-time";
+import { formatClassTime, formatDate, formatPlainDate } from "@/lib/studio-time";
 
 /** What a cancelled booking's read sends of its cancellation: the server's own lines. */
 interface CancelledLines {
@@ -70,7 +70,7 @@ function Cancelled({ c }: { c: CancelledLines }) {
     <div className="mt-2 space-y-0.5 text-xs">
       {c.cancelled_at && (
         <p className="text-muted tabular-nums">
-          {c.who_line} · {formatDate(c.cancelled_at, tz)} · {formatClassTime(c.cancelled_at, tz)}
+          {c.who_line} · {formatDate(tz, c.cancelled_at)} · {formatClassTime(tz, c.cancelled_at)}
         </p>
       )}
       <p className="font-medium text-ink/80">{c.outcome_line}</p>
@@ -220,7 +220,7 @@ function BookingCard({
   );
 }
 
-const timeRange = (start: string, end: string, tz: string) => `${formatClassTime(start, tz)} – ${formatClassTime(end, tz)}`;
+const timeRange = (start: string, end: string, tz: string) => `${formatClassTime(tz, start)} – ${formatClassTime(tz, end)}`;
 
 // ── Class ────────────────────────────────────────────────────────────────────
 
@@ -246,7 +246,7 @@ export function ClassBookingCard({
   // booked on ClassPass is cancelled on ClassPass.
   const open = memberCanCancel(b);
   const onClassPass = !cancelled && b.source === "classpass" && canCancelClass(b.starts_at);
-  const deadline = `${formatDate(b.cancel_deadline, tz)} · ${formatClassTime(b.cancel_deadline, tz)}`;
+  const deadline = `${formatDate(tz, b.cancel_deadline)} · ${formatClassTime(tz, b.cancel_deadline)}`;
 
   const status: Status | null = cancelled
     ? { label: "Cancelled", tone: "muted", icon: XCircle }
@@ -275,13 +275,13 @@ export function ClassBookingCard({
       qr={
         past || cancelled
           ? null
-          : { value: b.qr_token, label: b.name, subLabel: `${formatDate(b.starts_at, tz)} · ${b.code}` }
+          : { value: b.qr_token, label: b.name, subLabel: `${formatDate(tz, b.starts_at)} · ${b.code}` }
       }
       code={past || cancelled ? null : b.code}
       highlight={ongoing}
       open={
         onOpen && {
-          label: `Details: ${b.name}, ${formatDate(b.starts_at, tz)} ${timeRange(b.starts_at, b.ends_at, tz)}`,
+          label: `Details: ${b.name}, ${formatDate(tz, b.starts_at)} ${timeRange(b.starts_at, b.ends_at, tz)}`,
           onOpen: () => onOpen(b),
         }
       }
@@ -360,13 +360,7 @@ export function PtBookingCard({
   return (
     <BookingCard
       type="pt"
-      stub={
-        scheduled
-          ? scheduled.starts_at
-          : slot0
-            ? new Date(instantAt(tz, slot0.proposed_date.slice(0, 10), "12:00")).toISOString()
-            : null
-      }
+      stub={scheduled ? scheduled.starts_at : firstSlotAt(r, tz)}
       stubTone={r.status === "scheduled" ? "default" : r.status === "pending" ? "default" : "muted"}
       status={ptStatus(r)}
       title={`${kind} · ${r.class_name ?? "Any class type"}`}
@@ -381,7 +375,7 @@ export function PtBookingCard({
       ]}
       qr={
         scheduled && r.booking && r.status === "scheduled"
-          ? { value: r.booking.qr_token, label: `${kind} session`, subLabel: `${formatDate(scheduled.starts_at, tz)} · ${r.booking.code}` }
+          ? { value: r.booking.qr_token, label: `${kind} session`, subLabel: `${formatDate(tz, scheduled.starts_at)} · ${r.booking.code}` }
           : null
       }
       code={r.status === "scheduled" ? r.booking?.code : null}
@@ -512,10 +506,10 @@ function PtCancel({
 
 function workshopWhen(b: ApiWorkshopBooking, tz: string): string {
   if (!b.starts_at) return "Dates to be announced";
-  if (b.ends_at && formatDate(b.starts_at, tz) !== formatDate(b.ends_at, tz)) {
-    return `${formatDate(b.starts_at, tz)} – ${formatDate(b.ends_at, tz)}`;
+  if (b.ends_at && formatDate(tz, b.starts_at) !== formatDate(tz, b.ends_at)) {
+    return `${formatDate(tz, b.starts_at)} – ${formatDate(tz, b.ends_at)}`;
   }
-  return b.ends_at ? timeRange(b.starts_at, b.ends_at, tz) : formatClassTime(b.starts_at, tz);
+  return b.ends_at ? timeRange(b.starts_at, b.ends_at, tz) : formatClassTime(tz, b.starts_at);
 }
 
 export function WorkshopBookingCard({ booking: b, phase }: { booking: ApiWorkshopBooking; phase: BookingPhase }) {
