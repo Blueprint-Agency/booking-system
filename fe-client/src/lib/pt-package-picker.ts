@@ -5,8 +5,8 @@
  * request's rules read only what `/me/packages` already carries, so they are
  * stated here. The server still refuses a package that cannot pay.
  */
-import { formatExpiryDate } from "./utils.ts";
-import { DAY_MS, SG_OFFSET_MS, shortDate } from "./pt-booking-window.ts";
+import { shortDate } from "./pt-booking-window.ts";
+import { formatClassTime, formatExpiryDate, instantAt, localDate } from "./studio-time.ts";
 
 /** The fields of a live package the picker reads (`LivePackage` in `use-client-packages`). */
 export interface PtPickable {
@@ -21,30 +21,41 @@ export interface PtPickable {
   boundInstructor: { id: string; name: string } | null;
 }
 
-export function ptSlotStart(slot: { proposedDate: string; startTime: string }): number {
-  return Date.parse(`${slot.proposedDate}T${slot.startTime}:00Z`) - SG_OFFSET_MS;
+/** A proposed time is a wall time at the studio: the date and `HH:MM` the member picked, on its clock. */
+export function ptSlotStart(slot: { proposedDate: string; startTime: string }, timezone: string): number {
+  return instantAt(timezone, slot.proposedDate, slot.startTime);
 }
 
-/** A Dormant package is judged by the end scheduling a session now would give it, as the server judges it. */
+/** The longest a package may run once Activated: ten years (`MAX_VALIDITY_DAYS` in the server's `validity.ts`). */
+const MAX_VALIDITY_DAYS = 3650;
+const DAY_MS = 86_400_000;
+
+/**
+ * A Dormant package is judged by the end scheduling a session now would give it,
+ * as the server judges it (`activationExpiry` in the server's `validity.ts`):
+ * `validity_days` of 24 hours each from now, capped at ten years. That is UTC
+ * arithmetic, not the studio's calendar, so across a daylight-saving change the
+ * end sits an hour off the wall clock the member counts on.
+ */
 export function ptPackageEnd(pkg: Pick<PtPickable, "expiresAt" | "validityDays">, now: number = Date.now()): number | null {
   if (pkg.expiresAt) return Date.parse(pkg.expiresAt);
-  return pkg.validityDays === null ? null : now + pkg.validityDays * DAY_MS;
+  return pkg.validityDays === null ? null : now + Math.min(pkg.validityDays, MAX_VALIDITY_DAYS) * DAY_MS;
 }
 
-export function ptEndLabel(end: number): string {
-  const wall = new Date(end + SG_OFFSET_MS);
-  const h = wall.getUTCHours();
-  const time = `${h % 12 || 12}:${String(wall.getUTCMinutes()).padStart(2, "0")} ${h < 12 ? "am" : "pm"}`;
-  return `${time} on ${shortDate(wall.toISOString().slice(0, 10))}`;
+export function ptEndLabel(end: number, timezone: string): string {
+  return `${formatClassTime(timezone, end)} on ${shortDate(localDate(timezone, end))}`;
 }
 
-export function ptLatestEnd(packages: readonly Pick<PtPickable, "expiresAt" | "validityDays">[], now: number = Date.now()): number | null {
+export function ptLatestEnd(
+  packages: readonly Pick<PtPickable, "expiresAt" | "validityDays">[],
+  now: number = Date.now(),
+): number | null {
   const ends = packages.map((p) => ptPackageEnd(p, now)).filter((e): e is number => e !== null);
   return ends.length ? Math.max(...ends) : null;
 }
 
-export function ptLatestDate(windowLatest: string | undefined, latestEnd: number | null): string | undefined {
-  const endDay = latestEnd === null ? undefined : new Date(latestEnd + SG_OFFSET_MS).toISOString().slice(0, 10);
+export function ptLatestDate(windowLatest: string | undefined, latestEnd: number | null, timezone: string): string | undefined {
+  const endDay = latestEnd === null ? undefined : localDate(timezone, latestEnd);
   if (!windowLatest || !endDay) return windowLatest ?? endDay;
   return endDay < windowLatest ? endDay : windowLatest;
 }
@@ -53,9 +64,10 @@ export function ptSlotEndProblem(
   s: { proposedDate: string; startTime: string },
   slot: number,
   latestEnd: number | null,
+  timezone: string,
 ): string | null {
-  if (latestEnd === null || ptSlotStart(s) <= latestEnd) return null;
-  return `Time ${slot}: no package of yours runs past ${ptEndLabel(latestEnd)}. Pick a time by then.`;
+  if (latestEnd === null || ptSlotStart(s, timezone) <= latestEnd) return null;
+  return `Time ${slot}: no package of yours runs past ${ptEndLabel(latestEnd, timezone)}. Pick a time by then.`;
 }
 
 export interface PtPickRow<P extends PtPickable = PtPickable> {
@@ -76,6 +88,7 @@ export function ptPickRows<P extends PtPickable>(
   packages: readonly P[],
   sessionType: "1on1" | "2on1",
   cost: number,
+  timezone: string,
   latestStart: number | null = null,
   now: number = Date.now(),
 ): PtPickRow<P>[] {
@@ -86,7 +99,7 @@ export function ptPickRows<P extends PtPickable>(
       const clock = pkg.dormant
         ? "starts when your first session is scheduled"
         : pkg.expiresAt
-          ? `until ${formatExpiryDate(pkg.expiresAt)}`
+          ? `until ${formatExpiryDate(timezone, pkg.expiresAt)}`
           : null;
       const meta = clock ? `${sessionsWord(left)} left · ${clock}` : `${sessionsWord(left)} left`;
       const end = ptPackageEnd(pkg, now);
@@ -94,7 +107,7 @@ export function ptPickRows<P extends PtPickable>(
         left < cost
           ? `Only ${sessionsWord(left)} left — this request needs ${cost}`
           : latestStart !== null && end !== null && latestStart > end
-            ? `Runs until ${ptEndLabel(end)}, before one of your times`
+            ? `Runs until ${ptEndLabel(end, timezone)}, before one of your times`
             : null;
       return { pkg, eligible: reason === null, reason, meta };
     });

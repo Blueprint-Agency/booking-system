@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { useBrand } from "@/components/brand/brand-provider";
+import { useBrand, useStudioZone } from "@/components/brand/brand-provider";
 import {
   CelebrationDetails,
   CelebrationSheet,
@@ -9,9 +9,9 @@ import {
   calendarUid,
   usePickedLine,
 } from "@/components/celebration/celebration-sheet";
-import { formatDate } from "@/lib/utils";
-import { formatClassTime, type ApiClassCard } from "@/lib/classes";
+import { type ApiClassCard } from "@/lib/classes";
 import { calendarLocation, directionsLine, type CalendarEvent } from "@/lib/add-to-calendar";
+import { formatClassTime, formatDate } from "@/lib/studio-time";
 
 /** The nudge to remember; each ends on the calendar, which is the point. */
 const NUDGES = [
@@ -34,6 +34,7 @@ export function BookedCelebration({
   paidWith: string | null;
   onClose: () => void;
 }) {
+  const tz = useStudioZone();
   const brand = useBrand();
   const nudge = usePickedLine(NUDGES);
 
@@ -67,7 +68,7 @@ export function BookedCelebration({
     >
       <CelebrationDetails
         name={cls.class_type.name}
-        when={`${formatDate(cls.starts_at)} · ${formatClassTime(cls.starts_at)} – ${formatClassTime(cls.ends_at)}`}
+        when={`${formatDate(tz, cls.starts_at)} · ${formatClassTime(tz, cls.starts_at)} – ${formatClassTime(tz, cls.ends_at)}`}
         place={cls.location?.name ?? null}
         person={cls.instructor.name}
         note={paidWith ? `Paid with ${paidWith}` : null}

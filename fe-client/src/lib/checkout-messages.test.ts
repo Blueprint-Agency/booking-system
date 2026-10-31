@@ -4,9 +4,10 @@ import { checkoutErrorMessage } from "./checkout-messages.ts";
 import { ERROR_CODES } from "./error-codes.ts";
 
 const FALLBACK = "Could not start checkout. Please try again.";
+const SG = "Asia/Singapore";
 
 test("PAY-25 a full workshop is said in words, never as its code", () => {
-  const message = checkoutErrorMessage({ error: ERROR_CODES.workshop_full }, FALLBACK);
+  const message = checkoutErrorMessage({ error: ERROR_CODES.workshop_full }, FALLBACK, SG);
   assert.match(message, /full/i);
   assert.doesNotMatch(message, /workshop_full/);
 });
@@ -16,17 +17,21 @@ test("WSP-17 a workshop refused for a time clash names the booking in the way", 
     booking_id: "b1",
     kind: "class",
     title: "Inversion",
-    // 4:00 pm in Singapore.
+    // 4:00 pm in Singapore, 6:00 pm in Sydney.
     starts_at: "2026-09-30T08:00:00.000Z",
     ends_at: "2026-09-30T09:00:00.000Z",
     location_name: "Riverside",
   };
   assert.equal(
-    checkoutErrorMessage({ error: ERROR_CODES.time_clash, clash } as never, FALLBACK),
+    checkoutErrorMessage({ error: ERROR_CODES.time_clash, clash } as never, FALLBACK, "Asia/Singapore"),
     "You're booked into Inversion at 4:00 pm (Riverside), which overlaps this workshop. You can only be in one place at a time.",
   );
   assert.equal(
-    checkoutErrorMessage({ error: ERROR_CODES.time_clash }, FALLBACK),
+    checkoutErrorMessage({ error: ERROR_CODES.time_clash, clash } as never, FALLBACK, "Australia/Sydney"),
+    "You're booked into Inversion at 6:00 pm (Riverside), which overlaps this workshop. You can only be in one place at a time.",
+  );
+  assert.equal(
+    checkoutErrorMessage({ error: ERROR_CODES.time_clash }, FALLBACK, "Asia/Singapore"),
     "You're booked into something else during this workshop. You can only be in one place at a time.",
   );
 });
@@ -35,6 +40,7 @@ test("PAY-25 the server's own sentence wins over the code it came with", () => {
   const message = checkoutErrorMessage(
     { error: ERROR_CODES.part_payment_below_floor, message: "A part payment has to be at least S$1.00." },
     FALLBACK,
+    SG,
   );
   assert.equal(message, "A part payment has to be at least S$1.00.");
 });
@@ -72,20 +78,23 @@ test("PAY-25 the refusals a checkout can meet each get a member-facing sentence"
     ERROR_CODES.rate_limited,
   ];
   for (const code of codes) {
-    const message = checkoutErrorMessage({ error: code }, FALLBACK);
+    const message = checkoutErrorMessage({ error: code }, FALLBACK, SG);
     assert.notEqual(message, FALLBACK, `${code} fell back to the generic sentence`);
     assert.doesNotMatch(message, /_/, `${code} came out as a code: ${message}`);
   }
 });
 
 test("PAY-25 a code it does not know gets the caller's words, never the raw string", () => {
-  assert.equal(checkoutErrorMessage({ error: "internal_error" }, FALLBACK), FALLBACK);
-  assert.equal(checkoutErrorMessage({ error: "something_new_on_the_server" }, FALLBACK), FALLBACK);
-  assert.equal(checkoutErrorMessage({}, FALLBACK), FALLBACK);
-  assert.equal(checkoutErrorMessage(null, FALLBACK), FALLBACK);
+  assert.equal(checkoutErrorMessage({ error: "internal_error" }, FALLBACK, SG), FALLBACK);
+  assert.equal(checkoutErrorMessage({ error: "something_new_on_the_server" }, FALLBACK, SG), FALLBACK);
+  assert.equal(checkoutErrorMessage({}, FALLBACK, SG), FALLBACK);
+  assert.equal(checkoutErrorMessage(null, FALLBACK, SG), FALLBACK);
 });
 
 test("PAY-25 a message that is itself a code is not printed", () => {
-  assert.equal(checkoutErrorMessage({ message: "workshop_full" }, FALLBACK), checkoutErrorMessage({ error: "workshop_full" }, FALLBACK));
-  assert.equal(checkoutErrorMessage({ message: "internal_error" }, FALLBACK), FALLBACK);
+  assert.equal(
+    checkoutErrorMessage({ message: "workshop_full" }, FALLBACK, SG),
+    checkoutErrorMessage({ error: "workshop_full" }, FALLBACK, SG),
+  );
+  assert.equal(checkoutErrorMessage({ message: "internal_error" }, FALLBACK, SG), FALLBACK);
 });

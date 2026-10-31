@@ -26,6 +26,7 @@ import {
 import { checkoutErrorMessage, type CheckoutErrorBody } from "@/lib/checkout-messages";
 import { PartPaymentUnchecked } from "@/components/checkout/part-payment-unchecked";
 import { blockedByPayments, NO_ONLINE_PAYMENTS, useOnlinePayments } from "@/lib/online-payments";
+import { useStudioZone } from "@/components/brand/brand-provider";
 
 export function OpenPurchases({
   purchases,
@@ -74,6 +75,7 @@ function OpenPurchaseCard({
   purchase: OpenPurchase;
   partPayment: PartPaymentOptions;
 }) {
+  const tz = useStudioZone();
   const api = useApi();
   const onlinePayments = useOnlinePayments();
   const [busy, setBusy] = useState(false);
@@ -99,7 +101,7 @@ function OpenPurchaseCard({
     } catch (err) {
       reportError(err, { scope: "resume-purchase" });
       const body = (err as { body?: CheckoutErrorBody })?.body;
-      setError(checkoutErrorMessage(body, "Could not start the payment. Please try again."));
+      setError(checkoutErrorMessage(body, "Could not start the payment. Please try again.", tz));
       setBusy(false);
     }
   }

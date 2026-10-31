@@ -2,6 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { bookingItems, ptStanding, sessionsOnDay, sortForPhase, type BookingSources } from "./my-bookings.ts";
 
+const SG = "Asia/Singapore";
+const SYDNEY = "Australia/Sydney";
+
 const NOW = Date.parse("2026-09-27T10:00:00+08:00");
 const at = (h: number) => new Date(NOW + h * 3_600_000).toISOString();
 
@@ -20,7 +23,7 @@ const pt = (id: string, status: string, session?: [number, number]) =>
   }) as never;
 
 const phases = (src: Partial<BookingSources>) =>
-  Object.fromEntries(bookingItems({ ...empty, ...src }, NOW).map((i) => [i.key, i.phase]));
+  Object.fromEntries(bookingItems({ ...empty, ...src }, NOW, SG).map((i) => [i.key, i.phase]));
 
 test("a class is upcoming until it starts, ongoing while it runs, past once it ends", () => {
   assert.deepEqual(
@@ -43,7 +46,7 @@ test("ACC-32 a cancelled class is on Cancelled whether it is still to come, runn
 test("ACC-32 Cancelled lists the newest cancellation first, whatever the class time", () => {
   const gone = (id: string, start: number, cancelledAt: number) =>
     ({ ...(cls(id, start, start + 1, "cancelled") as object), cancelled_at: at(cancelledAt) }) as never;
-  const items = bookingItems({ ...empty, cancelled: [gone("later-class", 48, -5), gone("earlier-class", 2, -1)] }, NOW);
+  const items = bookingItems({ ...empty, cancelled: [gone("later-class", 48, -5), gone("earlier-class", 2, -1)] }, NOW, SG);
   assert.deepEqual(sortForPhase(items, "cancelled").map((i) => i.key), ["class:earlier-class", "class:later-class"]);
 });
 
@@ -128,6 +131,7 @@ test("ACC-34 every kind's cancellation sorts on Cancelled by when it was cancell
       corporate: [{ id: "k", status: "cancelled", created_at: at(-200), session: null, cancelled_at: at(-2) } as never],
     },
     NOW,
+    SG,
   );
   assert.deepEqual(
     sortForPhase(items, "cancelled").map((i) => i.key),
@@ -166,17 +170,38 @@ test("a day's sessions are the ones its tile counted: attended, or booked and no
       workshops: [{ id: "w", state: "confirmed", booked_at: at(-100), starts_at: at(1), ends_at: at(2) } as never],
     },
     NOW,
+    SG,
   );
   assert.deepEqual(
-    sessionsOnDay(items, "2026-09-27").map((i) => i.key),
+    sessionsOnDay(items, "2026-09-27", SG).map((i) => i.key),
     ["pt:stale", "pt:done", "class:unticked", "class:morning", "class:later", "pt:next"],
   );
   // 01:00 on the 28th in Singapore, still the 27th in UTC.
-  assert.deepEqual(sessionsOnDay(items, "2026-09-28").map((i) => i.key), ["class:tomorrow"]);
+  assert.deepEqual(sessionsOnDay(items, "2026-09-28", SG).map((i) => i.key), ["class:tomorrow"]);
+});
+
+test("TEN-96 a Sydney studio's day holds the sessions that fall on Sydney's calendar day, not Singapore's", () => {
+  // 00:30 on 28 September in Sydney (UTC+10) is 22:30 on the 27th in Singapore.
+  const lateSingapore = Date.parse("2026-09-27T14:30:00Z");
+  const items = bookingItems(
+    { ...empty, upcoming: [{ booking_id: "midnight", starts_at: new Date(lateSingapore).toISOString(), ends_at: new Date(lateSingapore + 3_600_000).toISOString(), state: "confirmed" } as never] },
+    NOW,
+    SYDNEY,
+  );
+  assert.deepEqual(sessionsOnDay(items, "2026-09-28", SYDNEY).map((i) => i.key), ["class:midnight"]);
+  assert.deepEqual(sessionsOnDay(items, "2026-09-27", SYDNEY).map((i) => i.key), []);
+  assert.deepEqual(sessionsOnDay(items, "2026-09-27", SG).map((i) => i.key), ["class:midnight"]);
+});
+
+test("TEN-97 a private-session request not yet scheduled sits at midday of its first proposed date on the studio's clock", () => {
+  const items = bookingItems({ ...empty, pt: [pt("asked", "pending")] }, NOW, SYDNEY);
+  // 12:00 on 30 September in Sydney (UTC+10) is 02:00 UTC.
+  assert.equal(items[0]!.at, "2026-09-30T02:00:00.000Z");
+  assert.equal(bookingItems({ ...empty, pt: [pt("asked", "pending")] }, NOW, SG)[0]!.at, "2026-09-30T04:00:00.000Z");
 });
 
 test("coming items run soonest first, past ones most recent first", () => {
-  const items = bookingItems({ ...empty, upcoming: [cls("late", 5, 6), cls("soon", 1, 2)], past: [cls("old", -9, -8), cls("new", -3, -2)] }, NOW);
+  const items = bookingItems({ ...empty, upcoming: [cls("late", 5, 6), cls("soon", 1, 2)], past: [cls("old", -9, -8), cls("new", -3, -2)] }, NOW, SG);
   assert.deepEqual(sortForPhase(items.filter((i) => i.phase === "upcoming"), "upcoming").map((i) => i.key), ["class:soon", "class:late"]);
   assert.deepEqual(sortForPhase(items.filter((i) => i.phase === "past"), "past").map((i) => i.key), ["class:new", "class:old"]);
 });

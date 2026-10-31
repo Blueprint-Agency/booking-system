@@ -16,8 +16,9 @@ import { CheckCircle2, MapPin, QrCode, UserRound } from "lucide-react";
 import { QrFullScreen } from "@/components/account/qr-badge";
 import { DateStub } from "@/components/account/date-stub";
 import type { ApiBooking } from "@/components/account/class-bookings";
-import { cn, formatDate } from "@/lib/utils";
-import { formatClassTime } from "@/lib/classes";
+import { cn } from "@/lib/utils";
+import { formatClassTime, formatDate } from "@/lib/studio-time";
+import { useStudioZone } from "@/components/brand/brand-provider";
 
 /**
  * A confirmed class running now (started, not ended), else the soonest
@@ -80,13 +81,14 @@ export function NextTicketCard({
   onCancel?: () => void;
   className?: string;
 }) {
+  const tz = useStudioZone();
   const [qrOpen, setQrOpen] = useState(false);
   const closeQr = useCallback(() => setQrOpen(false), []);
 
   const tone = TICKET_TONE[ticket.kind];
   const attended = ticket.attended;
   const running = new Date(ticket.starts_at).getTime() <= Date.now();
-  const when = `${formatDate(ticket.starts_at)} · ${formatClassTime(ticket.starts_at)}`;
+  const when = `${formatDate(tz, ticket.starts_at)} · ${formatClassTime(tz, ticket.starts_at)}`;
 
   return (
     <section
@@ -123,7 +125,7 @@ export function NextTicketCard({
             )}
           </div>
           <p className="mt-1.5 text-xl font-extrabold leading-tight break-words">{ticket.name}</p>
-          <p className="mt-1 text-sm font-semibold text-inverse/90">{formatClassTime(ticket.starts_at)}</p>
+          <p className="mt-1 text-sm font-semibold text-inverse/90">{formatClassTime(tz, ticket.starts_at)}</p>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-inverse/75">
             {ticket.location && (
               <span className="inline-flex items-center gap-1 min-w-0">

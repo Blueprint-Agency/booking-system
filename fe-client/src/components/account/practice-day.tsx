@@ -25,6 +25,7 @@ import { reportError } from "@/lib/report-error";
 import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import { useClientPackages } from "@/lib/use-client-packages";
 import { useFocusTrap } from "@/lib/use-focus-trap";
+import { useStudioZone } from "@/components/brand/brand-provider";
 
 /**
  * A day of My activity's month, opened from its tile: the classes and private
@@ -42,6 +43,7 @@ export function PracticeDayDialog({
   onClose: () => void;
   onChanged: () => void;
 }) {
+  const tz = useStudioZone();
   const api = useApi();
   const policy = useCancellationPolicy();
   const { refetch: refetchPackages } = useClientPackages();
@@ -69,7 +71,7 @@ export function PracticeDayDialog({
     void load();
   }, [load]);
 
-  const items = useMemo(() => (src ? sessionsOnDay(bookingItems(src, Date.now()), date) : null), [src, date]);
+  const items = useMemo(() => (src ? sessionsOnDay(bookingItems(src, Date.now(), tz), date, tz) : null), [src, date, tz]);
 
   async function changed(text: string) {
     setNote(text);

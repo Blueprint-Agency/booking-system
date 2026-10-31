@@ -26,11 +26,10 @@ import { QrBadge } from "@/components/account/qr-badge";
 import { DateStub } from "@/components/account/date-stub";
 import type { ApiBooking } from "@/components/account/class-bookings";
 import type { ApiWorkshopBooking } from "@/components/account/workshop-bookings";
-import { useBrandCopy } from "@/components/brand/brand-provider";
+import { useBrandCopy, useStudioZone } from "@/components/brand/brand-provider";
 import { BTN_CANCEL } from "@/components/ui/styles";
-import { cn, formatDate } from "@/lib/utils";
-import { formatClassTime } from "@/lib/classes";
-import { ptStanding, type BookingItem, type BookingPhase, type BookingType } from "@/lib/my-bookings";
+import { cn } from "@/lib/utils";
+import { firstSlotAt, ptStanding, type BookingItem, type BookingPhase, type BookingType } from "@/lib/my-bookings";
 import {
   formatSlotRange,
   ptCancelFailure,
@@ -50,6 +49,7 @@ import {
   memberCanCancel,
   ptCancelPrompt,
 } from "@/lib/cancellation-copy";
+import { formatClassTime, formatDate, formatPlainDate } from "@/lib/studio-time";
 
 /** What a cancelled booking's read sends of its cancellation: the server's own lines. */
 interface CancelledLines {
@@ -64,12 +64,13 @@ interface CancelledLines {
  * as sent.
  */
 function Cancelled({ c }: { c: CancelledLines }) {
+  const tz = useStudioZone();
   if (!c.outcome_line) return null;
   return (
     <div className="mt-2 space-y-0.5 text-xs">
       {c.cancelled_at && (
         <p className="text-muted tabular-nums">
-          {c.who_line} · {formatDate(c.cancelled_at)} · {formatClassTime(c.cancelled_at)}
+          {c.who_line} · {formatDate(tz, c.cancelled_at)} · {formatClassTime(tz, c.cancelled_at)}
         </p>
       )}
       <p className="font-medium text-ink/80">{c.outcome_line}</p>
@@ -219,7 +220,7 @@ function BookingCard({
   );
 }
 
-const timeRange = (start: string, end: string) => `${formatClassTime(start)} – ${formatClassTime(end)}`;
+const timeRange = (start: string, end: string, tz: string) => `${formatClassTime(tz, start)} – ${formatClassTime(tz, end)}`;
 
 // ── Class ────────────────────────────────────────────────────────────────────
 
@@ -235,6 +236,7 @@ export function ClassBookingCard({
   /** Tapping the card opens the class's detail. */
   onOpen?: (b: ApiBooking) => void;
 }) {
+  const tz = useStudioZone();
   const past = !ongoing && !canCancelClass(b.starts_at);
   const cancelled = b.state === "cancelled";
   const attended = b.check_in_state === "attended";
@@ -244,7 +246,7 @@ export function ClassBookingCard({
   // booked on ClassPass is cancelled on ClassPass.
   const open = memberCanCancel(b);
   const onClassPass = !cancelled && b.source === "classpass" && canCancelClass(b.starts_at);
-  const deadline = `${formatDate(b.cancel_deadline)} · ${formatClassTime(b.cancel_deadline)}`;
+  const deadline = `${formatDate(tz, b.cancel_deadline)} · ${formatClassTime(tz, b.cancel_deadline)}`;
 
   const status: Status | null = cancelled
     ? { label: "Cancelled", tone: "muted", icon: XCircle }
@@ -265,7 +267,7 @@ export function ClassBookingCard({
       stubTone={past || cancelled ? "muted" : ongoing ? "accent" : "default"}
       status={status}
       title={b.name}
-      when={timeRange(b.starts_at, b.ends_at)}
+      when={timeRange(b.starts_at, b.ends_at, tz)}
       chips={[
         b.instructor && { icon: UserRound, label: b.instructor.name },
         b.location && { icon: MapPin, label: b.location.name },
@@ -273,13 +275,13 @@ export function ClassBookingCard({
       qr={
         past || cancelled
           ? null
-          : { value: b.qr_token, label: b.name, subLabel: `${formatDate(b.starts_at)} · ${b.code}` }
+          : { value: b.qr_token, label: b.name, subLabel: `${formatDate(tz, b.starts_at)} · ${b.code}` }
       }
       code={past || cancelled ? null : b.code}
       highlight={ongoing}
       open={
         onOpen && {
-          label: `Details: ${b.name}, ${formatDate(b.starts_at)} ${timeRange(b.starts_at, b.ends_at)}`,
+          label: `Details: ${b.name}, ${formatDate(tz, b.starts_at)} ${timeRange(b.starts_at, b.ends_at, tz)}`,
           onOpen: () => onOpen(b),
         }
       }
@@ -333,6 +335,7 @@ export function PtBookingCard({
   policy: CancellationPolicy | null;
   onCancelled: (result: CancelPtRequestResult) => Promise<void>;
 }) {
+  const tz = useStudioZone();
   const scheduled = r.session ?? null;
   const slot0 = r.slots[0];
   const isPartner = r.role === "partner";
@@ -346,7 +349,7 @@ export function PtBookingCard({
   const canCancel = !isPartner && live;
 
   const when = scheduled ? (
-    timeRange(scheduled.starts_at, scheduled.ends_at)
+    timeRange(scheduled.starts_at, scheduled.ends_at, tz)
   ) : slot0 ? (
     <>
       {formatSlotRange(slot0)}
@@ -357,7 +360,7 @@ export function PtBookingCard({
   return (
     <BookingCard
       type="pt"
-      stub={scheduled ? scheduled.starts_at : slot0 ? `${slot0.proposed_date.slice(0, 10)}T12:00:00+08:00` : null}
+      stub={scheduled ? scheduled.starts_at : firstSlotAt(r, tz)}
       stubTone={r.status === "scheduled" ? "default" : r.status === "pending" ? "default" : "muted"}
       status={ptStatus(r)}
       title={`${kind} · ${r.class_name ?? "Any class type"}`}
@@ -372,7 +375,7 @@ export function PtBookingCard({
       ]}
       qr={
         scheduled && r.booking && r.status === "scheduled"
-          ? { value: r.booking.qr_token, label: `${kind} session`, subLabel: `${formatDate(scheduled.starts_at)} · ${r.booking.code}` }
+          ? { value: r.booking.qr_token, label: `${kind} session`, subLabel: `${formatDate(tz, scheduled.starts_at)} · ${r.booking.code}` }
           : null
       }
       code={r.status === "scheduled" ? r.booking?.code : null}
@@ -409,7 +412,7 @@ export function PtBookingCard({
           <ul className="mt-1 space-y-0.5 text-xs text-muted">
             {r.slots.map((s, i) => (
               <li key={i}>
-                {formatDate(s.proposed_date)} · {formatSlotRange(s)}
+                {formatPlainDate(s.proposed_date)} · {formatSlotRange(s)}
               </li>
             ))}
           </ul>
@@ -501,15 +504,16 @@ function PtCancel({
 
 // ── Workshop ─────────────────────────────────────────────────────────────────
 
-function workshopWhen(b: ApiWorkshopBooking): string {
+function workshopWhen(b: ApiWorkshopBooking, tz: string): string {
   if (!b.starts_at) return "Dates to be announced";
-  if (b.ends_at && formatDate(b.starts_at) !== formatDate(b.ends_at)) {
-    return `${formatDate(b.starts_at)} – ${formatDate(b.ends_at)}`;
+  if (b.ends_at && formatDate(tz, b.starts_at) !== formatDate(tz, b.ends_at)) {
+    return `${formatDate(tz, b.starts_at)} – ${formatDate(tz, b.ends_at)}`;
   }
-  return b.ends_at ? timeRange(b.starts_at, b.ends_at) : formatClassTime(b.starts_at);
+  return b.ends_at ? timeRange(b.starts_at, b.ends_at, tz) : formatClassTime(tz, b.starts_at);
 }
 
 export function WorkshopBookingCard({ booking: b, phase }: { booking: ApiWorkshopBooking; phase: BookingPhase }) {
+  const tz = useStudioZone();
   const cancelled = b.state === "cancelled";
   // Over, or cancelled: no ticket, nothing left to change.
   const past = phase === "past" || cancelled;
@@ -531,9 +535,9 @@ export function WorkshopBookingCard({ booking: b, phase }: { booking: ApiWorksho
       stubTone={past ? "muted" : phase === "ongoing" ? "accent" : "default"}
       status={status}
       title={b.workshop_name}
-      when={workshopWhen(b)}
+      when={workshopWhen(b, tz)}
       chips={[b.tier_name && { icon: Tag, label: b.tier_name }, b.location && { icon: MapPin, label: b.location.name }]}
-      qr={past ? null : { value: b.qr_token, label: b.workshop_name, subLabel: `${workshopWhen(b)} · ${b.code}` }}
+      qr={past ? null : { value: b.qr_token, label: b.workshop_name, subLabel: `${workshopWhen(b, tz)} · ${b.code}` }}
       code={past ? null : b.code}
       open={{ label: `Workshop: ${b.workshop_name}`, href: `/workshops/${b.workshop_id}` }}
     >
@@ -601,6 +605,7 @@ function corporateStatus(r: ApiCorporateRequest): Status {
 }
 
 export function CorporateBookingCard({ request: r }: { request: ApiCorporateRequest }) {
+  const tz = useStudioZone();
   // The studio's own number. A studio that has set none gets no button.
   const whatsapp = corporateWhatsappHref(useBrandCopy(WHATSAPP_COPY_KEY, ""), r.package.name);
   const s = r.session;
@@ -611,7 +616,7 @@ export function CorporateBookingCard({ request: r }: { request: ApiCorporateRequ
       stubTone={r.status === "pending" || r.status === "scheduled" ? "default" : "muted"}
       status={corporateStatus(r)}
       title={r.package.name}
-      when={s ? timeRange(s.starts_at, s.ends_at) : null}
+      when={s ? timeRange(s.starts_at, s.ends_at, tz) : null}
       chips={[
         s?.instructor_name && { icon: UserRound, label: s.instructor_name },
         s?.location_name && { icon: MapPin, label: s.location_name },
