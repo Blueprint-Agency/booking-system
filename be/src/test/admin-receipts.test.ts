@@ -298,6 +298,68 @@ describe('a studio admin reads every Receipt in the studio', { skip: integration
     )
   })
 
+  test('TEN-69 the Receipts date filter and the CSV date are the studio\'s own calendar days: at Sydney a Receipt issued at 00:30 on the 12th is the 12th, where Singapore is still on the 11th', async () => {
+    const tag = `Days ${run}`
+    const adminOfTwo = await staff(two, 'admin')
+    const syd = await member(two, `Syd ${tag}`)
+    const sing = await member(one, `Sing ${tag}`)
+    // 00:30, 23:30 on 12 August 2031 and 00:30 on the 13th in Sydney (UTC+10): 22:30 on the 11th, 13:30 and 14:30 UTC on the 12th in Singapore.
+    const early = await made.issueFor(two.id, syd.clientId, { at: new Date('2031-08-11T14:30:00Z') })
+    const late = await made.issueFor(two.id, syd.clientId, { at: new Date('2031-08-12T13:30:00Z') })
+    const next = await made.issueFor(two.id, syd.clientId, { at: new Date('2031-08-12T14:30:00Z') })
+    // The control: 00:30 and 23:30 on the 12th, and 00:30 on the 13th in Singapore (UTC+8).
+    const sgEarly = await made.issueFor(one.id, sing.clientId, { at: new Date('2031-08-11T16:30:00Z') })
+    const sgLate = await made.issueFor(one.id, sing.clientId, { at: new Date('2031-08-12T15:30:00Z') })
+    const sgNext = await made.issueFor(one.id, sing.clientId, { at: new Date('2031-08-12T16:30:00Z') })
+
+    const ids = async (query: string, headers: Record<string, string>) =>
+      (await listed(`${query}`, headers)).receipts.map((r: any) => r.id).sort()
+    const q = `q=${encodeURIComponent(tag)}`
+    assert.deepEqual(await ids(`?${q}&from=2031-08-12&to=2031-08-12`, adminOfTwo), [early.id, late.id].sort(), 'Sydney\'s 12th')
+    assert.deepEqual(await ids(`?${q}&from=2031-08-13`, adminOfTwo), [next.id], 'from is the start of Sydney\'s 13th')
+    assert.deepEqual(await ids(`?${q}&to=2031-08-11`, adminOfTwo), [], 'to is the end of Sydney\'s 11th')
+    assert.deepEqual(await ids(`?${q}&from=2031-08-12&to=2031-08-12`, adminOfOne), [sgEarly.id, sgLate.id].sort(), 'Singapore\'s 12th')
+    assert.deepEqual(await ids(`?${q}&from=2031-08-13`, adminOfOne), [sgNext.id])
+
+    const exported = async (headers: Record<string, string>) => {
+      const res = await harness.app.request(`/api/v1/portal/admin/receipts/export.csv?${q}`, { headers })
+      assert.equal(res.status, 200, res.status === 200 ? '' : await res.text())
+      return (await res.text()).split('\r\n').slice(1).map(line => line.split(',').slice(0, 2)).sort()
+    }
+    assert.deepEqual(
+      await exported(adminOfTwo),
+      [
+        [early.displayNumber, '2031-08-12'],
+        [late.displayNumber, '2031-08-12'],
+        [next.displayNumber, '2031-08-13'],
+      ].sort(),
+    )
+    assert.deepEqual(
+      await exported(adminOfOne),
+      [
+        [sgEarly.displayNumber, '2031-08-12'],
+        [sgLate.displayNumber, '2031-08-12'],
+        [sgNext.displayNumber, '2031-08-13'],
+      ].sort(),
+    )
+  })
+
+  test('TEN-70 a Receipt is dated with the day it was issued and paid on the studio\'s clock, on the page the member opens and in the PDF text', async () => {
+    const tag = `Dated ${run}`
+    const syd = await member(two, `Syd ${tag}`)
+    const sing = await member(one, `Sing ${tag}`)
+    // 00:30 on 12 August 2031 in Sydney is 22:30 on the 11th in Singapore; the control is 00:30 on the 12th in Singapore.
+    const sydney = await made.issueFor(two.id, syd.clientId, { at: new Date('2031-08-11T14:30:00Z') })
+    const singapore = await made.issueFor(one.id, sing.clientId, { at: new Date('2031-08-11T16:30:00Z') })
+
+    const page = async (who: Member, id: string) =>
+      (await expectStatus(await harness.app.request(`/api/v1/me/receipts/${id}`, { headers: who.headers }), 200)).html as string
+    const text = (html: string) => html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ')
+    assert.match(text(await page(syd, sydney.id)), /Date paid 12 Aug 2031/)
+    assert.doesNotMatch(text(await page(syd, sydney.id)), /11 Aug 2031/)
+    assert.match(text(await page(sing, singapore.id)), /Date paid 12 Aug 2031/)
+  })
+
   test('INV-96 a Receipt billed to a member\'s Billing details exports its Bill to name and its address on one line', async () => {
     const tag = `Billed ${run}`
     const kai = await member(one, `Kai ${tag}`)

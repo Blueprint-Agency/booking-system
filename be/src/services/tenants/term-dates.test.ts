@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import { effectiveStatus, isIsoDate, localDate, termEndDate, termEnded } from './term-dates'
+import { effectiveStatus, isIsoDate, localDate, termEndDate, termEnded, todayFor } from './term-dates'
 
 describe('term dates', () => {
   test('a date must exist to be one', () => {
@@ -47,7 +47,12 @@ describe('term dates', () => {
     assert.equal(effectiveStatus({ ...ended, termEndDate: '2026-06-01', status: 'active' }, at), 'active')
   })
 
-  test('an unreadable zone reads as UTC rather than throwing', () => {
-    assert.equal(termEnded({ timezone: 'Not/AZone', termEndDate: '2026-04-01' }, new Date('2026-04-01T00:00:00Z')), true)
+  test('an unreadable zone is an error, never read as UTC', () => {
+    assert.throws(
+      () => termEnded({ timezone: 'Not/AZone', termEndDate: '2026-04-01' }, new Date('2026-04-01T00:00:00Z')),
+      RangeError,
+    )
+    assert.throws(() => todayFor('Not/AZone', new Date('2026-04-01T00:00:00Z')), RangeError)
+    assert.equal(todayFor('Australia/Sydney', new Date('2026-03-31T14:00:00Z')), '2026-04-01')
   })
 })

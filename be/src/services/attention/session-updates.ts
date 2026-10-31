@@ -5,7 +5,7 @@ import { clients, staffUsers } from '../../db/schema/identity'
 import { ptSessionClients, ptSessions, workshopDays, workshops } from '../../db/schema/schedule'
 import { readRoster, type RosterEventKind } from '../schedule/roster'
 import { localDate } from '../tenants/term-dates'
-import { loadTenantById } from '../tenants/tenants'
+import { tenantTimezone } from '../tenants/tenants'
 import { formatWhen } from './format'
 import type { SessionChangedPayload, SessionKind } from './session-update-copy'
 import { recordUpdate } from './updates'
@@ -47,7 +47,7 @@ export async function readInstructors(
   }
 }
 
-const timezoneOf = async (tenantId: string) => (await loadTenantById(tenantId))?.timezone ?? 'UTC'
+const timezoneOf = tenantTimezone
 
 /** "2026-10-28": the day in the studio's zone. */
 const dayOf = (at: Date, timezone: string) => localDate(timezone, at)

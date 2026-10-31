@@ -593,6 +593,51 @@ describe('instructor leave submission over HTTP', { skip: integrationTestsEnable
     assert.equal(edge.body.status, 'pending')
   })
 
+  test('TEN-64 "today" for the leave rules is the studio\'s own day: at 00:30 in Sydney annual leave starting that day is refused and medical leave may be backdated seven of Sydney\'s days, where Singapore is still on the day before', async () => {
+    // 00:30 on 12 August 2031 in Sydney (UTC+10); 22:30 on the 11th in Singapore.
+    harness.clock.set(new Date('2031-08-11T14:30:00Z'))
+    try {
+      const syd = await instructor(two, 'Syd Today')
+      const sing = await instructor(one, 'Sing Today')
+
+      const sameDay = await submit(syd, { type: 'annual', start_date: '2031-08-12' })
+      assert.equal(sameDay.status, 400, JSON.stringify(sameDay.body))
+      assert.equal(sameDay.body.error, 'leave_must_start_in_future')
+      assert.equal((await submit(syd, { type: 'annual', start_date: '2031-08-13' })).status, 201)
+      assert.equal((await submit(syd, { type: 'medical', start_date: '2031-08-05' })).status, 201, 'seven Sydney days back')
+      const tooFar = await submit(syd, { type: 'medical', start_date: '2031-08-04' })
+      assert.equal(tooFar.status, 400, JSON.stringify(tooFar.body))
+      assert.equal(tooFar.body.error, 'medical_leave_backdated_too_far')
+
+      // The control: Singapore is still on the 11th, so the 12th is its tomorrow and the 4th is seven days back.
+      assert.equal((await submit(sing, { type: 'annual', start_date: '2031-08-12' })).status, 201)
+      assert.equal((await submit(sing, { type: 'medical', start_date: '2031-08-04' })).status, 201)
+      assert.equal((await submit(sing, { type: 'medical', start_date: '2031-08-03' })).status, 400)
+    } finally {
+      harness.clock.reset()
+    }
+  })
+
+  test('TEN-65 a class or private session is a clash with leave when it falls on the studio\'s leave day: at Sydney one at 00:30 the next day is not, and one at 00:30 on the day is', async () => {
+    harness.clock.set(new Date('2031-08-01T00:00:00Z'))
+    try {
+      const syd = await instructor(two, 'Syd Clash')
+      // 00:30 on 12 August in Sydney is 14:30 UTC on the 11th — Singapore's 11th, still.
+      await addClass(two, syd, new Date('2031-08-12T00:30:00+10:00'))
+      const onTheDay = await submit(syd, { type: 'annual', start_date: '2031-08-12' })
+      assert.equal(onTheDay.status, 409, JSON.stringify(onTheDay.body))
+      assert.match(onTheDay.body.message, /a class on 12 Aug, 00:30–01:30/, 'the clash is named on the studio\'s clock')
+      assert.equal((await leaveRowsOf(syd)).length, 0)
+
+      // 00:30 on the 14th in Sydney is 14:30 UTC on the 13th: inside Singapore's 13th, not Sydney's.
+      await addPtSession(two, syd, new Date('2031-08-14T00:30:00+10:00'))
+      const nextDay = await submit(syd, { type: 'annual', start_date: '2031-08-13' })
+      assert.equal(nextDay.status, 201, JSON.stringify(nextDay.body))
+    } finally {
+      harness.clock.reset()
+    }
+  })
+
   test('LEV-50 backdated medical leave over a class he already taught is accepted, and the class, attendance, check-in and pay stand', async () => {
     const xia = await instructor(one, 'Xia Backdated')
     const date = sgDate(-2)

@@ -328,6 +328,59 @@ describe('credit history over HTTP', { skip: integrationTestsEnabled ? false : S
     assert.deepEqual(summary(await historyOf(who, pkg)), summary(history))
   })
 
+  test('TEN-80 a package\'s expiry change is worded on the studio\'s clock: the refusal names the booking\'s time and day, and the credit-history line the new date, as Sydney reads them', async () => {
+    const who = await member(two, 'sydneyexpiry')
+    const pkg = await give(two, who, 5)
+    // The class starts at 00:30 on 12 August 2031 in Sydney (UTC+10); it is 14:30 UTC on the 11th. The package runs past it.
+    const startsAt = new Date('2031-08-11T14:30:00Z')
+    const classId = await addClass(two, startsAt.getTime() - Date.now())
+    await harness.db
+      .update(schema.clientPackages)
+      .set({ expiresAt: new Date('2031-09-01T12:00:00Z') })
+      .where(eq(schema.clientPackages.id, pkg))
+    await book(who, classId)
+
+    const edit = (expiresAt: Date) =>
+      harness.app.request(`/api/v1/portal/admin/clients/${who.clientId}/packages/${pkg}/expiry`, {
+        method: 'POST',
+        headers: { ...two.admin.headers, ...json },
+        body: JSON.stringify({ expires_at: expiresAt.toISOString(), reason: 'Desk correction' }),
+      })
+    const refused = await expectStatus(await edit(new Date('2031-08-11T14:00:00Z')), 409)
+    assert.equal(refused.error, 'expiry_before_paid_booking')
+    assert.match(String(refused.message), /pays for a booking at 12:30 am on \w{3},? 12 Aug 2031\./)
+
+    // 14:30 UTC on the 12th is 00:30 on the 13th in Sydney, though still the 12th in UTC.
+    await expectStatus(await edit(new Date('2031-08-12T14:30:00Z')), 200)
+    const [adjustment] = await harness.db
+      .select({ reason: schema.manualAdjustments.reason })
+      .from(schema.manualAdjustments)
+      .where(eq(schema.manualAdjustments.clientPackageId, pkg))
+    assert.equal(adjustment?.reason, 'Expiry changed from 2031-09-01 to 2031-08-13: Desk correction')
+
+    // The control, at a Singapore studio: 16:30 UTC on the 12th is 00:30 on the 13th there too (UTC+8),
+    // and the line states that studio day, not the UTC one.
+    const sing = await member(one, 'singexpiry')
+    const singPkg = await give(one, sing, 5)
+    await harness.db
+      .update(schema.clientPackages)
+      .set({ expiresAt: new Date('2031-09-01T12:00:00Z') })
+      .where(eq(schema.clientPackages.id, singPkg))
+    await expectStatus(
+      await harness.app.request(`/api/v1/portal/admin/clients/${sing.clientId}/packages/${singPkg}/expiry`, {
+        method: 'POST',
+        headers: { ...one.admin.headers, ...json },
+        body: JSON.stringify({ expires_at: '2031-08-12T16:30:00.000Z', reason: 'Desk correction' }),
+      }),
+      200,
+    )
+    const [singAdjustment] = await harness.db
+      .select({ reason: schema.manualAdjustments.reason })
+      .from(schema.manualAdjustments)
+      .where(eq(schema.manualAdjustments.clientPackageId, singPkg))
+    assert.equal(singAdjustment?.reason, 'Expiry changed from 2031-09-01 to 2031-08-13: Desk correction')
+  })
+
   test('CRD-23 a No-show is recorded on its booking as credit kept, with the staff member who marked it', async () => {
     const who = await member(one, 'noshow')
     const pkg = await give(one, who, 3)

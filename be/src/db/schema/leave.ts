@@ -28,7 +28,7 @@ import { leaveTypeEnum, leaveStatusEnum, leaveHalfDayEnum } from '../enums'
  * staff member's Assigned Days or adjusting a Pool, or crossing a year boundary,
  * cannot alter what a past request counted against.
  *
- * Dates are plain `date` — Asia/Singapore calendar days, not instants.
+ * Dates are plain `date` — calendar days on the studio's clock, not instants.
  */
 export const leaveRequests = pgTable(
   'leave_requests',

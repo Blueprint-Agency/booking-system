@@ -11,7 +11,8 @@ import { rooms } from '../../db/schema/catalog'
 import { staffUsers } from '../../db/schema/identity'
 import { leaveRequests } from '../../db/schema/leave'
 import { leaveWindow, OCCUPYING_STATUSES, type LeaveHalfDay, type PlainDate } from '../leave/rules'
-import { sgFormat } from '../../lib/time'
+import { zoneFormat } from '../../lib/studio-time'
+import { tenantTimezone } from '../tenants/tenants'
 import { ConflictError } from '../../shared/errors'
 import { mergeRoster } from './roster-merge'
 import {
@@ -121,16 +122,20 @@ interface LeaveRun {
 }
 
 /**
- * Leave, as occupancy. Each run becomes the Singapore-time window it really is
- * — `leaveWindow` is the one place that arithmetic lives, half days included —
- * and then goes through the same overlap rule as every event, so a full day
- * cannot bleed into the adjacent one and a half day leaves the other half of
- * the day bookable. Pure: see occupancy.test.ts.
+ * Leave, as occupancy. Each run becomes the window on the studio's clock it
+ * really is — `leaveWindow` is the one place that arithmetic lives, half days
+ * included — and then goes through the same overlap rule as every event, so a
+ * full day cannot bleed into the adjacent one and a half day leaves the other
+ * half of the day bookable. Pure: see occupancy.test.ts.
  */
-export function leaveConflicts(runs: readonly LeaveRun[], window: TimeWindow): OccupancyConflict[] {
+export function leaveConflicts(
+  runs: readonly LeaveRun[],
+  window: TimeWindow,
+  timezone: string,
+): OccupancyConflict[] {
   const found: OccupancyConflict[] = []
   for (const run of runs) {
-    const w = leaveWindow(run.startDate, run.endDate, run.halfDay)
+    const w = leaveWindow(timezone, run.startDate, run.endDate, run.halfDay)
     if (!overlaps(w, window)) continue
     found.push({
       kind: 'leave',
@@ -149,22 +154,27 @@ const KIND_LABEL: Record<EventKind, string> = {
   corporate_session: 'corporate session',
 }
 
-// Studio time — the only clock an admin reads a schedule in.
-const sgDate = sgFormat('en-GB', { day: 'numeric', month: 'short' })
-const sgTime = sgFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false })
+// The studio's clock — the only one an admin reads a schedule in.
+const studioDate = (timezone: string) => zoneFormat(timezone, 'en-GB', { day: 'numeric', month: 'short' })
+const studioTime = (timezone: string) =>
+  zoneFormat(timezone, 'en-GB', { hour: '2-digit', minute: '2-digit', hour12: false })
 
 /**
  * The days a leave conflict covers, as studio dates: "on 12 Aug", or "from 12
  * Aug to 14 Aug". Exported because the leave submission path builds its own
  * sentence around the same dates (services/leave/requests.ts).
  */
-export function leaveDaysPhrase(conflict: Pick<OccupancyConflict, 'starts_at' | 'ends_at'>): string {
+export function leaveDaysPhrase(
+  conflict: Pick<OccupancyConflict, 'starts_at' | 'ends_at'>,
+  timezone: string,
+): string {
+  const date = studioDate(timezone)
   const from = new Date(conflict.starts_at)
   // The window is half-open, so the last day it covers ends an instant before.
   const last = new Date(Date.parse(conflict.ends_at) - 1)
-  return sgDate.format(from) === sgDate.format(last)
-    ? `on ${sgDate.format(from)}`
-    : `from ${sgDate.format(from)} to ${sgDate.format(last)}`
+  return date.format(from) === date.format(last)
+    ? `on ${date.format(from)}`
+    : `from ${date.format(from)} to ${date.format(last)}`
 }
 
 /**
@@ -175,18 +185,18 @@ export function leaveDaysPhrase(conflict: Pick<OccupancyConflict, 'starts_at' | 
  * Leave gets its own phrasing: somebody who is away is on leave, not booked, and
  * a whole day has no clock time worth showing.
  */
-export function conflictMessage(who: string, conflicts: OccupancyConflict[]): string {
+export function conflictMessage(who: string, conflicts: OccupancyConflict[], timezone: string): string {
   const first = conflicts[0]
   if (!first) return `${who} is not available at that time.`
   const from = new Date(first.starts_at)
   const to = new Date(first.ends_at)
   const more = conflicts.length > 1 ? ` (and ${conflicts.length - 1} more)` : ''
   if (first.kind === 'leave') {
-    return `${who} is on leave ${leaveDaysPhrase(first)}${more}.`
+    return `${who} is on leave ${leaveDaysPhrase(first, timezone)}${more}.`
   }
   return (
-    `${who} is already booked — a ${KIND_LABEL[first.kind]} on ${sgDate.format(from)}, ` +
-    `${sgTime.format(from)}–${sgTime.format(to)}${more}.`
+    `${who} is already booked — a ${KIND_LABEL[first.kind]} on ${studioDate(timezone).format(from)}, ` +
+    `${studioTime(timezone).format(from)}–${studioTime(timezone).format(to)}${more}.`
   )
 }
 
@@ -337,6 +347,7 @@ export async function findOccupancyConflicts(
   // become impossible to approve in the gap before the decision.
   // ponytail: reads one instructor's pending+approved rows and lets the pure
   // rule decide — tens of rows. Narrow by date in SQL if that ever grows.
+  // A leave day is a day on the studio's clock, so the rule is handed its zone.
   const occupied: OccupancyConflict[] = leaveConflicts(
     await exec(tx)
       .select({
@@ -354,6 +365,7 @@ export async function findOccupancyConflicts(
         ),
       ),
     window,
+    await tenantTimezone(tenantId),
   )
 
   // An instructor's events aren't a column — ask the roster who is on each
@@ -423,7 +435,11 @@ export async function findClash(
   return {
     subject: subject.kind,
     subject_id: subject.id,
-    message: conflictMessage(await subjectLabel(tenantId, subject, tx), conflicts),
+    message: conflictMessage(
+      await subjectLabel(tenantId, subject, tx),
+      conflicts,
+      await tenantTimezone(tenantId),
+    ),
     conflicts,
   }
 }

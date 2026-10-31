@@ -11,7 +11,7 @@ import type { ReceiptRow } from './issue'
  * Scenario Inventory (`docs/md/test-scenarios.md`).
  */
 
-const STUDIO = { name: 'Northwind Yoga', logoUrl: null }
+const STUDIO = { name: 'Northwind Yoga', logoUrl: null, timezone: 'Asia/Singapore' }
 
 const paid: ReceiptRow = {
   tenantId: '00000000-0000-4000-8000-000000000001',
@@ -88,7 +88,7 @@ test('INV-88 INV-09 INV-53 the Receipt as HTML: paid, refunded and free each rea
   const hostile = receiptHtmlPage(
     receiptDocument(
       { ...paid, buyerName: '<script>alert(1)</script>', sellerFooter: 'Thanks & see you <b>soon</b>' },
-      { name: 'A "studio" <img>', logoUrl: 'javascript:alert(1)' },
+      { name: 'A "studio" <img>', logoUrl: 'javascript:alert(1)', timezone: 'Asia/Singapore' },
     ),
   )
   assert.doesNotMatch(hostile, /<script>|<b>|<img>|javascript:/, 'nothing a studio or a member typed becomes markup')
@@ -130,7 +130,11 @@ test('INV-103 nothing typed into a Bill to, the studio\'s Business details or it
           country: 'SG',
         },
       },
-      { name: 'Northwind <script>', logoUrl: 'https://cdn.example.test/logo.png" onerror="alert(1)' },
+      {
+        name: 'Northwind <script>',
+        logoUrl: 'https://cdn.example.test/logo.png" onerror="alert(1)',
+        timezone: 'Asia/Singapore',
+      },
     ),
   )
   assert.doesNotMatch(page, /<(b|i|u|em|s|svg|script|a)\b|<img src=x|onerror="|href="javascript/, page)

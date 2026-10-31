@@ -9,8 +9,9 @@
 import { and, count, desc, eq, gte, ilike, isNotNull, isNull, lt, or, type SQL } from 'drizzle-orm'
 import { db } from '../../db'
 import { receipts } from '../../db/schema/ledger'
-import { sgDayWindow, type PlainDate } from '../../lib/time'
+import { dayWindow, type PlainDate } from '../../lib/studio-time'
 import { NotFoundError } from '../../shared/errors'
+import { tenantTimezone } from '../tenants/tenants'
 import type { ReceiptRow } from './issue'
 import { receiptItem } from './snapshot'
 
@@ -56,7 +57,8 @@ export async function listMemberReceipts(
   clientId: string,
   query: MemberReceiptQuery,
 ): Promise<{ rows: ReceiptSummary[]; total: number }> {
-  const { rows, total } = await receiptsPage(receiptsWhere(tenantId, { clientId, from: query.from, to: query.to }), query)
+  const where = await receiptsWhere(tenantId, { clientId, from: query.from, to: query.to })
+  const { rows, total } = await receiptsPage(where, query)
   return { rows: rows.map(summarise), total }
 }
 
@@ -104,11 +106,18 @@ interface StudioReceiptQuery extends StudioReceiptFilters, MemberReceiptQuery {}
  * The studio's Receipts the filters keep, or one member's of them. The search
  * reads the Receipt's own snapshot.
  */
-function receiptsWhere(tenantId: string, query: StudioReceiptFilters & { clientId?: string }): SQL | undefined {
+async function receiptsWhere(
+  tenantId: string,
+  query: StudioReceiptFilters & { clientId?: string },
+): Promise<SQL | undefined> {
   const where: SQL[] = [eq(receipts.tenantId, tenantId)]
   if (query.clientId) where.push(eq(receipts.clientId, query.clientId))
-  if (query.from) where.push(gte(receipts.issuedAt, sgDayWindow(query.from).startsAt))
-  if (query.to) where.push(lt(receipts.issuedAt, sgDayWindow(query.to).endsAt))
+  // `from` and `to` are the studio's calendar days, on its own clock.
+  if (query.from || query.to) {
+    const timezone = await tenantTimezone(tenantId)
+    if (query.from) where.push(gte(receipts.issuedAt, dayWindow(timezone, query.from).startsAt))
+    if (query.to) where.push(lt(receipts.issuedAt, dayWindow(timezone, query.to).endsAt))
+  }
   if (query.kind) where.push(eq(receipts.kind, query.kind))
   if (query.status === 'refunded') where.push(isNotNull(receipts.refundedAt))
   if (query.status === 'issued') where.push(isNull(receipts.refundedAt))
@@ -154,7 +163,7 @@ export async function listStudioReceipts(
   tenantId: string,
   query: StudioReceiptQuery,
 ): Promise<{ rows: StudioReceiptSummary[]; total: number }> {
-  const { rows, total } = await receiptsPage(receiptsWhere(tenantId, query), query)
+  const { rows, total } = await receiptsPage(await receiptsWhere(tenantId, query), query)
   return { rows: rows.map(studioSummary), total }
 }
 
@@ -163,13 +172,17 @@ export async function listStudioReceipts(
  * file for the bookkeeper. The same filters and order as the list, so
  * the export is the list the admin was looking at, every page of it.
  */
-export async function exportStudioReceipts(tenantId: string, filters: StudioReceiptFilters): Promise<StudioReceiptSummary[]> {
+export async function exportStudioReceipts(
+  tenantId: string,
+  filters: StudioReceiptFilters,
+): Promise<{ rows: StudioReceiptSummary[]; timezone: string }> {
   const rows = await db
     .select()
     .from(receipts)
-    .where(receiptsWhere(tenantId, filters))
+    .where(await receiptsWhere(tenantId, filters))
     .orderBy(desc(receipts.issuedAt), desc(receipts.number))
-  return rows.map(studioSummary)
+  // The zone the file's dates are written on: the studio's own.
+  return { rows: rows.map(studioSummary), timezone: await tenantTimezone(tenantId) }
 }
 
 /**

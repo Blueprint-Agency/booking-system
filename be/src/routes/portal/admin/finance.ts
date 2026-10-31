@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { getFinance, UNATTRIBUTED } from '../../../services/finance/list'
 import { getFinanceOverview } from '../../../services/finance/overview'
 import { financeCsv } from '../../../services/finance/csv'
+import { tenantTimezone } from '../../../services/tenants/tenants'
 import { MONEY_EVENT_TYPES } from '../../../services/finance/events'
 import { METHOD_CATEGORIES } from '../../../services/finance/methods'
 import {
@@ -126,7 +127,7 @@ const app = new Hono()
   // bookkeeper's CSV can never disagree with what the admin was looking at.
   .get('/export', zValidator('query', listQuery), async c => {
     const summary = await getFinance(tenantId(c), filterFrom(c.req.valid('query')))
-    return c.body(financeCsv(summary), 200, {
+    return c.body(financeCsv(summary, await tenantTimezone(tenantId(c))), 200, {
       'Content-Type': 'text/csv; charset=utf-8',
       'Content-Disposition': 'attachment; filename="finance.csv"',
     })

@@ -233,7 +233,7 @@ async function memberCounts(tenantId: string, filter: FinanceFilter): Promise<Me
         eq(clientPackages.active, true),
         isNull(clients.deletedAt),
         // Expiry flips `active` on a nightly sweep, so between the expiry and
-        // 01:00 SGT the flag is stale. The bound closes that window.
+        // the nightly hour the flag is stale. The bound closes that window.
         // A Dormant Unlimited Plan has no expiry yet (its clock starts at
         // Activation). It is an entitlement the member holds, so it counts.
         or(isNull(clientPackages.expiresAt), gte(clientPackages.expiresAt, clockNow())),

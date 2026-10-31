@@ -1,4 +1,4 @@
-import { sgDayWindow, sgToday } from '../../lib/time'
+import { dayWindow, localDate } from '../../lib/studio-time'
 import { countUnpricedPayroll } from '../payroll/list'
 import { formatPlainDay } from './format'
 import type { AttentionContext, AttentionProvider, ProviderItem } from './types'
@@ -16,19 +16,19 @@ import type { AttentionContext, AttentionProvider, ProviderItem } from './types'
  */
 const FINANCE_PAGE = '/admin/finance'
 
-/** The first day of the previous month, and today, as plain dates. */
-function payWindow(now: Date): { from: string; to: string } {
-  const to = sgToday(now)
+/** The first day of the previous month, and today, as plain dates on the studio's clock. */
+function payWindow(timezone: string, now: Date): { from: string; to: string } {
+  const to = localDate(timezone, now)
   const [year, month] = to.split('-').map(Number) as [number, number]
   const from = month === 1 ? `${year - 1}-12-01` : `${year}-${String(month - 1).padStart(2, '0')}-01`
   return { from, to }
 }
 
 async function unpricedCount(ctx: AttentionContext): Promise<number> {
-  const { from, to } = payWindow(ctx.now)
+  const { from, to } = payWindow(ctx.timezone, ctx.now)
   return countUnpricedPayroll(ctx.tenantId, {
-    from: sgDayWindow(from).startsAt,
-    to: new Date(sgDayWindow(to).endsAt.getTime() - 1),
+    from: dayWindow(ctx.timezone, from).startsAt,
+    to: new Date(dayWindow(ctx.timezone, to).endsAt.getTime() - 1),
   })
 }
 
@@ -42,7 +42,7 @@ export const instructorPayMissing: AttentionProvider = {
   list: async ctx => {
     const n = await unpricedCount(ctx)
     if (n === 0) return []
-    const { from, to } = payWindow(ctx.now)
+    const { from, to } = payWindow(ctx.timezone, ctx.now)
     const item: ProviderItem = {
       subjectId: 'window',
       location: null,

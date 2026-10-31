@@ -44,6 +44,7 @@ import { heldPaymentsFor, type HeldPayments } from './refunds'
 import { checkoutSessionParams, type CheckoutLine } from './checkout-session'
 import { createSessionSurvivingStaleCustomer, providerCustomerFor } from './payment-customers'
 import { daysSilent, silenceNotice, silentCutoff } from './refund-notice'
+import { tenantTimezone } from '../tenants/tenants'
 
 /** An unfinished Purchase, as every screen that shows one needs to see it. */
 export interface OpenPurchaseView {
@@ -607,6 +608,7 @@ export async function listSilentPartPaidPurchases(
   // member page makes, so both screens withhold the button on the same terms.
   const held = await heldPaymentsFor(tenantId, rows.map(r => r.purchase.id))
 
+  const timezone = await tenantTimezone(tenantId)
   const out: SilentPurchaseView[] = []
   for (const row of rows) {
     if (!row.lastPaymentAt) continue
@@ -631,7 +633,7 @@ export async function listSilentPartPaidPurchases(
       clientEmail: row.clientEmail,
       lastPaymentAt,
       daysSilent: daysSilent(lastPaymentAt, now),
-      silenceNotice: silenceNotice(lastPaymentAt, now),
+      silenceNotice: silenceNotice(lastPaymentAt, now, timezone),
     })
   }
   return out

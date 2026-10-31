@@ -1,4 +1,4 @@
-import { daysBetween, sgToday } from '../../lib/time'
+import { daysBetween, instantAt, localDate } from '../../lib/studio-time'
 import { countPendingLeaveForDecision, listPendingLeaveForDecision, type PendingLeaveForDecision } from '../leave/pending'
 import type { AttentionContext, AttentionProvider, ProviderItem } from './types'
 
@@ -20,8 +20,8 @@ function day(date: string, thisYear: string): string {
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
 
-function toItem(ctx: AttentionContext, r: PendingLeaveForDecision): ProviderItem {
-  const today = sgToday(ctx.now)
+export function toItem(ctx: AttentionContext, r: PendingLeaveForDecision): ProviderItem {
+  const today = localDate(ctx.timezone, ctx.now)
   const thisYear = today.slice(0, 4)
   const range =
     r.startDate === r.endDate
@@ -46,7 +46,8 @@ function toItem(ctx: AttentionContext, r: PendingLeaveForDecision): ProviderItem
     subjectId: r.id,
     location: null,
     occurredAt: r.createdAt,
-    deadlineAt: new Date(`${r.startDate}T00:00:00+08:00`),
+    // The start of its first day on the studio's clock.
+    deadlineAt: instantAt(ctx.timezone, r.startDate, '00:00'),
     title: `${r.applicantName} asked for ${r.type} leave, ${range}${half}`,
     detail: [plural(r.days, 'day'), timing, flag].filter(Boolean).join(' · '),
     href: `${LEAVE_PAGE}?request=${r.id}`,

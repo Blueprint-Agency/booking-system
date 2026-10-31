@@ -21,11 +21,12 @@ import { DEFAULT_PT_BOOKING_CONFIG } from '../../db/seed/policy'
 import { assertPackageCoversSession, sweepExpired } from '../packages/activation'
 import { debitCredits, type Tx } from '../packages/ledger'
 import { ptSessionCost } from './cost'
-import { daysBetween, sgInstant, sgToday } from '../../lib/time'
+import { daysBetween, instantAt, localDate, plusCalendarDays } from '../../lib/studio-time'
 import { now as clockNow } from '../../lib/clock'
 import { sendPtRequestSubmittedEmail } from '../notifications/send-pt-request-email'
+import { tenantTimezone } from '../tenants/tenants'
 
-/** The days after today, in Singapore, a member may propose a private session on. */
+/** The days after today, on the studio's clock, a member may propose a private session on. */
 export interface PtBookingWindow {
   /** Earliest: at least this many days after today. */
   minDays: number
@@ -56,9 +57,9 @@ export async function readPtBookingWindow(tenantId: string): Promise<PtBookingWi
 }
 
 export interface PtRequestSlotInput {
-  /** YYYY-MM-DD (local Singapore date). */
+  /** YYYY-MM-DD (the studio's calendar date). */
   proposedDate: string
-  /** HH:mm 24h, local. */
+  /** HH:mm 24h, a wall-clock time at the studio. */
   startTime: string
   /**
    * HH:mm 24h, local. Retired — members now propose a start time only — but
@@ -96,11 +97,12 @@ export async function submitPtRequest(
 ): Promise<{ ptRequestId: string }> {
   if (input.slots.length === 0) throw new BadRequestError('no_slots')
   const window = await readPtBookingWindow(tenantId)
-  // The studio's Book in advance window, counted in Singapore days from today:
-  // no sooner than its minimum, so it has time to arrange the session, and no
-  // later than its maximum.
+  // The studio's Book in advance window, counted in the studio's calendar days
+  // from today: no sooner than its minimum, so it has time to arrange the
+  // session, and no later than its maximum.
   // The app's clock (lib/clock), like every other rule that turns on "now".
-  const today = sgToday(clockNow())
+  const timezone = await tenantTimezone(tenantId)
+  const today = localDate(timezone, clockNow())
   for (const s of input.slots) {
     const daysAhead = daysBetween(today, s.proposedDate)
     if (daysAhead < window.minDays) {
@@ -154,7 +156,10 @@ export async function submitPtRequest(
 
     const notExpired = pkg.expiresAt === null || pkg.expiresAt > now
     if (!pkg.active || !notExpired) throw new ConflictError('package_not_consumable')
-    for (const s of input.slots) assertPackageCoversSession(pkg, sgInstant(s.proposedDate, s.startTime), now)
+    // A proposed slot is a wall-clock time at the studio.
+    for (const s of input.slots) {
+      assertPackageCoversSession(pkg, instantAt(timezone, s.proposedDate, s.startTime), now, timezone)
+    }
 
     // The member picks which PT package pays, and any number may run at once
     // (be/docs/adr/0010). A Dormant pick stays Dormant: a PT package Activates
@@ -165,8 +170,9 @@ export async function submitPtRequest(
     const cost = ptSessionCost(input.sessionType)
     if ((pkg.remaining ?? 0) < cost) throw new ConflictError('insufficient_pt_credit')
 
-    const expiresAt = new Date(now)
-    expiresAt.setDate(expiresAt.getDate() + window.maxDays)
+    // The request waits as many calendar days as the window reaches ahead, at
+    // the same time of day on the studio's clock.
+    const expiresAt = plusCalendarDays(timezone, now, window.maxDays)
 
     // Debit through the credit ledger: it re-derives `active` and writes the
     // credit-movement audit row, so the cancel/expiry refund is reversible to

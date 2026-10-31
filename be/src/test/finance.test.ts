@@ -1141,6 +1141,32 @@ describe('Finance over HTTP', { skip: integrationTestsEnabled ? false : SKIP_REA
     assert.equal(moneyIn, 295)
   })
 
+  test('TEN-71 the CSV date and time columns are on the studio\'s own clock: Sydney\'s 00:30 on the 12th is 22:30 on the 11th at Singapore, and daylight saving moves the offset', async () => {
+    // Orders at fixed instants in 2030-31, in windows no other test reads.
+    const order = (at: Studio, who: Member, title: string, when: string) =>
+      merchOrder(at, who, title, '12.00', new Date(when), true)
+    await order(two, kai, 'Syd midnight', '2031-08-11T14:30:00Z')
+    await order(two, kai, 'Syd evening', '2031-08-12T13:30:00Z')
+    await order(one, mia, 'Sing midnight', '2031-08-11T16:30:00Z')
+    // 03:30 on 6 October 2030 in Sydney: daylight saving started at 02:00, an hour before. UTC+11, where UTC+10 would read 02:30.
+    await order(two, kai, 'Syd summer', '2030-10-05T16:30:00Z')
+
+    const window = { from: '2031-08-01T00:00:00Z', to: '2031-09-01T00:00:00Z' }
+    const row = (file: Record<string, string>[], title: string) => {
+      const found = file.find(line => line.variant === `${title} ${run}`)
+      assert.ok(found, `a CSV row for ${title}`)
+      return [found.date, found.time]
+    }
+    const theirs_ = await csv(adminAtTwo, window)
+    assert.deepEqual(row(theirs_, 'Syd midnight'), ['2031-08-12', '00:30'])
+    assert.deepEqual(row(theirs_, 'Syd evening'), ['2031-08-12', '23:30'])
+    assert.deepEqual(row(await csv(adminAtOne, window), 'Sing midnight'), ['2031-08-12', '00:30'])
+    assert.deepEqual(
+      row(await csv(adminAtTwo, { from: '2030-10-01T00:00:00Z', to: '2030-11-01T00:00:00Z' }), 'Syd summer'),
+      ['2030-10-06', '03:30'],
+    )
+  })
+
   // ── refusals ─────────────────────────────────────────────────────────────
 
   test('FIN-45 purchase and Refund rows cannot be edited or deleted; Instructor Pay and Manual Entries can', async () => {

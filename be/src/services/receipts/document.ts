@@ -32,8 +32,9 @@
 import { eq } from 'drizzle-orm'
 import { db } from '../../db'
 import { tenantSettings } from '../../db/schema/tenancy'
-import { sgFormat } from '../../lib/time'
+import { zoneFormat } from '../../lib/studio-time'
 import { sgdText, toCents } from '../../shared/money'
+import { tenantTimezone } from '../tenants/tenants'
 import { billToAddressLines } from '../billing-details/address'
 import type { LineDiscount, PurchaseLine } from '../billing/purchase-lines'
 import { cardBrandName, methodName } from '../finance/methods'
@@ -47,6 +48,8 @@ export interface ReceiptStudio {
   name: string
   /** The address of its logo, or null for the Business name alone. */
   logoUrl: string | null
+  /** Its zone: every date on the Receipt is the day on the studio's clock. */
+  timezone: string
 }
 
 /** A line in a block: the first of a block is set strong, the rest muted. */
@@ -105,7 +108,7 @@ export interface ReceiptDocument {
   credit: typeof PLATFORM_CREDIT
 }
 
-const day = sgFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+const dayIn = (timezone: string) => zoneFormat(timezone, 'en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
 const money = (sgd: string): string => sgdText(toCents(sgd))
 /** An amount taken off. A hyphen, not a minus sign: the PDF's standard fonts have no minus. */
 const off = (sgd: string): string => `-${money(sgd)}`
@@ -145,11 +148,16 @@ export async function receiptStudio(receipt: Pick<ReceiptRow, 'tenantId' | 'sell
     .from(tenantSettings)
     .where(eq(tenantSettings.tenantId, receipt.tenantId))
     .limit(1)
-  return { name: settings?.displayName || receipt.sellerName, logoUrl: settings?.logoUrl || null }
+  return {
+    name: settings?.displayName || receipt.sellerName,
+    logoUrl: settings?.logoUrl || null,
+    timezone: await tenantTimezone(receipt.tenantId),
+  }
 }
 
 /** The Receipt, worded and ordered, ready to lay out. Pure. */
 export function receiptDocument(receipt: ReceiptRow, studio: ReceiptStudio): ReceiptDocument {
+  const day = dayIn(studio.timezone)
   const paid = receipt.payments.length > 0
   // The day the last payment, the one that settled it, was made; the day it
   // was issued where none was.

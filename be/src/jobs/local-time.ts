@@ -13,6 +13,7 @@
  * its `timezone` column is the whole configuration — and adding a tenant needs
  * no job wiring at all.
  */
+import { zoneFormat } from '../lib/studio-time'
 
 /** How often the cron grid ticks. Every real IANA offset is a whole number of
  *  quarter-hours (`Asia/Kolkata` is +05:30, `Asia/Kathmandu` +05:45), so a
@@ -32,8 +33,7 @@ export const SLOT_CRON = `*/${SLOT_MINUTES} * * * *`
  * treats that as one tenant's problem, not the sweep's.
  */
 export function localClock(timezone: string, at: Date): { hour: number; minute: number } {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
+  const parts = zoneFormat(timezone, 'en-US', {
     hour: '2-digit',
     minute: '2-digit',
     hourCycle: 'h23',
