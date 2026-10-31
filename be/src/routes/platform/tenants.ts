@@ -231,7 +231,7 @@ const app = new Hono()
 
   .post('/tenants', zValidator('json', createBody, explainTenant), async c => {
     const body = c.req.valid('json')
-    const timezone = requireStudioTimeZone(body.timezone)
+    const timezone = await requireStudioTimeZone(body.timezone)
     const result = await provisionTenant({
       slug: body.slug,
       name: body.name,
