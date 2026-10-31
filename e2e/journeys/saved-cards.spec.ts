@@ -191,7 +191,8 @@ test('PAY-82 a card already removed on another device answers 404, which counts 
   await expect(cardRow(page, '4242')).toHaveCount(0)
   await expect(cardRow(page, '0005')).toBeVisible()
   await expect(savedCards(page).getByRole('status').filter({ hasText: 'Visa ending 4242 removed.' })).toHaveCount(1)
-  await expect(page.getByRole('alert')).toHaveCount(0)
+  // Inside the section: Next's own route announcer is an (empty) alert too.
+  await expect(savedCards(page).getByRole('alert')).toHaveCount(0)
   await expect(page.getByText('still saved')).toHaveCount(0)
 })
 
@@ -204,7 +205,8 @@ test('PAY-83 a remove the server refuses with its own sentence shows that senten
   await page.goto(`${urls.client}/account/profile`)
   await page.getByRole('button', { name: 'Remove Visa ending 4242' }).click()
   await confirmButton(page, '4242').click()
-  const refused = page.getByRole('alert')
+  // The one alert in the section; Next's route announcer is another, empty, outside it.
+  const refused = savedCards(page).getByRole('alert')
   await expect(refused).toContainText("This studio isn't taking card payments.")
   await expect(refused).toContainText("It's still saved.")
   await expect(refused).not.toContainText('Please try again')
@@ -214,8 +216,8 @@ test('PAY-83 a remove the server refuses with its own sentence shows that senten
   api.failList = true
   await page.getByRole('button', { name: 'Remove Visa ending 4242' }).click()
   await confirmButton(page, '4242').click()
-  await expect(page.getByRole('alert')).toContainText('may still be saved')
-  await expect(page.getByRole('alert')).not.toContainText("It's still saved.")
+  await expect(refused).toContainText('may still be saved')
+  await expect(refused).not.toContainText("It's still saved.")
   await expect(cardRow(page, '4242')).toBeVisible()
 })
 

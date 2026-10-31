@@ -215,6 +215,10 @@ describe('saved cards over HTTP', { skip: integrationTestsEnabled ? false : SKIP
       const clients = sql`SELECT id FROM clients WHERE email LIKE ${ours}`
       await harness.db.execute(sql`DELETE FROM payment_customers WHERE client_id IN (${clients})`)
       await harness.db.execute(sql`DELETE FROM clients WHERE email LIKE ${ours}`)
+      // An admin who acted as a member (PAY-81) left an audit row that restricts deleting them.
+      await harness.db.execute(
+        sql`DELETE FROM audit_log WHERE actor_staff_id IN (SELECT id FROM staff_users WHERE email LIKE ${ours})`,
+      )
       await harness.db.execute(sql`DELETE FROM staff_users WHERE email LIKE ${ours}`)
       await harness.db.execute(sql`DELETE FROM client_auth_users WHERE email LIKE ${ours}`)
       await harness.db.execute(sql`DELETE FROM staff_auth_users WHERE email LIKE ${ours}`)
