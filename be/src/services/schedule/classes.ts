@@ -3,6 +3,7 @@ import { afterCommit, db, retryingTransaction } from '../../db'
 import { classes } from '../../db/schema'
 import { recordSessionAssigned } from '../attention/session-assigned'
 import { countSeats } from '../bookings/seats'
+import { assertClassTypeInStudio } from '../catalog/class-types'
 import { assertRoomInLocation } from './room-conflicts'
 import { assertAvailable, eventSubjects, plannedInstructorIds } from './occupancy'
 import { computeEventState } from '../policy/event-state'
@@ -80,6 +81,7 @@ export async function createClass(tenantId: string, input: CreateClassInput): Pr
   // The room gate doubles as the location gate: a room only passes if it is this
   // tenant's and sits in the location named, so neither can be borrowed.
   await assertRoomInLocation(tenantId, input.roomId, input.locationId)
+  await assertClassTypeInStudio(tenantId, input.classTypeId)
 
   return db.transaction(async tx => {
     await assertAvailable(
@@ -212,6 +214,10 @@ export async function updateClass(
       .for('update')
       .limit(1)
     if (!existing) throw new NotFoundError('class_not_found')
+
+    // A foreign key ignores row-level security, so another studio's class type
+    // would pass it: the id has to be this studio's before anything is written.
+    if (patch.classTypeId !== undefined) await assertClassTypeInStudio(tenantId, patch.classTypeId)
 
     // Once a class has started it is a record of what happened, not a plan — moving,
     // repricing or resizing it rewrites history under the people who already sat in it.

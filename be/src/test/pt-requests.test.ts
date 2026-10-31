@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { randomUUID } from 'node:crypto'
 import { after, before, describe, test } from 'node:test'
 import { and, eq, sql } from 'drizzle-orm'
 import { frontendOrigin, harnessAddress, integrationTestsEnabled, inTenantContext, SKIP_REASON, startTestApp, type TestApp } from './harness'
@@ -2137,6 +2138,80 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
 
     assert.equal(await ptSessionCount(), before)
     assert.equal(await sessionsLeft(awayPackage), 10)
+  })
+
+  test('PT-176 a manual session naming a member id the studio does not have, alone or beside a real member, is refused 404 client_not_found by the Admin and the Instructor, and nothing is made or debited', async () => {
+    const real = await member(one, 'Uma Real Beside')
+    const realPackage = await givePt(one, real, '2on1')
+    const unknown = randomUUID()
+    const requestCount = async () =>
+      (await harness.db.select({ n: sql<number>`count(*)::int` }).from(schema.ptRequests))[0]!.n
+    const sessionsBefore = await ptSessionCount()
+    const requestsBefore = await requestCount()
+
+    const attempts: [string, () => Response | Promise<Response>][] = [
+      ['admin, alone', () => adminManual(adminAtOne, [{ client_id: unknown }], { override: true })],
+      ['instructor, alone', () => instructorManual(coachA, [{ client_id: unknown }], { override: true })],
+      [
+        'admin, second member',
+        () => adminManual(adminAtOne, [{ client_id: real.clientId }, { client_id: unknown }], { sessionType: '2on1', override: true }),
+      ],
+      [
+        'instructor, second member',
+        () => instructorManual(coachA, [{ client_id: real.clientId }, { client_id: unknown }], { sessionType: '2on1', override: true }),
+      ],
+      ['admin, in capitals', () => adminManual(adminAtOne, [{ client_id: unknown.toUpperCase() }], { override: true })],
+      [
+        'instructor, in capitals',
+        () => instructorManual(coachA, [{ client_id: unknown.toUpperCase() }], { override: true }),
+      ],
+    ]
+    for (const [label, attempt] of attempts) {
+      const refused = await expectStatus(await attempt(), 404)
+      assert.equal(refused.error, 'client_not_found', label)
+    }
+
+    assert.equal(await ptSessionCount(), sessionsBefore)
+    assert.equal(await requestCount(), requestsBefore, 'no request is left behind')
+    assert.equal((await requestsOf(real)).length, 0)
+    assert.equal(await sessionsLeft(realPackage), 10)
+  })
+
+  test('PT-176 the same member named twice in different letter case, on a manual session create or an add, is refused 409 already_booked and nothing is made or debited', async () => {
+    const twin = await member(one, 'Tia Twice Cased')
+    const twinPackage = await givePt(one, twin, '2on1')
+    const sessionsBefore = await ptSessionCount()
+    const members = [{ client_id: twin.clientId }, { client_id: twin.clientId.toUpperCase() }]
+
+    for (const [label, attempt] of [
+      ['admin create', () => adminManual(adminAtOne, members, { sessionType: '2on1' })],
+      ['instructor create', () => instructorManual(coachA, members, { sessionType: '2on1' })],
+    ] as const) {
+      const refused = await expectStatus(await attempt(), 409)
+      assert.equal(refused.error, 'already_booked', label)
+    }
+    assert.equal(await ptSessionCount(), sessionsBefore)
+    assert.equal((await requestsOf(twin)).length, 0)
+    assert.equal(await sessionsLeft(twinPackage), 10)
+
+    const { first, sessionId } = await openPair('Tom Twice Add')
+    const seatedPackage = (await bookingsOn(sessionId))[0]!.clientPackageId!
+    const seatsBefore = (await bookingsOn(sessionId)).length
+    for (const [label, add] of [
+      ['admin add', adminAddMember],
+      ['instructor add', instructorAddMember],
+    ] as const) {
+      const refused = await expectStatus(
+        await add(label === 'admin add' ? adminAtOne : coachA, sessionId, {
+          client_id: first.clientId.toUpperCase(),
+          override: true,
+        }),
+        409,
+      )
+      assert.equal(refused.error, 'already_booked', label)
+    }
+    assert.equal((await bookingsOn(sessionId)).length, seatsBefore)
+    assert.equal(await sessionsLeft(seatedPackage), 9, 'the seated member is not debited twice')
   })
 
   test('PT-81 the package staff name pays; with none named the Default payer does — matching type, running before Dormant, soonest-ending first', async () => {

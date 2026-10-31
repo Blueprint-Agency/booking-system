@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { randomUUID } from 'node:crypto'
 import { after, afterEach, before, describe, test } from 'node:test'
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
@@ -89,6 +90,7 @@ describe('instructor scheduling for themselves', { skip: integrationTestsEnabled
   let locationId!: string
   let roomId!: string
   let classTypeId!: string
+  let otherStudioTypeId!: string
 
   /**
    * An instructor's weekly repeat, carrying everything an admin's would — another
@@ -143,6 +145,11 @@ describe('instructor scheduling for themselves', { skip: integrationTestsEnabled
       .values({ tenantId: one.id, name: `${TAG} Hatha` })
       .returning()
     classTypeId = type!.id
+    const [otherType] = await harness.db
+      .insert(schema.classTypes)
+      .values({ tenantId: harness.tenants.two.id, name: `${TAG} Other studio` })
+      .returning({ id: schema.classTypes.id })
+    otherStudioTypeId = otherType!.id
     const [client] = await harness.db
       .insert(schema.clients)
       .values({
@@ -164,7 +171,8 @@ describe('instructor scheduling for themselves', { skip: integrationTestsEnabled
     const ours = `%@${DOMAIN}`
     const staffIds = sql`SELECT id FROM staff_users WHERE email LIKE ${ours}`
     const clients = sql`SELECT id FROM clients WHERE email LIKE ${ours}`
-    const ourClasses = sql`SELECT id FROM classes WHERE class_type_id = ${classTypeId}`
+    const ourTypes = sql`SELECT id FROM class_types WHERE name LIKE ${`${TAG} %`}`
+    const ourClasses = sql`SELECT id FROM classes WHERE class_type_id IN (${ourTypes})`
     await harness.db.execute(sql`DELETE FROM audit_log WHERE actor_staff_id IN (${staffIds})`)
     await harness.db.execute(sql`DELETE FROM bookings WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`UPDATE pt_requests SET scheduled_pt_session_id = NULL WHERE client_id IN (${clients})`)
@@ -172,9 +180,9 @@ describe('instructor scheduling for themselves', { skip: integrationTestsEnabled
     await harness.db.execute(sql`DELETE FROM pt_sessions WHERE scheduled_by_staff_id IN (${staffIds})`)
     await harness.db.execute(sql`DELETE FROM pt_requests WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM class_supporting_instructors WHERE class_id IN (${ourClasses})`)
-    await harness.db.execute(sql`DELETE FROM classes WHERE class_type_id = ${classTypeId}`)
-    await harness.db.execute(sql`DELETE FROM class_series WHERE class_type_id = ${classTypeId}`)
-    await harness.db.execute(sql`DELETE FROM class_types WHERE id = ${classTypeId}`)
+    await harness.db.execute(sql`DELETE FROM classes WHERE class_type_id IN (${ourTypes})`)
+    await harness.db.execute(sql`DELETE FROM class_series WHERE class_type_id IN (${ourTypes})`)
+    await harness.db.execute(sql`DELETE FROM class_types WHERE name LIKE ${`${TAG} %`}`)
     await harness.db.execute(sql`DELETE FROM rooms WHERE id = ${roomId}`)
     await harness.db.execute(sql`DELETE FROM clients WHERE email LIKE ${ours}`)
     await harness.db.execute(sql`DELETE FROM instructors WHERE staff_user_id IN (${staffIds})`)
@@ -342,6 +350,115 @@ describe('instructor scheduling for themselves', { skip: integrationTestsEnabled
       [0, 0, 1],
       'a refused edit changes nothing',
     )
+  })
+
+  test("SCH-45 a class created with a class type id the studio does not have, well-formed, in capitals or another studio's, is refused 404 class_type_not_found by the instructor and the admin routes alike, and nothing is written", async () => {
+    const startsAt = at(44)
+    const body = (classType: string) => ({
+      class_type_id: classType,
+      main_instructor_id: tara.id,
+      location_id: locationId,
+      room_id: roomId,
+      starts_at: startsAt.toISOString(),
+      ends_at: new Date(startsAt.getTime() + HOUR).toISOString(),
+      capacity_online: 5,
+      credit_cost: 1,
+    })
+    const unknown = randomUUID()
+    const startingThen = () =>
+      harness.db.select({ id: schema.classes.id }).from(schema.classes).where(eq(schema.classes.startsAt, startsAt))
+    const before = (await startingThen()).length
+
+    for (const classType of [unknown, unknown.toUpperCase(), otherStudioTypeId, otherStudioTypeId.toUpperCase()]) {
+      for (const [route, headers] of [
+        ['/instructor/schedule/classes', tara.headers],
+        ['/admin/schedule/classes', admin.headers],
+      ] as const) {
+        const refused = await json(await call(route, headers, 'POST', body(classType)), 404)
+        assert.equal(refused.error, 'class_type_not_found', `${route}: ${JSON.stringify(refused)}`)
+      }
+    }
+    assert.equal((await startingThen()).length, before, 'a refused class is not created')
+
+    const made = await json(await call('/instructor/schedule/classes', tara.headers, 'POST', body(classTypeId)), 201)
+    assert.equal(made.class_type_id, classTypeId, "the same request with the studio's own class type goes through")
+  })
+
+  test("SCH-45 an Admin editing a class to a class type id the studio does not have, well-formed, in capitals or another studio's, is refused 404 class_type_not_found and the class is left as it was", async () => {
+    const startsAt = at(46)
+    const made = await json(
+      await call('/admin/schedule/classes', admin.headers, 'POST', {
+        class_type_id: classTypeId,
+        main_instructor_id: tara.id,
+        location_id: locationId,
+        room_id: roomId,
+        starts_at: startsAt.toISOString(),
+        ends_at: new Date(startsAt.getTime() + HOUR).toISOString(),
+        capacity_online: 5,
+        credit_cost: 1,
+      }),
+      201,
+    )
+    const unknown = randomUUID()
+    const rowNow = async () =>
+      (await harness.db.select().from(schema.classes).where(eq(schema.classes.id, made.id)))[0]!
+    const unchanged = await rowNow()
+
+    for (const classType of [unknown, unknown.toUpperCase(), otherStudioTypeId, otherStudioTypeId.toUpperCase()]) {
+      const refused = await json(
+        await call(`/admin/schedule/classes/${made.id}`, admin.headers, 'PATCH', { class_type_id: classType }),
+        404,
+      )
+      assert.equal(refused.error, 'class_type_not_found', classType)
+      assert.deepEqual(await rowNow(), unchanged, `${classType}: the class is left as it was`)
+    }
+
+    const [mine] = await harness.db
+      .insert(schema.classTypes)
+      .values({ tenantId: one.id, name: `${TAG} Vinyasa` })
+      .returning({ id: schema.classTypes.id })
+    const moved = await json(
+      await call(`/admin/schedule/classes/${made.id}`, admin.headers, 'PATCH', { class_type_id: mine!.id }),
+      200,
+    )
+    assert.equal(moved.class_type_id, mine!.id, "the studio's own class type is accepted")
+  })
+
+  test('SCH-45 a class type the studio has deleted is refused 404 class_type_not_found on a class create and on a series preview, and an archived one is still accepted', async () => {
+    const [deleted] = await harness.db
+      .insert(schema.classTypes)
+      .values({ tenantId: one.id, name: `${TAG} Deleted`, deletedAt: new Date() })
+      .returning({ id: schema.classTypes.id })
+    const [archived] = await harness.db
+      .insert(schema.classTypes)
+      .values({ tenantId: one.id, name: `${TAG} Archived`, archivedAt: new Date() })
+      .returning({ id: schema.classTypes.id })
+    const startsAt = at(47)
+    const body = (classType: string) => ({
+      class_type_id: classType,
+      main_instructor_id: tara.id,
+      location_id: locationId,
+      room_id: roomId,
+      starts_at: startsAt.toISOString(),
+      ends_at: new Date(startsAt.getTime() + HOUR).toISOString(),
+      capacity_online: 5,
+      credit_cost: 1,
+    })
+
+    const refused = await json(await call('/admin/schedule/classes', admin.headers, 'POST', body(deleted!.id)), 404)
+    assert.equal(refused.error, 'class_type_not_found')
+    const preview = await json(
+      await call('/admin/schedule/series/preview', admin.headers, 'POST', {
+        ...seriesBody(mondayFrom(49), 2),
+        main_instructor_id: tara.id,
+        supporting_instructors: [],
+        class_type_id: deleted!.id,
+      }),
+      404,
+    )
+    assert.equal(preview.error, 'class_type_not_found')
+    const kept = await json(await call('/admin/schedule/classes', admin.headers, 'POST', body(archived!.id)), 201)
+    assert.equal(kept.class_type_id, archived!.id, 'an archived class type can still be scheduled')
   })
 
   test('SCH-28 an instructor cannot extend or end a series, even one they created', async () => {

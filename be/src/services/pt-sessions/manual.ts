@@ -220,9 +220,12 @@ async function seatMember(
   tx: Tx,
   tenantId: string,
   session: SeatSessionRow,
-  member: ManualSeatInput,
+  named: ManualSeatInput,
   actor: Actor,
 ): Promise<{ bookingId: string; clientPackageId: string }> {
+  // Postgres hands ids back in lower case; a member named in capitals is the
+  // same member, and must read as already seated.
+  const member = { ...named, clientId: named.clientId.toLowerCase() }
   await assertMember(tx, tenantId, member.clientId)
 
   const seated = await tx
@@ -311,8 +314,11 @@ async function seatMember(
 
 export async function createManualPtSession(
   tenantId: string,
-  input: CreateManualPtSessionInput,
+  named: CreateManualPtSessionInput,
 ): Promise<{ ptSessionId: string; ptRequestId: string }> {
+  // One member is one lower-case id, however the body spelt it: the same
+  // member in two cases is a duplicate, not two attendees.
+  const input = { ...named, members: named.members.map(m => ({ ...m, clientId: m.clientId.toLowerCase() })) }
   if (input.endsAt <= input.startsAt) throw new BadRequestError('bad_time_range')
   const capacity = ptSessionCost(input.sessionType) // 1on1 → 1 seat, 2on1 → 2
   if (input.members.length === 0) throw new BadRequestError('invalid_request')
@@ -328,6 +334,9 @@ export async function createManualPtSession(
       endsAt: input.endsAt,
     })
     await ensureInstructors(tenantId, [input.instructorId], tx)
+    // Before the request row, whose client foreign key an unknown id would
+    // otherwise reach: every member is this studio's, or none is seated.
+    for (const member of input.members) await assertMember(tx, tenantId, member.clientId)
 
     const at = clockNow()
     // The request the session hangs off: the first member as its client, the
