@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert";
 import {
+  archiveWarning,
   assertLoadedInFull,
   latestRead,
   locationSaveRefusal,
@@ -82,4 +83,24 @@ test("LOC-19 once the full list has loaded, an Admin may edit and the screens th
 test("LOC-19 the workspace switcher keeps listing the studio's locations from the short list when the full list is missing, and from the full list once it is there", () => {
   assert.deepStrictEqual(workspaceLocations(short, null), short);
   assert.deepStrictEqual(workspaceLocations(short, full), full);
+});
+
+test("ADM-13 archiving a location asks nothing when no live Unlimited Plan calls it home, and names the stranded members when some do", () => {
+  assert.strictEqual(archiveWarning(0, "Orchard"), null);
+  assert.strictEqual(
+    archiveWarning(1, "Orchard"),
+    "1 live Unlimited Plan calls Orchard home. Archiving it strands that member. Archive anyway?",
+  );
+  assert.strictEqual(
+    archiveWarning(3, "Orchard"),
+    "3 live Unlimited Plans call Orchard home. Archiving it strands those members. Archive anyway?",
+  );
+});
+
+test("ADM-13 archiving a location whose Unlimited Plan count could not be read says it could not check, and never proceeds as if the count were 0", () => {
+  const warning = archiveWarning(null, "Orchard");
+  assert.ok(warning !== null);
+  assert.match(warning, /couldn't check/i);
+  assert.match(warning, /Orchard/);
+  assert.match(warning, /Archive anyway\?$/);
 });
