@@ -5,8 +5,7 @@ import { useAttention } from "@/components/attention/attention-provider";
 import { CalendarCheck, Loader2, X } from "lucide-react";
 import { Button, EmptyState, Label, LoadFailure, PageHeader } from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
-import { PERMISSION_REFUSED, permissionRefusal } from "@/lib/access-refusal";
-import { answeredElsewhere } from "@/lib/failed-read";
+import { answeredElsewhere, loadError, type LoadError } from "@/lib/failed-read";
 import { ApiError } from "@/lib/api";
 import { LATEST_DATE, formatRelative } from "@/lib/formatters";
 import { scheduleErrorMessage } from "@/lib/schedule";
@@ -64,7 +63,7 @@ function InstructorPtRequestsView() {
   const [requests, setRequests] = useState<InstructorPtRequest[]>([]);
   const [rooms, setRooms] = useState<ApiRoom[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<LoadError | null>(null);
   const [schedId, setSchedId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -82,12 +81,7 @@ function InstructorPtRequestsView() {
       setRooms(rm.rooms ?? []);
     } catch (err) {
       // A `401` or maintenance is answered by the sign-in and the maintenance screen.
-      if (!answeredElsewhere(err)) {
-        setError(
-          permissionRefusal(err) ??
-            (err instanceof ApiError ? `HTTP ${err.status}` : "Network error"),
-        );
-      }
+      if (!answeredElsewhere(err)) setError(loadError(err));
       setRequests([]);
     } finally {
       setLoading(false);
@@ -119,7 +113,7 @@ function InstructorPtRequestsView() {
         <div className="rounded-xl border border-border bg-card shadow-soft">
           <LoadFailure
             what="the PT requests"
-            detail={error === PERMISSION_REFUSED ? error : undefined}
+            detail={error.detail}
             onRetry={load}
           />
         </div>

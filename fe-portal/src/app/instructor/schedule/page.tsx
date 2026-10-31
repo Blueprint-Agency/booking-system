@@ -16,8 +16,7 @@ import {
 } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { useWorkspace } from "@/lib/workspace-context";
-import { PERMISSION_REFUSED, permissionRefusal } from "@/lib/access-refusal";
-import { answeredElsewhere } from "@/lib/failed-read";
+import { answeredElsewhere, loadError, type LoadError } from "@/lib/failed-read";
 import { ApiError } from "@/lib/api";
 import { formatDate, formatTime, todayIso } from "@/lib/formatters";
 import { localDay } from "@/lib/local-day";
@@ -63,7 +62,7 @@ export default function InstructorSchedulePage() {
   const [entries, setEntries] = useState<ScheduleEntry[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<LoadError | null>(null);
   // Cancel-own-class flow: only ever offered for a class this instructor leads.
   const [cancelling, setCancelling] = useState<ScheduleEntry | null>(null);
   const [reason, setReason] = useState("");
@@ -87,12 +86,7 @@ export default function InstructorSchedulePage() {
       setRooms(rm.rooms ?? []);
     } catch (err) {
       // A `401` or maintenance is answered by the sign-in and the maintenance screen.
-      if (!answeredElsewhere(err)) {
-        setError(
-          permissionRefusal(err) ??
-            (err instanceof ApiError ? `HTTP ${err.status}` : "Network error"),
-        );
-      }
+      if (!answeredElsewhere(err)) setError(loadError(err));
     } finally {
       setLoading(false);
     }
@@ -191,7 +185,7 @@ export default function InstructorSchedulePage() {
       {error ? (
         <LoadFailure
           what="your schedule"
-          detail={error === PERMISSION_REFUSED ? error : undefined}
+          detail={error.detail}
           onRetry={load}
         />
       ) : loading ? (

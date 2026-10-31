@@ -61,7 +61,25 @@ export function archiveWarning(count: number | null, locationName: string): stri
   );
 }
 
-/** What the update helper's guard throws,so the form can tell it from any other failure. */
+/**
+ * Whether archiving may go ahead, after the admin has been asked what the count
+ * of live Unlimited Plans calling the location home warrants. `readCount` is the
+ * backend read; one that fails is an unread count, never 0 (`archiveWarning`).
+ */
+export async function confirmArchive(
+  readCount: () => Promise<{ count: number }>,
+  locationName: string,
+  confirm: (question: string) => boolean,
+): Promise<boolean> {
+  const count = await readCount().then(
+    (r) => r.count as number | null,
+    () => null,
+  );
+  const warning = archiveWarning(count, locationName);
+  return warning === null || confirm(warning);
+}
+
+/** What the update helper's guard throws, so the form can tell it from any other failure. */
 export class LocationNotLoadedInFullError extends Error {
   constructor() {
     super(

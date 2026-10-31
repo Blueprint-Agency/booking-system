@@ -100,6 +100,8 @@ function CorporateRequestsView() {
   const [requests, setRequests] = useState<CorporateRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // A cancel or mark-attended the backend refused, with its reason.
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const [activeId, setActiveId] = useState<string | null>(null);
   const [schedFor, setSchedFor] = useState<CorporateRequest | null>(null);
@@ -160,6 +162,7 @@ function CorporateRequestsView() {
   ) {
     if (!api) return;
     setActionBusy(true);
+    setActionError(null);
     try {
       await api.post(
         `/portal/admin/corporate-requests/${id}/${action}`,
@@ -168,7 +171,8 @@ function CorporateRequestsView() {
       await load();
       refreshAttention();
     } catch (err) {
-      setError(scheduleErrorMessage(err, "Failed"));
+      // A refused action keeps its reason; `error` is for a list that failed to load.
+      setActionError(scheduleErrorMessage(err, "Failed"));
     } finally {
       setActionBusy(false);
     }
@@ -202,6 +206,12 @@ function CorporateRequestsView() {
           </button>
         ))}
       </div>
+
+      {actionError && (
+        <div role="alert" className="rounded-lg border border-error/30 bg-error/5 p-3 text-xs text-error">
+          {actionError}
+        </div>
+      )}
 
       {error ? (
         <div className="rounded-xl border border-border bg-card">

@@ -2,7 +2,8 @@
 import { use, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Ban, Loader2, Save } from "lucide-react";
-import { Badge, Button, Dialog, DialogFooter, Input, Label } from "@/components/ui";
+import { Badge, Button, Dialog, DialogFooter, Input, Label, LoadFailure } from "@/components/ui";
+import { answeredElsewhere } from "@/lib/failed-read";
 import { LocationRoomFields } from "@/components/schedule/location-room-fields";
 import { SeriesPanel } from "@/components/schedule/series-panel";
 import { ClassRoster, SeatStats, Stat } from "@/components/schedule/class-roster";
@@ -1159,6 +1160,7 @@ function CorporateDetail({ id }: { id: string }) {
   const { api, accessibleLocations } = useWorkspace();
   const [data, setData] = useState<ScheduleCorporateSession | null>(null);
   const [pkg, setPkg] = useState<ScheduleCorporatePackageBrief | null>(null);
+  const [pkgFailed, setPkgFailed] = useState(false);
   const [instructors, setInstructors] = useState<CatalogInstructor[]>([]);
   const [rooms, setRooms] = useState<CatalogRoom[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1179,8 +1181,12 @@ function CorporateDetail({ id }: { id: string }) {
       setRooms(rm);
       try {
         setPkg(await fetchCorporatePackageBrief(api, d.corporate_package_id));
-      } catch {
+        setPkgFailed(false);
+      } catch (err) {
+        // The page stands without its package, but says it couldn't load it:
+        // a title and a link that vanish without a word read as having none.
         setPkg(null);
+        setPkgFailed(!answeredElsewhere(err));
       }
     } catch (err) {
       setError(detailError(err, "Corporate session not found."));
@@ -1192,6 +1198,16 @@ function CorporateDetail({ id }: { id: string }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  async function retryPackage() {
+    if (!api || !data) return;
+    try {
+      setPkg(await fetchCorporatePackageBrief(api, data.corporate_package_id));
+      setPkgFailed(false);
+    } catch {
+      setPkgFailed(true);
+    }
+  }
 
   if (loading) return <LoadingDetail label="corporate session" />;
   if (error || !data)
@@ -1237,6 +1253,15 @@ function CorporateDetail({ id }: { id: string }) {
           )
         }
       />
+      {pkgFailed && (
+        <LoadFailure
+          what="the corporate package"
+          variant="inline"
+          detail="Its name and link are missing until it loads."
+          onRetry={retryPackage}
+          className="mb-3"
+        />
+      )}
       <div className="grid gap-3 sm:grid-cols-3">
         <Stat label="Customer" value={data.client_name} />
         <Stat

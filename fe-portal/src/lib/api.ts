@@ -7,7 +7,9 @@
  * pool's on the super portal.
  *
  * Errors: non-2xx responses throw an `ApiError` that carries `status` plus the
- * parsed JSON body (if any) so callers can render structured copy.
+ * parsed JSON body (if any) so callers can render structured copy. A 401 on a
+ * call that sent a token also ends the portal session (`lib/session-expiry.ts`)
+ * and a maintenance answer shows the maintenance screen (`lib/maintenance.ts`).
  *
  * Deadline and failure reporting: `lib/api-request.ts`. Pass `signal` to set
  * your own deadline in place of the default.
@@ -16,6 +18,7 @@ import { DEFAULT_API_TIMEOUT_MS, UPLOAD_TIMEOUT_MS, sendApiRequest } from "@/lib
 import { getApiBaseUrl } from "@/lib/api-url";
 import { noteMaintenance } from "@/lib/maintenance";
 import { reportError } from "@/lib/report-error";
+import { noteSessionExpiry } from "@/lib/session-expiry";
 import { tenantRequestHeaders } from "@/lib/tenant-host";
 
 export type TokenGetter = () => Promise<string | null>;
@@ -91,6 +94,8 @@ export async function apiFetch<T = unknown>(
     },
   );
   if (!answer.ok) {
+    // Only a call that actually sent `Authorization` says anything about the session.
+    noteSessionExpiry(answer.status, Boolean(token), token || undefined);
     noteMaintenance(answer.status, answer.body);
     throw new ApiError(answer.status, answer.body);
   }

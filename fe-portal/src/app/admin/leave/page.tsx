@@ -13,7 +13,7 @@ import {
   PageHeader,
   Textarea,
 } from "@/components/ui";
-import { answeredElsewhere } from "@/lib/failed-read";
+import { answeredElsewhere, loadError, type LoadError } from "@/lib/failed-read";
 import { LeaveCalendar } from "@/components/leave-calendar";
 import { useAttention } from "@/components/attention/attention-provider";
 import { useRequestDeepLink } from "@/components/attention/deep-links";
@@ -100,7 +100,7 @@ function AdminLeaveView() {
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const [requests, setRequests] = useState<ApiAdminLeaveRequest[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<LoadError | null>(null);
   const [tab, setTab] = useState<Filter>("pending");
   /** List is the default: this page exists to clear the pending queue, and the
    *  calendar answers a different question — who is away, and when. */
@@ -122,7 +122,7 @@ function AdminLeaveView() {
       setRequests(res.leave_requests ?? []);
     } catch (err) {
       // A `401` or maintenance is answered by the sign-in and the maintenance screen.
-      if (!answeredElsewhere(err)) setError(leaveErrorMessage(err, "Couldn't load leave requests"));
+      if (!answeredElsewhere(err)) setError(loadError(err));
       setRequests([]);
     } finally {
       setLoading(false);
@@ -311,7 +311,7 @@ function AdminLeaveView() {
         <div className="rounded-xl border border-border bg-card shadow-soft">
           <LoadFailure
             what="the leave requests"
-            detail={error.startsWith("Couldn't load") ? undefined : error}
+            detail={error.detail}
             onRetry={load}
           />
         </div>

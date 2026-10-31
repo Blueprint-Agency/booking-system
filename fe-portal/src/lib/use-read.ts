@@ -3,7 +3,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Api } from "@/lib/api";
 import { reportError } from "@/lib/report-error";
 import { useWorkspace } from "@/lib/workspace-context";
-import { afterFailedRead, readLoaded, READ_LOADING, type ReadState } from "@/lib/failed-read";
+import {
+  afterFailedRead,
+  readLoaded,
+  READ_LOADING,
+  reportableFailure,
+  type ReadState,
+} from "@/lib/failed-read";
 
 /**
  * One read of the backend, held as loading, loaded or failed
@@ -26,9 +32,10 @@ export function useRead<T>(
   });
 
   useEffect(() => {
+    // Whatever was read before is not the answer to this request, or to none.
+    setRead(READ_LOADING);
     if (!api || !enabled) return;
     let cancelled = false;
-    setRead(READ_LOADING);
     loadRef
       .current(api)
       .then((data) => {
@@ -36,7 +43,8 @@ export function useRead<T>(
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        reportError(err, { scope });
+        // A 5xx or a network failure was reported by the request itself.
+        if (reportableFailure(err)) reportError(err, { scope });
         setRead(afterFailedRead<T>(err));
       });
     return () => {

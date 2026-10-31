@@ -212,8 +212,9 @@ export function useSchedule(filters: ScheduleFilters) {
       );
       setEntries(res.entries.map(fromApi));
     } catch (err) {
-      // A `401` or maintenance is answered by the sign-in and the maintenance
-      // screen; the grid then stays loading, with no failure drawn beneath.
+      // A `401` ends the session (`lib/session-expiry.ts`) and the shell sends
+      // the person to sign in; maintenance puts up the maintenance screen. Both
+      // replace this page, so no failure is drawn for them.
       if (!answeredElsewhere(err)) {
         setError(err instanceof ApiError ? `HTTP ${err.status}` : "Network error");
       }

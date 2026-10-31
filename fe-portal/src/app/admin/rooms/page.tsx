@@ -1,4 +1,5 @@
 "use client";
+import { LoadFailure } from "@/components/ui/load-failure";
 import { useCallback, useEffect, useState } from "react";
 import { Plus, Archive, RotateCcw, Pencil, Loader2, Users, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -262,12 +263,7 @@ function SkeletonList() {
 
 function ErrorBlock({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
-    <div className="mt-6 rounded-xl border border-error/30 bg-error/5 px-4 py-6 text-center">
-      <p className="text-sm text-error">Failed to load: {message}</p>
-      <Button size="sm" variant="ghost" onClick={onRetry} className="mt-2">
-        <Loader2 className="h-3.5 w-3.5" /> Retry
-      </Button>
-    </div>
+    <LoadFailure what="the rooms" onRetry={onRetry} className="mt-6 rounded-xl border border-border bg-card" />
   );
 }
 

@@ -7,7 +7,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, Loader2, Search, X } from "lucide-react";
-import { Button, Input } from "@/components/ui";
+import { Button, Input, LoadFailure } from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
 import { memberSearchNotice, searchMembers, type MemberMatch, type StaffRole } from "@/lib/class-seats";
 import { answeredElsewhere } from "@/lib/failed-read";
@@ -227,7 +227,12 @@ export function MemberSearch({
         <Search className="h-4 w-4 shrink-0 text-muted" />
         <Input
           value={q}
-          onChange={(e) => setQ(e.target.value)}
+          onChange={(e) => {
+            setQ(e.target.value);
+            // A new term starts clean: the last term's failure or rows are not this term's.
+            setSearchFailed(false);
+            setMatches([]);
+          }}
           placeholder="Search members by name, email or phone"
           aria-label="Search members"
         />
@@ -236,15 +241,13 @@ export function MemberSearch({
         {notice === "searching" && <li className="py-2 text-xs text-muted">Searching…</li>}
         {notice === "none" && <li className="py-2 text-xs text-muted">No members match.</li>}
         {notice === "failed" && (
-          <li className="py-2 text-xs text-ink" role="alert">
-            Couldn&apos;t search members.{" "}
-            <button
-              type="button"
-              onClick={() => setSearchAttempt((n) => n + 1)}
-              className="font-semibold underline underline-offset-2"
-            >
-              Try again
-            </button>
+          <li className="py-2">
+            <LoadFailure
+              variant="inline"
+              what="the member search"
+              sentence="Couldn't search members."
+              onRetry={() => setSearchAttempt((n) => n + 1)}
+            />
           </li>
         )}
         {shown.map((m) => {

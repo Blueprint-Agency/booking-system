@@ -1,4 +1,5 @@
 "use client";
+import { LoadFailure } from "@/components/ui/load-failure";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -130,12 +131,7 @@ export function ClassPassReview({
       </header>
 
       {loadError ? (
-        <div className="text-sm text-error">
-          Failed to load: {loadError}{" "}
-          <button type="button" className="underline" onClick={load}>
-            Retry
-          </button>
-        </div>
+        <LoadFailure what="the review list" variant="inline" onRetry={load} />
       ) : items === null ? (
         <div className="flex items-center gap-2 text-sm text-muted">
           <Loader2 className="h-4 w-4 animate-spin" /> Loading…
