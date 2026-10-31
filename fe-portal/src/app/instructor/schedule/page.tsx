@@ -9,13 +9,15 @@ import {
   DialogFooter,
   EmptyState,
   Label,
+  LoadFailure,
   PageHeader,
   StatusBadge,
   Textarea,
 } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { useWorkspace } from "@/lib/workspace-context";
-import { permissionRefusal } from "@/lib/access-refusal";
+import { PERMISSION_REFUSED, permissionRefusal } from "@/lib/access-refusal";
+import { answeredElsewhere } from "@/lib/failed-read";
 import { ApiError } from "@/lib/api";
 import { formatDate, formatTime, todayIso } from "@/lib/formatters";
 import { localDay } from "@/lib/local-day";
@@ -84,10 +86,13 @@ export default function InstructorSchedulePage() {
       setEntries(sched.entries ?? []);
       setRooms(rm.rooms ?? []);
     } catch (err) {
-      setError(
-        permissionRefusal(err) ??
-          (err instanceof ApiError ? `HTTP ${err.status}` : "Network error"),
-      );
+      // A `401` or maintenance is answered by the sign-in and the maintenance screen.
+      if (!answeredElsewhere(err)) {
+        setError(
+          permissionRefusal(err) ??
+            (err instanceof ApiError ? `HTTP ${err.status}` : "Network error"),
+        );
+      }
     } finally {
       setLoading(false);
     }
@@ -182,13 +187,14 @@ export default function InstructorSchedulePage() {
         />
       )}
 
-      {error && (
-        <div className="rounded-lg border border-error/30 bg-error/5 p-3 text-xs text-error">
-          Failed to load schedule: {error}
-        </div>
-      )}
-
-      {loading ? (
+      {/* A schedule that failed to load is never drawn as "Nothing scheduled". */}
+      {error ? (
+        <LoadFailure
+          what="your schedule"
+          detail={error === PERMISSION_REFUSED ? error : undefined}
+          onRetry={load}
+        />
+      ) : loading ? (
         <div className="flex items-center justify-center py-16 text-muted">
           <Loader2 className="h-5 w-5 animate-spin" />
         </div>

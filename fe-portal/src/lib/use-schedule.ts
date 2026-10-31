@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "@/lib/api";
+import { answeredElsewhere } from "@/lib/failed-read";
 import { useWorkspace } from "@/lib/workspace-context";
 import type { EventState } from "@/types";
 
@@ -211,7 +212,11 @@ export function useSchedule(filters: ScheduleFilters) {
       );
       setEntries(res.entries.map(fromApi));
     } catch (err) {
-      setError(err instanceof ApiError ? `HTTP ${err.status}` : "Network error");
+      // A `401` or maintenance is answered by the sign-in and the maintenance
+      // screen; the grid then stays loading, with no failure drawn beneath.
+      if (!answeredElsewhere(err)) {
+        setError(err instanceof ApiError ? `HTTP ${err.status}` : "Network error");
+      }
       setEntries([]);
     } finally {
       setLoading(false);
