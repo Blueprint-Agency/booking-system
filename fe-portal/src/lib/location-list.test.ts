@@ -85,7 +85,7 @@ test("LOC-19 the workspace switcher keeps listing the studio's locations from th
   assert.deepStrictEqual(workspaceLocations(short, full), full);
 });
 
-test("ADM-13 archiving a location asks nothing when no live Unlimited Plan calls it home, and names the stranded members when some do", () => {
+test("ADM-07 archiving a location asks nothing when no live Unlimited Plan calls it home, and names the stranded members when some do", () => {
   assert.strictEqual(archiveWarning(0, "Orchard"), null);
   assert.strictEqual(
     archiveWarning(1, "Orchard"),
@@ -97,7 +97,7 @@ test("ADM-13 archiving a location asks nothing when no live Unlimited Plan calls
   );
 });
 
-test("ADM-13 archiving a location whose Unlimited Plan count could not be read says it could not check, and never proceeds as if the count were 0", () => {
+test("ADM-07 archiving a location whose Unlimited Plan count could not be read says it could not check, and never proceeds as if the count were 0", () => {
   const warning = archiveWarning(null, "Orchard");
   assert.ok(warning !== null);
   assert.match(warning, /couldn't check/i);

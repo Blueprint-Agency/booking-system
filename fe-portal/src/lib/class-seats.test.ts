@@ -137,14 +137,14 @@ test("SCH-04 the capacity fields read attendance capacity and the waitlist apart
   assert.strictEqual(capacityLine({ waitlist: 5, onlineBooking: 10, buffer: 2 }), "Attendance capacity: 12 · Waitlist: 5");
 });
 
-test("ADM-06 a member search that failed says it could not search, and never that no members match", () => {
+test("ADM-04 a member search that failed says it could not search, and never that no members match", () => {
   const base = { searchable: true, searching: false, failed: false, shown: 0 };
   assert.equal(memberSearchNotice({ ...base, failed: true }), "failed");
   assert.equal(memberSearchNotice({ ...base, failed: true, shown: 3 }), "failed");
   assert.equal(memberSearchNotice(base), "none");
 });
 
-test("ADM-06 a member search says searching while it runs, and nothing before a term or when members are listed", () => {
+test("ADM-04 a member search says searching while it runs, and nothing before a term or when members are listed", () => {
   const base = { searchable: true, searching: false, failed: false, shown: 0 };
   assert.equal(memberSearchNotice({ ...base, searching: true }), "searching");
   assert.equal(memberSearchNotice({ ...base, searching: true, shown: 2 }), null);
