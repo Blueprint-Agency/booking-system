@@ -1,10 +1,13 @@
 /**
  * The studio's Book in advance window for private sessions: the days after
- * today, on the studio's Singapore calendar, a member may propose a time on.
+ * today, on the studio's own calendar (its time zone, never the device's), a
+ * member may propose a time on.
  * No sooner than `minDays`, no later than `maxDays` — the server refuses
  * either side (`slot_date_too_soon`, `slot_date_too_far`), so the form says so
  * up front, caps its date picker to match, and words a refusal the same way.
  */
+
+import { datePlus } from "./studio-time.ts";
 
 export interface PtBookingWindow {
   minDays: number;
@@ -21,17 +24,13 @@ export function fromPtBookingConfig(r: PtBookingConfigResponse): PtBookingWindow
   return { minDays: r.min_book_in_advance_days, maxDays: r.book_in_advance_days };
 }
 
-export const SG_OFFSET_MS = 8 * 3_600_000;
-export const DAY_MS = 86_400_000;
-
-/** The Singapore calendar date `days` after today, as YYYY-MM-DD. */
-export function sgDatePlus(days: number, now: number = Date.now()): string {
-  return new Date(now + SG_OFFSET_MS + days * DAY_MS).toISOString().slice(0, 10);
-}
-
 /** The first and last dates a member may propose, as YYYY-MM-DD. */
-export function ptWindowDates(w: PtBookingWindow, now: number = Date.now()): { earliest: string; latest: string } {
-  return { earliest: sgDatePlus(w.minDays, now), latest: sgDatePlus(w.maxDays, now) };
+export function ptWindowDates(
+  w: PtBookingWindow,
+  timezone: string,
+  now: number = Date.now(),
+): { earliest: string; latest: string } {
+  return { earliest: datePlus(timezone, w.minDays, now), latest: datePlus(timezone, w.maxDays, now) };
 }
 
 const days = (n: number) => `${n} day${n === 1 ? "" : "s"}`;
@@ -55,8 +54,8 @@ export function shortDate(iso: string): string {
 }
 
 /** The chip over the times: the rule, and the dates it allows today. */
-export function ptWindowNotice(w: PtBookingWindow, now: number = Date.now()): string {
-  const { earliest, latest } = ptWindowDates(w, now);
+export function ptWindowNotice(w: PtBookingWindow, timezone: string, now: number = Date.now()): string {
+  const { earliest, latest } = ptWindowDates(w, timezone, now);
   if (earliest === latest) return `Choose a date ${days(w.minDays)} from today (${shortDate(earliest)}).`;
   return `Choose dates ${w.minDays} to ${days(w.maxDays)} from today (${shortDate(earliest)} – ${shortDate(latest)}).`;
 }
@@ -66,9 +65,10 @@ export function ptSlotDateProblem(
   date: string,
   slot: number,
   w: PtBookingWindow,
+  timezone: string,
   now: number = Date.now(),
 ): string | null {
-  const { earliest, latest } = ptWindowDates(w, now);
+  const { earliest, latest } = ptWindowDates(w, timezone, now);
   if (date < earliest) return `Time ${slot}: pick a date from ${shortDate(earliest)}.`;
   if (date > latest) return `Time ${slot}: pick a date up to ${shortDate(latest)}.`;
   return null;

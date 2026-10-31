@@ -97,15 +97,22 @@ test("BKG-31 a class accepts none of the member's packages only when every one i
 
 test("BKG-29 a Dormant pick says it starts today and when it would end", () => {
   const dormant = pkg({ id: "d", running: false, expires_at: null, activation_end_if_picked: "2027-01-10T15:59:59.000Z" });
-  assert.equal(activationLine(dormant), "Starts today, runs until Sun, 10 Jan 2027");
+  assert.equal(activationLine(dormant, "Asia/Singapore"), "Starts today, runs until Sun, 10 Jan 2027");
   // A running package already has its end date; nothing starts.
-  assert.equal(activationLine(pkg({ id: "r" })), null);
-  assert.equal(packageMeta(dormant), "10 credits left · not started yet");
-  assert.equal(packageMeta(pkg({ id: "r", remaining: 1 })), "1 credit left · until Tue, 24 Nov 2026");
+  assert.equal(activationLine(pkg({ id: "r" }), "Asia/Singapore"), null);
+  assert.equal(packageMeta(dormant, "Asia/Singapore"), "10 credits left · not started yet");
+  assert.equal(packageMeta(pkg({ id: "r", remaining: 1 }), "Asia/Singapore"), "1 credit left · until Tue, 24 Nov 2026");
   assert.equal(
-    packageMeta(pkg({ id: "u", kind: "unlimited", remaining: null, location: WEST })),
+    packageMeta(pkg({ id: "u", kind: "unlimited", remaining: null, location: WEST }), "Asia/Singapore"),
     "Unlimited at Studio West · until Tue, 24 Nov 2026",
   );
+});
+
+test("TEN-99 a package's end date is the day it falls on in the studio's zone", () => {
+  // 15:59:59 UTC on 9 January is the last second of the 9th in Singapore and 02:59:59 on the 10th in Sydney.
+  const dormant = pkg({ id: "d", running: false, expires_at: null, activation_end_if_picked: "2027-01-09T15:59:59.000Z" });
+  assert.equal(activationLine(dormant, "Asia/Singapore"), "Starts today, runs until Sat, 9 Jan 2027");
+  assert.equal(activationLine(dormant, "Australia/Sydney"), "Starts today, runs until Sun, 10 Jan 2027");
 });
 
 test("BKG-29 the cost line reads from the picked package", () => {

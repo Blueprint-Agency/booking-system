@@ -23,11 +23,13 @@ import {
   memberCanCancel,
 } from "@/lib/cancellation-copy";
 import { classLength } from "@/lib/class-detail";
-import { fetchPublicClass, formatClassTime, type ApiClassDetail } from "@/lib/classes";
+import { fetchPublicClass, type ApiClassDetail } from "@/lib/classes";
 import { credits } from "@/lib/package-picker";
 import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import { useFocusTrap } from "@/lib/use-focus-trap";
-import { cn, formatDate } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { formatClassTime, formatDate } from "@/lib/studio-time";
+import { useStudioZone } from "@/components/brand/brand-provider";
 
 /** Where the member stands in this class, in the words the schedule's overlay uses. */
 function standing(b: ApiBooking, ongoing: boolean): { text: string; tone: "ok" | "muted" } | null {
@@ -60,6 +62,7 @@ export function BookedClassOverlay({
   onCancel: (b: ApiBooking) => void;
   onClose: () => void;
 }) {
+  const tz = useStudioZone();
   const trapRef = useFocusTrap<HTMLDivElement>(true);
   useBodyScrollLock(true);
   const [detail, setDetail] = useState<ApiClassDetail | null>(null);
@@ -95,7 +98,7 @@ export function BookedClassOverlay({
   const state = standing(b, ongoing);
   const location = detail?.location ?? null;
   const supporting = detail?.supporting_instructors ?? [];
-  const deadline = `${formatDate(b.cancel_deadline)} · ${formatClassTime(b.cancel_deadline)}`;
+  const deadline = `${formatDate(tz, b.cancel_deadline)} · ${formatClassTime(tz, b.cancel_deadline)}`;
 
   return (
     <Portal>
@@ -116,7 +119,7 @@ export function BookedClassOverlay({
                 {b.name}
               </h2>
               <p className="mt-1 text-sm font-medium text-ink/80 tabular-nums">
-                {formatDate(b.starts_at)} · {formatClassTime(b.starts_at)} – {formatClassTime(b.ends_at)}
+                {formatDate(tz, b.starts_at)} · {formatClassTime(tz, b.starts_at)} – {formatClassTime(tz, b.ends_at)}
                 <span className="text-muted"> · {classLength(b.starts_at, b.ends_at)}</span>
               </p>
             </div>
@@ -209,7 +212,7 @@ export function BookedClassOverlay({
                   {b.outcome_line}
                   {b.cancelled_at && (
                     <span className="block text-muted tabular-nums">
-                      {formatDate(b.cancelled_at)} · {formatClassTime(b.cancelled_at)}
+                      {formatDate(tz, b.cancelled_at)} · {formatClassTime(tz, b.cancelled_at)}
                     </span>
                   )}
                 </Fact>

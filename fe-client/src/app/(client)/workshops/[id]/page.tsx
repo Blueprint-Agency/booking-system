@@ -7,6 +7,8 @@ import { ArrowDown, CalendarDays, MapPin, CalendarX } from "lucide-react";
 import { BookingSurface, SurfaceCentre } from "@/components/booking/booking-surface";
 import { PageHeader } from "@/components/booking/page-header";
 import { DateStub } from "@/components/account/date-stub";
+import { useStudioZone } from "@/components/brand/brand-provider";
+import { formatClassTime, formatDayMonth } from "@/lib/studio-time";
 import { Avatar } from "@/components/ui/avatar";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ContentLoading } from "@/components/ui/content-loading";
@@ -23,17 +25,12 @@ import {
 } from "@/lib/workshops";
 
 // Studio time, like the date stub beside it and every other time in the app.
-function formatTimeRange(startsAt: string, endsAt: string): string {
-  const t = (iso: string) =>
-    new Date(iso).toLocaleTimeString("en-SG", {
-      hour: "numeric",
-      minute: "2-digit",
-      timeZone: "Asia/Singapore",
-    });
-  return `${t(startsAt)} – ${t(endsAt)}`;
+function formatTimeRange(startsAt: string, endsAt: string, timezone: string): string {
+  return `${formatClassTime(timezone, startsAt)} – ${formatClassTime(timezone, endsAt)}`;
 }
 
 export default function WorkshopDetailPage() {
+  const tz = useStudioZone();
   const { id } = useParams<{ id: string }>();
   const { data: workshop, loading, signedOut, error } = useWorkshop(id);
   const [selectedTierId, setSelectedTierId] = useState<string | null>(null);
@@ -150,6 +147,7 @@ export default function WorkshopDetailPage() {
               {formatWorkshopDates(
                 workshop.starts_at,
                 workshop.ends_at,
+                tz,
                 workshop.days.map((d) => d.starts_at),
               )}
             </p>
@@ -220,9 +218,9 @@ export default function WorkshopDetailPage() {
                       <p className="font-semibold text-ink">
                         Day {d.ord}
                         {/* The stub is aria-hidden; the date still has to be read out. */}
-                        <span className="sr-only">, {formatWorkshopDates(d.starts_at, null)}</span>
+                        <span className="sr-only">, {formatWorkshopDates(d.starts_at, null, tz)}</span>
                       </p>
-                      <p className="text-sm text-muted">{formatTimeRange(d.starts_at, d.ends_at)}</p>
+                      <p className="text-sm text-muted">{formatTimeRange(d.starts_at, d.ends_at, tz)}</p>
                     </div>
                   </li>
                 ))}
@@ -283,11 +281,7 @@ export default function WorkshopDetailPage() {
                 {priceForSelected?.isEarlyBird && selectedTier?.early_bird_cutoff_at && (
                   <p className="mt-1 text-xs font-semibold text-accent-deep">
                     Early bird until{" "}
-                    {new Date(selectedTier.early_bird_cutoff_at).toLocaleDateString("en-SG", {
-                      day: "numeric",
-                      month: "short",
-                      timeZone: "Asia/Singapore",
-                    })}
+                    {formatDayMonth(tz, selectedTier.early_bird_cutoff_at)}
                   </p>
                 )}
                 {sortedTiers.length === 1 && tierDays.length > 0 && (

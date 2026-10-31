@@ -132,6 +132,22 @@ export function studio(): Studio {
 }
 
 /**
+ * The studio's time zone, as the apps themselves learn it: from the public slug
+ * lookup both proxies make on every request (`tenants.timezone`). The studio
+ * command's output does not carry it, so a journey that must read a time on the
+ * studio's clock asks the same place the member app does.
+ */
+export async function studioTimezone(request: APIRequestContext): Promise<string> {
+  const { slug, urls } = studio()
+  const res = await request.get(`${urls.api}/public/tenants/by-slug/${slug}`)
+  if (!res.ok()) throw new Error(`the slug lookup for ${slug} was refused (${res.status()}): ${await res.text()}`)
+  const body = (await res.json()) as { tenant?: { timezone?: string } }
+  const zone = body.tenant?.timezone
+  if (!zone) throw new Error(`the slug lookup for ${slug} named no time zone`)
+  return zone
+}
+
+/**
  * Give this page's API calls an address of its own, as a member or staff
  * member on their own device has.
  *

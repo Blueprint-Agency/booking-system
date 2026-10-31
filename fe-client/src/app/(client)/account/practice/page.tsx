@@ -13,6 +13,7 @@ import { BTN_BOOK, BTN_SECONDARY, CARD } from "@/components/ui/styles";
 import { useHoldLoader } from "@/lib/loading-store";
 import { cn } from "@/lib/utils";
 import { usePractice, type PracticeView } from "@/lib/use-practice";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import {
   comparisonLine,
   durationParts,
@@ -102,7 +103,7 @@ function PracticeBody({
   const comparison = comparisonLine(summary);
   const parts = practiceSplit(summary);
   const practised = practisedFigure(summary);
-  const today = studioToday(Date.now());
+  const today = studioToday(Date.now(), useStudioZone());
 
   return (
     <div aria-busy={pending} className={cn("transition-opacity", pending && "opacity-60")}>

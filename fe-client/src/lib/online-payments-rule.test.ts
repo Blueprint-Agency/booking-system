@@ -24,6 +24,6 @@ test("PAY-36 a price that is not a number reads as paid, never as free", () => {
 });
 
 test("PAY-36 the server's refusal reads as the same plain sentence", () => {
-  const message = checkoutErrorMessage({ error: ERROR_CODES.payments_not_configured }, "fallback");
+  const message = checkoutErrorMessage({ error: ERROR_CODES.payments_not_configured }, "fallback", "Asia/Singapore");
   assert.equal(message, NO_ONLINE_PAYMENTS);
 });

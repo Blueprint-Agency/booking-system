@@ -2,7 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { clashButton, clashFromBody, clashNote, clashRefusal, type ApiClash } from "./clash.ts";
 
-// 08:00 UTC is 4:00 pm in Singapore.
+const SG = "Asia/Singapore";
+const SYDNEY = "Australia/Sydney";
+
+// 08:00 UTC is 4:00 pm in Singapore and 6:00 pm in Sydney (UTC+10 on 30 September).
 const inversion: ApiClash = {
   booking_id: "b1",
   kind: "class",
@@ -13,24 +16,36 @@ const inversion: ApiClash = {
 };
 
 test("BKG-42 a class that overlaps the member's booking reads as a clash, with that booking's time", () => {
-  assert.equal(clashButton(inversion), "Clashes · 4:00 pm");
+  assert.equal(clashButton(inversion, SG), "Clashes · 4:00 pm");
   assert.equal(
-    clashNote(inversion),
+    clashNote(inversion, SG),
     "You're booked into Inversion at 4:00 pm (Riverside), which overlaps this class. Cancel that booking to book this one.",
   );
   assert.equal(
-    clashNote({ ...inversion, location_name: null }),
+    clashNote({ ...inversion, location_name: null }, SG),
     "You're booked into Inversion at 4:00 pm, which overlaps this class. Cancel that booking to book this one.",
+  );
+});
+
+test("TEN-93 a clash names the booking's time on the studio's clock, not Singapore's", () => {
+  assert.equal(clashButton(inversion, SYDNEY), "Clashes · 6:00 pm");
+  assert.equal(
+    clashNote(inversion, SYDNEY),
+    "You're booked into Inversion at 6:00 pm (Riverside), which overlaps this class. Cancel that booking to book this one.",
+  );
+  assert.equal(
+    clashRefusal(inversion, SYDNEY),
+    "You're already booked into Inversion at 6:00 pm (Riverside) at the same time. You can only be in one class at a time.",
   );
 });
 
 test("BKG-37 a booking refused time_clash names what the member already holds", () => {
   assert.equal(
-    clashRefusal(inversion),
+    clashRefusal(inversion, SG),
     "You're already booked into Inversion at 4:00 pm (Riverside) at the same time. You can only be in one class at a time.",
   );
   assert.equal(
-    clashRefusal(null),
+    clashRefusal(null, SG),
     "You're already booked into another class at the same time. You can only be in one class at a time.",
   );
 });

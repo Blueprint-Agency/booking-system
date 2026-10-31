@@ -15,6 +15,7 @@ import type { ApiBooking } from "@/components/account/class-bookings";
 import type { ApiWorkshopBooking } from "@/components/account/workshop-bookings";
 import type { RawPtRequest } from "@/lib/pt-sessions";
 import type { ApiCorporateRequest } from "@/lib/corporate";
+import { instantAt, localDate } from "./studio-time.ts";
 
 export type BookingType = "class" | "pt" | "workshop" | "corporate";
 export type BookingPhase = "upcoming" | "ongoing" | "past" | "cancelled";
@@ -55,16 +56,16 @@ function byTime(startsAt: string, endsAt: string | null, now: number): BookingPh
 }
 
 /** A PT request's first proposed slot, as an instant at midday studio time. */
-function firstSlot(r: RawPtRequest): string | null {
+export function firstSlotAt(r: RawPtRequest, timezone: string): string | null {
   const s = r.slots[0];
-  return s ? `${s.proposed_date.slice(0, 10)}T12:00:00+08:00` : null;
+  return s ? new Date(instantAt(timezone, s.proposed_date.slice(0, 10), "12:00")).toISOString() : null;
 }
 
 /** On Cancelled an item sorts by its cancel time; elsewhere, by its own. */
 const cancelledAt = (phase: BookingPhase, cancelled: string | null | undefined, own: string) =>
   phase === "cancelled" ? (cancelled ?? own) : own;
 
-export function bookingItems(src: BookingSources, now: number): BookingItem[] {
+export function bookingItems(src: BookingSources, now: number, timezone: string): BookingItem[] {
   const items: BookingItem[] = [];
 
   for (const b of src.upcoming) {
@@ -91,7 +92,7 @@ export function bookingItems(src: BookingSources, now: number): BookingItem[] {
   }
 
   for (const r of src.pt) {
-    const at = r.session?.starts_at ?? firstSlot(r) ?? r.created_at;
+    const at = r.session?.starts_at ?? firstSlotAt(r, timezone) ?? r.created_at;
     let phase: BookingPhase;
     if (r.status === "pending") phase = "upcoming";
     else if (r.status === "scheduled" && r.session) phase = byTime(r.session.starts_at, r.session.ends_at, now);
@@ -155,16 +156,13 @@ export function sortForPhase(items: BookingItem[], phase: BookingPhase): Booking
   return [...items].sort((a, b) => dir * a.at.localeCompare(b.at));
 }
 
-/** An instant's date on the studio's calendar, as every date the app shows is. */
-const studioDate = (iso: string) => new Date(iso).toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
-
 /**
  * The bookings My activity counts on one day (`YYYY-MM-DD`), earliest first:
  * a class or private session attended then, or booked and not checked in —
  * still to come, or held and never ticked. What a day of the week or month
  * opens to, as the same cards My bookings draws.
  */
-export function sessionsOnDay(items: BookingItem[], date: string): BookingItem[] {
+export function sessionsOnDay(items: BookingItem[], date: string, timezone: string): BookingItem[] {
   return sortForPhase(
     items.filter((i) => {
       // What the day's tile counted (`GET /me/bookings/attendance`): attended,
@@ -174,7 +172,7 @@ export function sessionsOnDay(items: BookingItem[], date: string): BookingItem[]
         const counted =
           i.booking.check_in_state === "attended" ||
           (i.booking.state === "confirmed" && (i.phase === "upcoming" || i.booking.check_in_state === "pending"));
-        return counted && studioDate(i.at) === date;
+        return counted && localDate(timezone, i.at) === date;
       }
       if (i.type === "pt") {
         const s = i.request.session;
@@ -183,7 +181,7 @@ export function sessionsOnDay(items: BookingItem[], date: string): BookingItem[]
         const counted =
           (i.request.status === "attended" || i.request.status === "scheduled") &&
           i.request.booking?.check_in_state !== "no_show";
-        return counted && !!s && studioDate(s.starts_at) === date;
+        return counted && !!s && localDate(timezone, s.starts_at) === date;
       }
       return false;
     }),

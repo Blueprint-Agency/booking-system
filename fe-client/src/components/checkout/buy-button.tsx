@@ -12,6 +12,7 @@ import { checkoutErrorMessage } from "@/lib/checkout-messages";
 import { blockedByPayments, NO_ONLINE_PAYMENTS, useOnlinePayments } from "@/lib/online-payments";
 import { corporateRequestSentHref } from "@/lib/corporate-return";
 import { BillToSheet } from "./bill-to-sheet";
+import { useStudioZone } from "@/components/brand/brand-provider";
 
 type BuyTarget =
   | { kind: "package"; packageKind: "class" | "pt" | "corporate"; packageId: string }
@@ -68,6 +69,7 @@ export function BuyButton({
   /** What is being bought, named in the Billing details sheet. */
   itemName?: string;
 }) {
+  const tz = useStudioZone();
   const router = useRouter();
   const getToken = getMemberToken;
   const { isSignedIn } = useMemberSession();
@@ -110,7 +112,7 @@ export function BuyButton({
           status: res.status,
           body: data,
         });
-        setError(checkoutErrorMessage(data, "Could not start checkout. Please try again."));
+        setError(checkoutErrorMessage(data, "Could not start checkout. Please try again.", tz));
         setBusy(false);
         setAskingBillTo(false);
         return;

@@ -261,20 +261,3 @@ export function useCanBookClass(): {
   return { canBook, loaded: !loading, entitlements: ent };
 }
 
-export function toLocalDateStr(iso: string): string {
-  const d = new Date(iso);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-export function formatClassTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString("en-SG", {
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-    timeZone: "Asia/Singapore",
-  });
-}
-
