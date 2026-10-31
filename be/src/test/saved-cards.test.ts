@@ -215,6 +215,10 @@ describe('saved cards over HTTP', { skip: integrationTestsEnabled ? false : SKIP
       const clients = sql`SELECT id FROM clients WHERE email LIKE ${ours}`
       await harness.db.execute(sql`DELETE FROM payment_customers WHERE client_id IN (${clients})`)
       await harness.db.execute(sql`DELETE FROM clients WHERE email LIKE ${ours}`)
+      // An admin who acted as a member (PAY-81) left an audit row that restricts deleting them.
+      await harness.db.execute(
+        sql`DELETE FROM audit_log WHERE actor_staff_id IN (SELECT id FROM staff_users WHERE email LIKE ${ours})`,
+      )
       await harness.db.execute(sql`DELETE FROM staff_users WHERE email LIKE ${ours}`)
       await harness.db.execute(sql`DELETE FROM client_auth_users WHERE email LIKE ${ours}`)
       await harness.db.execute(sql`DELETE FROM staff_auth_users WHERE email LIKE ${ours}`)
@@ -342,6 +346,37 @@ describe('saved cards over HTTP', { skip: integrationTestsEnabled ? false : SKIP
       acrossStudios.cardIds,
       'the other studio’s member still has their card',
     )
+  })
+
+  /* ── PAY-81: an admin acting as the member ──────────────────────────── */
+
+  test('PAY-81 an admin acting as a member can see their saved cards but cannot remove one: the delete is refused forbidden and nothing is detached', async () => {
+    const mia = await member(one)
+    const mine = await savesCards(one, mia, [VISA])
+    const staff = await admin(one)
+    const minted = await harness.app.request(`/api/v1/portal/admin/clients/${mia.clientId}/impersonate`, {
+      method: 'POST',
+      headers: { ...staff.headers, 'Content-Type': 'application/json' },
+      body: '{}',
+    })
+    const mintedText = await minted.text()
+    assert.equal(minted.status, 200, mintedText)
+    const { token, grant } = JSON.parse(mintedText) as { token: string; grant: string }
+    const actingAs = {
+      'X-Tenant-Slug': one.slug,
+      Origin: frontendOrigin('client', one),
+      'X-Forwarded-For': harnessAddress(),
+      Authorization: `Bearer ${token}`,
+      'X-Impersonation-Grant': grant,
+    }
+    await expectStatus(await listCards(actingAs), 200)
+    fake.calls.length = 0
+
+    const refused = await expectStatus(await deleteCard(actingAs, mine.cardIds[0]!), 403, 'forbidden')
+
+    assert.match(String(refused.message), /only the member/i)
+    assert.deepEqual(fake.calls, [], 'the provider is not asked')
+    assert.deepEqual(await listedIds(mia), mine.cardIds, 'the card is still the member’s')
   })
 
   /* ── PAY-51: a studio taking no online payments ─────────────────────── */

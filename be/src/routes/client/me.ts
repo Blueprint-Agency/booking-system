@@ -180,8 +180,13 @@ const app = new Hono()
   // Remove one. The id in the path is a string the browser chose, so the
   // service checks it against *this* member's Customer at the provider before
   // detaching anything — without that, this route would let any signed-in
-  // member detach any card at any studio.
+  // member detach any card at any studio. An admin acting as the member is
+  // refused before the provider is asked: keeping or dropping a card is its
+  // owner's choice, as a picture is.
   .delete('/cards/:id', zValidator('param', cardParam), async c => {
+    if (c.get('impersonatedBy')) {
+      throw new ForbiddenError('forbidden', { message: 'Only the member can remove their saved cards.' })
+    }
     await removeSavedCard({
       tenantId: tenantId(c),
       clientId: c.get('clientId'),
