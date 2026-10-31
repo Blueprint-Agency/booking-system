@@ -3,7 +3,7 @@ import { db } from '../../db'
 import { bookings, classes, classpassInboundEmails, classpassLocationMappings, classTypes, clients } from '../../db/schema'
 import { now as clockNow } from '../../lib/clock'
 import { localDateOf, zonedInstant } from '../schedule/series-dates'
-import { loadTenantById } from '../tenants/tenants'
+import { tenantTimezone } from '../tenants/tenants'
 import { pickClass, type ClassAtTime } from './import-booking'
 import { normaliseClassPassLocation } from './location-name'
 import { calendarDate, clock24, monthOf, textPieces } from './parse'
@@ -149,8 +149,7 @@ const sameName = (name: string) => name.normalize('NFKC').replace(/\s+/g, ' ').t
  * roster was sent still counts as held for that roster.
  */
 export async function checkClassPassRosters(tenantId: string): Promise<RosterCheck> {
-  const tenant = await loadTenantById(tenantId)
-  const timezone = tenant?.timezone ?? 'UTC'
+  const timezone = await tenantTimezone(tenantId)
   const rosters = await db
     .select({ receivedAt: classpassInboundEmails.receivedAt, text: classpassInboundEmails.text, html: classpassInboundEmails.html })
     .from(classpassInboundEmails)

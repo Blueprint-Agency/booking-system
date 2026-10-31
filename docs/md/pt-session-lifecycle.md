@@ -63,7 +63,7 @@ Verify each step with `npx tsc --noEmit` in `be/` (no test infra per project con
 ### What already works
 
 `submitPtRequest` (`request.ts`) first holds each proposed date to the studio's Book in advance
-window, `[today + min_book_in_advance_days, today + book_in_advance_days]` on the Singapore calendar
+window, `[today + min_book_in_advance_days, today + book_in_advance_days]` on the studio's calendar (its own clock)
 (`slot_date_too_soon` / `slot_date_too_far`). It is race-safe: locks `client_packages FOR UPDATE`, validates
 `kind='pt'`, `session_type` match, not expired, every slot starting by the package's expiry (a
 Dormant package's would-be expiry if scheduled now; `package_expires_before_session`, #444),

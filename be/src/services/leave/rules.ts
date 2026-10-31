@@ -2,7 +2,7 @@
  * Instructor leave — the rules, as pure functions.
  *
  * Kept decidable without a database, an env or a clock (see rules.test.ts) — the
- * one import is `lib/time`, which is the same kind of thing: pure arithmetic.
+ * one import is `lib/studio-time`, which is the same kind of thing: pure arithmetic.
  * `requests.ts` is the only thing that queries; the queries NARROW candidates
  * and these functions decide.
  *
@@ -16,25 +16,26 @@
  *    row simply leaves the counted set. Nothing is ever written back when a
  *    request changes status, and a column holding Taken or Remaining would give
  *    that property up.
- *  - **Dates here are plain dates**, `YYYY-MM-DD`, read as Asia/Singapore
- *    calendar days (UTC+8, no DST). They are not instants. The only place an
- *    instant appears is `leaveWindow`, which turns a run of days into the
- *    [start, end) window the occupancy module compares against.
+ *  - **Dates here are plain dates**, `YYYY-MM-DD`, read as calendar days on the
+ *    studio's clock (its `tenants.timezone`, passed in wherever a zone
+ *    matters). They are not instants. The only place an instant appears is
+ *    `leaveWindow`, which turns a run of days into the [start, end) window the
+ *    occupancy module compares against.
  */
 
-import { daysBetween, sgDayWindow, sgToday, type PlainDate } from '../../lib/time'
+import { dayWindow, daysBetween, instantAt, localDate, type PlainDate } from '../../lib/studio-time'
 import { tenantKey } from '../../lib/object-key'
 
-/** Singapore-time arithmetic lives in `lib/time`; re-exported so the leave rules
- *  still read as one vocabulary. */
-export { sgToday, type PlainDate }
+/** Studio-clock arithmetic lives in `lib/studio-time`; the plain-date type is
+ *  re-exported so the leave rules still read as one vocabulary. */
+export type { PlainDate }
 
 export type LeaveType = 'annual' | 'medical' | 'study'
 export type LeaveStatus = 'pending' | 'approved' | 'rejected' | 'withdrawn' | 'cancelled' | 'revoked'
 /** Which half of the day, if it is a half day at all. */
 export type LeaveHalfDay = 'none' | 'morning' | 'afternoon'
 
-/** Morning ends and afternoon begins at 13:00 Singapore time. */
+/** Morning ends and afternoon begins at 13:00 on the studio's clock. */
 export const HALF_DAY_BOUNDARY_HOUR = 13
 
 /**
@@ -62,26 +63,28 @@ export function leaveYearOf(startDate: PlainDate): number {
 }
 
 /**
- * The run of days as a half-open instant window in Singapore time — start of
- * the first day up to start of the day AFTER the last. This is what gets handed
- * to the occupancy module, so it must not bleed into the adjacent day.
+ * The run of days as a half-open instant window on the studio's clock — start
+ * of the first day up to start of the day AFTER the last. This is what gets
+ * handed to the occupancy module, so it must not bleed into the adjacent day.
+ * A day on which daylight saving changes is 23 or 25 hours long.
  *
- * A half day trims that window at 13:00 Singapore time: morning is [day start,
- * 13:00), afternoon is [13:00, day end). Because the window is half-open and
- * the overlap rule ignores touching endpoints, a 12:00–13:00 event is morning
- * only, a 13:00–14:00 event is afternoon only, and anything crossing 13:00
- * overlaps BOTH halves — which is exactly the intended rule.
+ * A half day trims that window at 13:00 on the wall clock: morning is [day
+ * start, 13:00), afternoon is [13:00, day end). Because the window is half-open
+ * and the overlap rule ignores touching endpoints, a 12:00–13:00 event is
+ * morning only, a 13:00–14:00 event is afternoon only, and anything crossing
+ * 13:00 overlaps BOTH halves — which is exactly the intended rule.
  *
  * A half-day marker is only valid on a single date; a range keeps its first
  * day's boundary, which is moot because `checkLeaveSubmission` refuses it.
  */
 export function leaveWindow(
+  timezone: string,
   startDate: PlainDate,
   endDate: PlainDate,
   halfDay: LeaveHalfDay = 'none',
 ): { startsAt: Date; endsAt: Date } {
-  const { startsAt, endsAt } = sgDayWindow(startDate, endDate)
-  const boundary = new Date(startsAt.getTime() + HALF_DAY_BOUNDARY_HOUR * 3_600_000)
+  const { startsAt, endsAt } = dayWindow(timezone, startDate, endDate)
+  const boundary = instantAt(timezone, startDate, `${HALF_DAY_BOUNDARY_HOUR}:00`)
   return {
     startsAt: halfDay === 'afternoon' ? boundary : startsAt,
     endsAt: halfDay === 'morning' ? boundary : endsAt,
@@ -108,8 +111,8 @@ export function clipWindow(
 
 /**
  * Does leave of this shape take the instructor off a class that STARTS at this
- * wall-clock time? `startTime` is `HH:MM` on the leave date read as Singapore
- * time — exactly what the scheduling forms hold in their time input.
+ * wall-clock time? `startTime` is `HH:MM` on the leave date read on the studio's
+ * clock — exactly what the scheduling forms hold in their time input.
  *
  * This is the instructor PICKER's question, not the server's. Two consequences,
  * both deliberate, both in the direction of "let it through and let the save
@@ -339,7 +342,7 @@ interface LeaveSubmission {
   endDate: PlainDate
   /** Single-date requests only; a range must be full days. */
   halfDay?: LeaveHalfDay
-  /** Today in Singapore. */
+  /** Today on the studio's clock. */
   today: PlainDate
   /** This instructor's **Pool** for this Leave Type and Leave Year — per person,
    *  not a studio-wide figure, and the number this request is drawn from. */
@@ -489,6 +492,8 @@ interface LeaveCapInput {
   conflictPartnerIds: readonly string[]
   /** The requested window, from `leaveWindow`. */
   window: LeaveInstantWindow
+  /** The studio's zone: the date a refusal or a warning names is read on its clock. */
+  timezone: string
   /** Every OTHER instructor's occupying leave overlapping the window. Which of
    *  them each rule counts is decided here, not by the query. */
   peers: readonly LeaveCapPeer[]
@@ -524,7 +529,7 @@ export function checkLeaveCaps(
   if (input.type === 'medical') return { ok: true }
   const over = leaveCapExceedance(input)
   if (!over) return { ok: true }
-  const on = formatLeaveDate(sgToday(over.at))
+  const on = formatLeaveDate(localDate(input.timezone, over.at))
   if (over.rule === 'study_cap') {
     return {
       ok: false,
@@ -610,7 +615,7 @@ export function leaveCapExceedance(input: LeaveCapInput): LeaveCapExceedance | n
 export function leaveCapWarning(input: LeaveCapInput): string {
   const over = leaveCapExceedance(input)
   if (!over) return ''
-  const on = formatLeaveDate(sgToday(over.at))
+  const on = formatLeaveDate(localDate(input.timezone, over.at))
   if (over.rule === 'study_cap') {
     return `⚠️ This puts ${over.away.length + 1} instructors on study leave on ${on}, above the cap of ${over.cap}.`
   }

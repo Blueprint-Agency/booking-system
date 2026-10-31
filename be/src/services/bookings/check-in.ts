@@ -26,6 +26,7 @@ import { classTypes, locations, rooms } from '../../db/schema/catalog'
 import { clients, staffUsers } from '../../db/schema/identity'
 import { globalPolicy } from '../../db/schema/policy'
 import { loadTenantById } from '../tenants/tenants'
+import { zoneFormat } from '../../lib/studio-time'
 import { addDays, localDateOf, zonedInstant } from '../schedule/series-dates'
 import { checkInOpensAt, checkInWindow } from './check-in-window'
 import { listForClasses } from '../waitlist/line'
@@ -162,9 +163,7 @@ async function timezoneOf(tenantId: string): Promise<string> {
 
 /** "09:30", in the studio's own time. */
 const clockIn = (instant: Date, timezone: string) =>
-  new Intl.DateTimeFormat('en-GB', { timeZone: timezone, hour: '2-digit', minute: '2-digit', hour12: false }).format(
-    instant,
-  )
+  zoneFormat(timezone, 'en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }).format(instant)
 
 /**
  * The refusals every way in shares, in the order a person at the desk needs

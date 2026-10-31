@@ -508,6 +508,18 @@ describe('importing a ClassPass booking email', { skip: integrationTestsEnabled 
     assert.equal((await roster(one, decoy)).length, 0)
   })
 
+  test("TEN-56 the email's wall-clock time finds the class stored at either occurrence of a repeated hour: at Sydney, 02:30 on 6 April 2031 is the second 02:30", async () => {
+    // Daylight saving ends at 03:00 (UTC+11) that morning, so 02:30 happens twice: 15:30 UTC (UTC+11)
+    // and 16:30 UTC (UTC+10). The class is stored at the second.
+    const startsAt = new Date('2031-04-05T16:30:00Z')
+    const classId = await addClass(two, startsAt)
+
+    const result = await receive(two, bookingEmail(two, startsAt))
+
+    assert.equal(result.outcome, 'imported')
+    assert.equal((await roster(two, classId)).length, 1)
+  })
+
   test('CPS-36 a full class takes an Overbook seat, every Admin is emailed, and the ClassPass page flags it', async () => {
     const startsAt = nextStart()
     const classId = await addClass(one, startsAt, { capacityOnline: 1, capacityBuffer: 0 })

@@ -128,7 +128,7 @@ No money is involved anywhere. Instructors are paid per class, so a leave day pa
 ### Leave request model
 
 - One new table of leave requests, ~~keyed to the instructor (the staff user id that the instructors table extends)~~ keyed to the staff user (`staff_user_id`, since #315 — the same values, because an instructor's key is its staff user id).
-- Columns carry: type (annual, medical); a start date and an end date, both plain dates in Asia/Singapore, not timestamps; a half-day marker (none, morning, afternoon); the number of days the request consumes, as a one-decimal numeric; the leave year it counts against; a status; the instructor's stated reason; the decision reason; the deciding staff user and the time of decision; and a nullable object key for a medical certificate.
+- Columns carry: type (annual, medical); a start date and an end date, both plain dates on the studio's clock (its `tenants.timezone`), not timestamps; a half-day marker (none, morning, afternoon); the number of days the request consumes, as a one-decimal numeric; the leave year it counts against; a status; the instructor's stated reason; the decision reason; the deciding staff user and the time of decision; and a nullable object key for a medical certificate.
 - Status values: pending, approved, rejected, withdrawn, cancelled, revoked. Withdrawn is the instructor abandoning a pending request; cancelled is the instructor giving back approved leave; revoked is an admin taking approved leave away.
 - The leave year is stored on the row, not derived at read time, so that changing an instructor's Assigned Days, or crossing a year boundary, cannot alter what a past request counted against.
 - Two new enums for type and status. The half-day marker can be an enum or a nullable column; either is acceptable so long as "no half day" is representable.
@@ -148,8 +148,8 @@ No money is involved anywhere. Instructors are paid per class, so a leave day pa
 
 - A request over a date range consumes one day per calendar date in the range, inclusive of both ends. There is no working-pattern or public-holiday data in the system, so a Sunday inside a range still consumes a day. An instructor who wants to skip a non-working day submits two requests.
 - A half day is only permitted when the request covers a single date; ranges are full days only. A half day consumes 0.5.
-- The morning/afternoon boundary is 13:00 Singapore time. Morning is the start of the day up to 13:00; afternoon is 13:00 to the end of the day. An event that straddles the boundary belongs to both halves and therefore clashes with either.
-- All date interpretation is Asia/Singapore, matching how the rest of the scheduling code treats studio time.
+- The morning/afternoon boundary is 13:00 on the studio's clock (wall time, so on a daylight-saving day it is still 13:00). Morning is the start of the day up to 13:00; afternoon is 13:00 to the end of the day. An event that straddles the boundary belongs to both halves and therefore clashes with either.
+- All date interpretation is on the studio's clock: the zone in `tenants.timezone`, the same one the rest of the scheduling code treats as studio time (`docs/adr/0009-every-date-is-on-the-studios-clock.md`). "Today", the Leave Year, "must start after today" and the backdating limit are all counted in the studio's calendar days.
 
 ### The clash rule, and where it is enforced
 
@@ -159,7 +159,7 @@ This is the load-bearing decision, and it reuses machinery that already exists.
 - Doing it there means every one of those six write paths gains leave enforcement without being modified, including the instructor's own class-create path, which routes through the same class service.
 - Leave occupies an *instructor* only. It has no room, so a room-subject occupancy query never returns leave.
 - Both pending and approved leave occupy. Rejected, withdrawn, cancelled and revoked leave does not.
-- A leave day is converted into a time window in Singapore time — the whole day, or the half indicated — and compared with the existing overlap rule. The rule stays a pure function over two windows; only the source of one of the windows is new.
+- A leave day is converted into a time window on the studio's clock (23 or 25 hours long on a daylight-saving day) — the whole day, or the half indicated — and compared with the existing overlap rule. The rule stays a pure function over two windows; only the source of one of the windows is new.
 - The conflict payload gains a leave variant, and the refusal sentence gains a leave phrasing: an instructor on leave should read as "on leave on 12 Aug", not as "already booked".
 - **The reverse direction uses the same function.** When an instructor submits a leave request, the system asks occupancy for that instructor's conflicts across the requested window and refuses the submission if any are found, naming them. Because occupancy already excludes cancelled and non-active events, a cancelled class correctly does not block leave.
 - Only conflicts that end in the future block a submission. Backdated medical leave therefore records the absence and draws down the Pool without being obstructed by classes that already happened, and without disturbing them.
@@ -241,8 +241,8 @@ This is the load-bearing decision, and it reuses machinery that already exists.
 - **The rules that get checked, because they are pure and decidable without a database:**
   - day counting over a range — single date, multi-day range, inclusive endpoints, a half day counting 0.5;
   - the half-day-only-on-a-single-date restriction;
-  - the half-day window in Singapore time — a morning request and an afternoon request produce the expected windows, and an event straddling 13:00 collides with both;
-  - a full-day leave window covering the whole Singapore day, including that it does not bleed into the adjacent day at the UTC boundary;
+  - the half-day window on the studio's clock — a morning request and an afternoon request produce the expected windows, and an event straddling 13:00 collides with both;
+  - a full-day leave window covering the whole day on the studio's clock, including that it does not bleed into the adjacent day at the UTC boundary;
   - Remaining — Pool minus Committed (approved *and* pending), with Taken counting approved only, other statuses excluded, and Leave Types and Leave Years kept separate;
   - the submission eligibility rule — over-Remaining refused, exactly-at-Remaining allowed;
   - the backdating rule — annual and study must start in the future, medical allowed up to seven days back, beyond that refused;

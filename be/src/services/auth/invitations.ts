@@ -36,7 +36,8 @@ import { BadRequestError, ConflictError, NotFoundError } from '../../shared/erro
 import { sendTemplatedEmail } from '../notifications/send'
 import { now as clockNow } from '../../lib/clock'
 import { splitName, joinName } from '../../lib/name'
-import { sgFormat } from '../../lib/time'
+import { zoneFormat } from '../../lib/studio-time'
+import { tenantTimezone } from '../tenants/tenants'
 import { withLeaveFigures } from '../leave/requests'
 import {
   ensureAuthUser,
@@ -182,8 +183,8 @@ export async function writePendingStaff(
   return { staff, invitation }
 }
 
-// Human-readable SGT-friendly format for the email body.
-const expiresAtFormat = sgFormat('en-SG', { dateStyle: 'long', timeStyle: 'short' })
+// Human-readable format for the email body, on the studio's own clock.
+const expiresAtFormat = (timezone: string) => zoneFormat(timezone, 'en-SG', { dateStyle: 'long', timeStyle: 'short' })
 
 /**
  * Mail an invitation's set-password link, in the studio's own invitation copy
@@ -210,7 +211,7 @@ export async function mailInvitation(input: {
       // Canonical variables from services/notifications/variables.ts
       name: input.name,
       invite_url: link,
-      expires_at: expiresAtFormat.format(invitation.expiresAt),
+      expires_at: expiresAtFormat(await tenantTimezone(input.tenantId)).format(invitation.expiresAt),
       // Friendly extras — unknown {{}} are left as-is per spec, but the
       // seeded template uses these for richer copy.
       invitee_email: invitation.email,

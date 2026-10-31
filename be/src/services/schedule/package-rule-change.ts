@@ -28,7 +28,8 @@ import { cancelBookingInTx } from '../bookings/cancel'
 import { packageDisplayName } from '../bookings/book'
 import type { Promotion } from '../waitlist/promote'
 import { sendTemplatedEmail } from '../notifications/send'
-import { loadTenantById } from '../tenants/tenants'
+import { tenantTimezone } from '../tenants/tenants'
+import { zoneFormat } from '../../lib/studio-time'
 import { reportError } from '../../shared/logger'
 import { writeClassRule } from './package-rules'
 import type { Tx } from './roster'
@@ -120,9 +121,7 @@ export async function applyRuleChange(
  */
 export async function sendRuleCancelledEmails(tenantId: string, cancellations: readonly RuleCancellation[]): Promise<void> {
   if (cancellations.length === 0) return
-  const tenant = await loadTenantById(tenantId)
-  const date = new Intl.DateTimeFormat('en-GB', {
-    timeZone: tenant?.timezone ?? 'UTC',
+  const date = zoneFormat(await tenantTimezone(tenantId), 'en-GB', {
     weekday: 'short',
     day: 'numeric',
     month: 'short',

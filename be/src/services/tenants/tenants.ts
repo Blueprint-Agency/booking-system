@@ -97,6 +97,18 @@ export async function loadTenantById(id: string): Promise<TenantRow | null> {
 }
 
 /**
+ * The studio's clock: its IANA zone, from the cached tenant row. Every date and
+ * time a rule decides on, or writes into an email, is read in this zone
+ * (`lib/studio-time`). Throws for a studio that does not exist: there is no
+ * default zone and no UTC fallback, so a missing studio shows as the bug it is.
+ */
+export async function tenantTimezone(tenantId: string): Promise<string> {
+  const tenant = await loadTenantById(tenantId)
+  if (!tenant) throw new Error(`no studio ${tenantId} to read a time zone from`)
+  return tenant.timezone
+}
+
+/**
  * Slug → tenant identity + settings. Sits on every request path (the frontend
  * proxy calls it for each incoming hostname), so it is one indexed lookup and
  * a left join, nothing more. Returns null for unknown, archived and malformed

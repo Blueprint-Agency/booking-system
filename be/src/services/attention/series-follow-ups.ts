@@ -4,6 +4,7 @@ import { bookings } from '../../db/schema/bookings'
 import { classTypes } from '../../db/schema/catalog'
 import { classes, classSeries } from '../../db/schema/schedule'
 import { addDays } from '../schedule/series-dates'
+import { instantAt } from '../../lib/studio-time'
 import { localDate } from '../tenants/term-dates'
 import { dismissedSubjects } from './dismissed-subjects'
 import { formatPlainDay, formatWhen, withLocation } from './format'
@@ -80,8 +81,10 @@ export const seriesEnding: AttentionProvider = {
       (r): ProviderItem => ({
         subjectId: r.id,
         location: ctx.locations.find(l => l.id === r.locationId) ?? null,
-        occurredAt: new Date(`${addDays(r.lastDate, -ENDING_DAYS)}T00:00:00Z`),
-        deadlineAt: new Date(`${r.lastDate}T00:00:00Z`),
+        // Midnight on the studio's clock: the item began 14 days before the last date, and the
+        // last date is its deadline.
+        occurredAt: instantAt(ctx.timezone, addDays(r.lastDate, -ENDING_DAYS), '00:00'),
+        deadlineAt: instantAt(ctx.timezone, r.lastDate, '00:00'),
         title: `The ${r.label} series on ${WEEKDAYS[r.weekday - 1]} at ${formatTime(r.startTime)} runs out after ${formatPlainDay(r.lastDate)}`,
         detail: 'Extend it to keep classes on the timetable',
         href: r.lastClassId ? withLocation(classPage(r.lastClassId), r.locationId) : null,
@@ -147,7 +150,8 @@ export const seriesEndedClassKept: AttentionProvider = {
       (r): ProviderItem => ({
         subjectId: r.id,
         location: ctx.locations.find(l => l.id === r.locationId) ?? null,
-        occurredAt: new Date(`${r.endedFrom}T00:00:00Z`),
+        // Invariant: the filter keeps only classes of a series that has an `ended_from`.
+        occurredAt: instantAt(ctx.timezone, r.endedFrom!, '00:00'),
         deadlineAt: r.startsAt,
         title: `${r.label} on ${formatWhen(r.startsAt, ctx.timezone)} is after the end of its series but still has ${Number(r.bookings)} ${Number(r.bookings) === 1 ? 'booking' : 'bookings'}`,
         detail: 'Cancel it, or dismiss to keep it',

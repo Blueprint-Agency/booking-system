@@ -760,6 +760,98 @@ describe('leave on the schedule', { skip: integrationTestsEnabled ? false : SKIP
     assertOnLeave(await json(await createClass(adminTwo.headers, classBody(two, teacherTwo, date)), 409), teacherTwo, date)
   })
 
+  /* ── leave on the studio's own clock ───────────────────────────────── */
+
+  /**
+   * A class body for studio `s` at two instants named with their own offset, so
+   * the expectation never depends on the module under test. Studio two is on
+   * Sydney: UTC+10, and UTC+11 under daylight saving.
+   */
+  const classBodyBetween = (s: Studio, who: Staff, startsAt: string, endsAt: string) => ({
+    ...classBody(s, who, BASE),
+    starts_at: new Date(startsAt).toISOString(),
+    ends_at: new Date(endsAt).toISOString(),
+  })
+  const onSydney = (who: Staff, startsAt: string, endsAt: string) =>
+    createClass(adminTwo.headers, classBodyBetween(two, who, startsAt, endsAt))
+
+  test('TEN-60 full-day leave covers the studio\'s own calendar day: at Sydney a class at 00:30 on the day is refused and one at 00:30 the next day is saved, where at Singapore the day is its own', async () => {
+    const date = '2031-08-12'
+    await leave(teacherTwo, date, 'approved', 'none', two)
+
+    // 00:30 and 23:00 on the day in Sydney (UTC+10): 14:30 and 13:00 UTC, the day before in Singapore's.
+    const early = await json(await onSydney(teacherTwo, '2031-08-12T00:30:00+10:00', '2031-08-12T01:30:00+10:00'), 409)
+    assert.equal(early.conflicts[0].kind, 'leave')
+    assert.equal(early.conflicts[0].starts_at, '2031-08-11T14:00:00.000Z')
+    assert.equal(early.conflicts[0].ends_at, '2031-08-12T14:00:00.000Z')
+    assert.equal(early.message, `${teacherTwo.name} is on leave on 12 Aug.`, 'the date is named on the studio\'s clock')
+    await json(await onSydney(teacherTwo, '2031-08-12T22:30:00+10:00', '2031-08-12T23:30:00+10:00'), 409)
+    // The evening before and the early hour after are not the leave day.
+    await json(await onSydney(teacherTwo, '2031-08-11T22:30:00+10:00', '2031-08-11T23:30:00+10:00'), 201)
+    await json(await onSydney(teacherTwo, '2031-08-13T00:30:00+10:00', '2031-08-13T01:30:00+10:00'), 201)
+
+    // The control: the same leave date at a Singapore studio is Singapore's own day.
+    const control = await staffAt(one, 'control', 'instructor')
+    await leave(control, date, 'approved', 'none', one)
+    await json(await createClass(admin.headers, classBodyBetween(one, control, '2031-08-12T00:30:00+08:00', '2031-08-12T01:30:00+08:00')), 409)
+    await json(await createClass(admin.headers, classBodyBetween(one, control, '2031-08-11T22:30:00+08:00', '2031-08-11T23:30:00+08:00')), 201)
+    await json(await createClass(admin.headers, classBodyBetween(one, control, '2031-08-13T00:30:00+08:00', '2031-08-13T01:30:00+08:00')), 201)
+  })
+
+  test('TEN-61 a Half Day splits at 13:00 on the studio\'s clock: at Sydney a 13:00 class is the afternoon, and it is refused beside afternoon leave', async () => {
+    const morning = await staffAt(two, 'morning', 'instructor')
+    const afternoon = await staffAt(two, 'afternoon', 'instructor')
+    await leave(morning, '2031-08-19', 'approved', 'morning', two)
+    await leave(afternoon, '2031-08-26', 'approved', 'afternoon', two)
+
+    // Morning leave: midnight to 13:00 in Sydney, which is 03:00 UTC.
+    const overrun = await json(await onSydney(morning, '2031-08-19T12:30:00+10:00', '2031-08-19T13:30:00+10:00'), 409)
+    assert.equal(overrun.conflicts[0].starts_at, '2031-08-18T14:00:00.000Z')
+    assert.equal(overrun.conflicts[0].ends_at, '2031-08-19T03:00:00.000Z')
+    await json(await onSydney(morning, '2031-08-19T13:00:00+10:00', '2031-08-19T14:00:00+10:00'), 201)
+    await json(await onSydney(morning, '2031-08-19T09:00:00+10:00', '2031-08-19T10:00:00+10:00'), 409)
+
+    // Afternoon leave: 13:00 to the end of the day.
+    const late = await json(await onSydney(afternoon, '2031-08-26T13:00:00+10:00', '2031-08-26T14:00:00+10:00'), 409)
+    assert.equal(late.conflicts[0].starts_at, '2031-08-26T03:00:00.000Z')
+    await json(await onSydney(afternoon, '2031-08-26T12:00:00+10:00', '2031-08-26T13:00:00+10:00'), 201)
+    await json(await onSydney(afternoon, '2031-08-26T15:00:00+10:00', '2031-08-26T16:00:00+10:00'), 409)
+  })
+
+  test('TEN-62 a daylight-saving day is 23 or 25 hours long, and its Half Day boundary is 13:00 wall time: Sydney on 6 October 2030 and 6 April 2031', async () => {
+    // Spring forward, Sunday 6 October 2030: 00:00 +10:00 to 00:00 +11:00 is 23 hours.
+    const spring = await staffAt(two, 'spring', 'instructor')
+    await leave(spring, '2030-10-06', 'approved', 'none', two)
+    const first = await json(await onSydney(spring, '2030-10-06T00:15:00+10:00', '2030-10-06T00:45:00+10:00'), 409)
+    assert.equal(first.conflicts[0].starts_at, '2030-10-05T14:00:00.000Z')
+    assert.equal(first.conflicts[0].ends_at, '2030-10-06T13:00:00.000Z')
+    await json(await onSydney(spring, '2030-10-06T23:15:00+11:00', '2030-10-06T23:45:00+11:00'), 409)
+    await json(await onSydney(spring, '2030-10-05T23:00:00+10:00', '2030-10-05T23:45:00+10:00'), 201)
+    await json(await onSydney(spring, '2030-10-07T00:15:00+11:00', '2030-10-07T00:45:00+11:00'), 201)
+
+    // Fall back, Sunday 6 April 2031: 00:00 +11:00 to 00:00 +10:00 is 25 hours.
+    const autumn = await staffAt(two, 'autumn', 'instructor')
+    await leave(autumn, '2031-04-06', 'approved', 'none', two)
+    const second = await json(await onSydney(autumn, '2031-04-06T00:15:00+11:00', '2031-04-06T00:45:00+11:00'), 409)
+    assert.equal(second.conflicts[0].starts_at, '2031-04-05T13:00:00.000Z')
+    assert.equal(second.conflicts[0].ends_at, '2031-04-06T14:00:00.000Z')
+    await json(await onSydney(autumn, '2031-04-06T23:15:00+10:00', '2031-04-06T23:45:00+10:00'), 409)
+    await json(await onSydney(autumn, '2031-04-05T22:45:00+11:00', '2031-04-05T23:45:00+11:00'), 201)
+    await json(await onSydney(autumn, '2031-04-07T00:15:00+10:00', '2031-04-07T00:45:00+10:00'), 201)
+
+    // The Half Day boundary is 13:00 on the wall, 02:00 UTC under daylight saving.
+    const morning = await staffAt(two, 'dstmorning', 'instructor')
+    await leave(morning, '2029-10-07', 'approved', 'morning', two)
+    const overrun = await json(await onSydney(morning, '2029-10-07T12:00:00+11:00', '2029-10-07T13:30:00+11:00'), 409)
+    assert.equal(overrun.conflicts[0].ends_at, '2029-10-07T02:00:00.000Z')
+    await json(await onSydney(morning, '2029-10-07T13:00:00+11:00', '2029-10-07T14:00:00+11:00'), 201)
+    const afternoon = await staffAt(two, 'dstafternoon', 'instructor')
+    await leave(afternoon, '2031-04-06', 'approved', 'afternoon', two)
+    const beside = await json(await onSydney(afternoon, '2031-04-06T13:00:00+10:00', '2031-04-06T14:00:00+10:00'), 409)
+    assert.equal(beside.conflicts[0].starts_at, '2031-04-06T03:00:00.000Z')
+    await json(await onSydney(afternoon, '2031-04-06T12:00:00+10:00', '2031-04-06T13:00:00+10:00'), 201)
+  })
+
   /* ── the instructor cancels his own class ──────────────────────────── */
 
   test('LEV-112, LEV-143 the main instructor cancels his class with a reason: every booking cancelled and refunded exactly as an admin cancel, and the studio is emailed his reason', async () => {
@@ -830,6 +922,28 @@ describe('leave on the schedule', { skip: integrationTestsEnabled ? false : SKIP
         ),
       )
     assert.deepEqual(told.map(t => t.status), ['sent'])
+  })
+
+  test('TEN-81 the email an instructor\'s cancellation sends the studio names the class on the studio\'s clock: a Sydney class at 00:30 reads 00:30 on its own date', async () => {
+    const created = await json(
+      await onSydney(teacherTwo, '2031-07-15T00:30:00+10:00', '2031-07-15T01:30:00+10:00'),
+      201,
+    )
+    const reason = `${TAG} sydney sprain`
+    await json(await instructorCancel(teacherTwo, created.id, { reason }), 200)
+    const told = await harness.db
+      .select({ body: schema.emailLog.bodyRendered })
+      .from(schema.emailLog)
+      .where(
+        and(
+          eq(schema.emailLog.recipientEmail, at(`admin-${two.slug}`)),
+          eq(schema.emailLog.templateSlug, 'instructor_cancel_class'),
+          like(schema.emailLog.bodyRendered, `%Reason given: ${reason}%`),
+        ),
+      )
+    assert.equal(told.length, 1)
+    assert.match(told[0]!.body, /15 Jul 2031, 00:30/)
+    assert.doesNotMatch(told[0]!.body, /14 Jul 2031, 22:30/)
   })
 
   test('LEV-114 there is no notice window: he cancels his class ten minutes before it starts', async () => {

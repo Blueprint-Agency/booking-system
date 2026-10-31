@@ -5,15 +5,19 @@
  * the table an admin was looking at come out of one read, so they cannot
  * describe different periods.
  */
-import { sgFormat } from '../../lib/time'
+import { zoneFormat } from '../../lib/studio-time'
 import type { FinanceSummary } from './totals'
 
-// Date and time are split into two columns, both in studio time — a spreadsheet
-// sorts and groups them, which it cannot do with one ISO instant in UTC.
-const sgDate = sgFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' })
-const sgTime = sgFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false })
+// Date and time are split into two columns, both on the studio's clock — a
+// spreadsheet sorts and groups them, which it cannot do with one ISO instant in UTC.
+const studioDate = (timezone: string) =>
+  zoneFormat(timezone, 'en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' })
+const studioTime = (timezone: string) =>
+  zoneFormat(timezone, 'en-GB', { hour: '2-digit', minute: '2-digit', hour12: false })
 
-export function financeCsv(summary: FinanceSummary): string {
+export function financeCsv(summary: FinanceSummary, timezone: string): string {
+  const dateOn = studioDate(timezone)
+  const timeOn = studioTime(timezone)
   // Columns in the order the screen shows them, so a reader who scanned the
   // table isn't re-learning the layout in their spreadsheet.
   const header = [
@@ -44,8 +48,8 @@ export function financeCsv(summary: FinanceSummary): string {
   const lines = summary.rows.map(r => {
     const at = new Date(r.occurred_at)
     return [
-      sgDate.format(at),
-      sgTime.format(at),
+      dateOn.format(at),
+      timeOn.format(at),
       r.user_name,
       r.type,
       r.variant,

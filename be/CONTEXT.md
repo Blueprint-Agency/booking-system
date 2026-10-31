@@ -37,6 +37,10 @@ A Tenant's leftmost DNS label, and the only thing the frontends can read a Tenan
 A platform administrator can **rename** a Slug from the super portal (`services/tenants/rename.ts`); a studio's own admins cannot. The new Slug passes the creation rules and must be neither a Tenant's current Slug nor another Tenant's live **Former slug** — a Tenant's *own* Former slug is free to it, so it can be renamed straight back with no wait. The rename moves `tenants.slug`, records the old one (plus a lasting `tenant.slug_renamed` entry in the studio's `audit_log`, naming the platform administrator), and rewrites stored email template bodies from the old addresses to the new — one transaction. Links built at send time already read the Slug by id. Sessions carry the Tenant id, not the Slug, so they stay valid, but their tokens live on the old host: members and staff sign in once at the new address.
 _Avoid_: subdomain, handle, tenant name
 
+**Studio's clock**:
+The IANA time zone a Tenant keeps in `tenants.timezone`, picked when the studio is created and not changed after: the one clock every date and time about that studio is read on. A calendar day, a wall-clock time, "today", "N days ahead", a day boundary, a Leave Year, a Receipt's date and every date or time in an email are the studio's, whoever is looking and wherever their device is (`lib/studio-time.ts`, `docs/adr/0009-every-date-is-on-the-studios-clock.md`). Daylight saving is the zone's rules on that date: a day is 23 or 25 hours on a transition day, a wall time in a spring-forward gap lands one hour later, and a wall time that occurs twice at fall-back is its first occurrence. Stored instants keep their moment and stored plain dates keep their day. The server process's own zone is no part of it.
+_Avoid_: server time, UTC time, Singapore time, local time
+
 **Former slug**:
 A Slug a Tenant was renamed away from, kept in `former_slugs` for 90 days with who renamed it, when, and to what. Inside that window it is a redirect and nothing more: the public tenant-by-slug lookup answers it with the Tenant's *current* Slug and both frontends' proxies send a permanent redirect to the same path and query there; the API's Tenant resolution never accepts it, so nothing authenticated runs on an old host; and no *other* Tenant may be created on it or renamed to it. The Tenant it belongs to may take it back at any time, which deletes the row (the address is current again) and starts a Former slug for the one it leaves. Afterwards it counts for nothing, and the nightly release deletes the row. Platform data like `tenants` — it names its Tenant as `renamed_tenant_id`, so it has no `tenant_id`, no policy, and no place in the studio archive. See `services/tenants/former-slugs.ts`.
 _Avoid_: alias, old slug (in code), redirect slug
@@ -516,7 +520,7 @@ Pool minus Committed — what a staff member can still apply for. It can go nega
 _Avoid_: balance, available, left, unused
 
 **Half Day**:
-Morning or afternoon, costing 0.5 days, permitted only on a Leave Request covering a single date. The boundary is 13:00 Singapore time.
+Morning or afternoon, costing 0.5 days, permitted only on a Leave Request covering a single date. The boundary is 13:00 on the studio's clock.
 _Avoid_: partial day, AM/PM leave
 
 **Supporting Document**:

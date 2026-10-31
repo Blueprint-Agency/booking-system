@@ -20,19 +20,26 @@ import {
   leaveCapWarning,
   leaveCoversStart,
   leavePoolFigures,
-  leaveWindow,
+  leaveWindow as leaveWindowIn,
   leaveYearOf,
   peakLeaveAway,
   supportingDocumentKey,
   checkRemainingAdjustment,
   poolDays,
   poolForRemaining,
-  sgToday,
   sumLeaveDays,
   type LeaveCapPeer,
   type LeaveDaysRow,
+  type LeaveHalfDay,
   type LeaveType,
 } from './rules'
+import { localDate } from '../../lib/studio-time'
+
+/** The zone the Singapore-dated cases below are written in; Sydney's own cases name `SYDNEY`. */
+const SINGAPORE = 'Asia/Singapore'
+const SYDNEY = 'Australia/Sydney'
+const leaveWindow = (from: string, to: string, halfDay: LeaveHalfDay = 'none') =>
+  leaveWindowIn(SINGAPORE, from, to, halfDay)
 
 // -- day counting: inclusive of both ends ------------------------------------
 test('LEV-28 a range consumes one day per calendar date, both ends included, a Sunday inside it too', () => {
@@ -182,12 +189,59 @@ test('LEV-108 with only a date and no start time, a half-day instructor is not r
   }
 }
 
-// -- "today" is a Singapore day, not a UTC one --------------------------------
+// -- "today" is a day on the studio's clock, not a UTC one --------------------
 {
-  // 23:00 UTC on the 11th is already the 12th in Singapore
-  assert.strictEqual(sgToday(new Date('2026-08-11T23:00:00.000Z')), '2026-08-12')
-  assert.strictEqual(sgToday(new Date('2026-08-11T15:00:00.000Z')), '2026-08-11')
+  // 23:00 UTC on the 11th is already the 12th in Singapore, and at 10:00 in Sydney
+  assert.strictEqual(localDate(SINGAPORE, new Date('2026-08-11T23:00:00.000Z')), '2026-08-12')
+  assert.strictEqual(localDate(SINGAPORE, new Date('2026-08-11T15:00:00.000Z')), '2026-08-11')
+  assert.strictEqual(localDate(SYDNEY, new Date('2026-08-11T15:00:00.000Z')), '2026-08-12')
 }
+
+// -- the same windows on a Sydney studio's clock ------------------------------
+test('TEN-66 a leave day and its Half Day boundary are Sydney\'s own: 14:00 UTC to 14:00 UTC, split at 03:00 UTC, and 23 or 25 hours on a daylight-saving day', () => {
+  const full = leaveWindowIn(SYDNEY, '2026-08-12', '2026-08-12')
+  assert.strictEqual(full.startsAt.toISOString(), '2026-08-11T14:00:00.000Z')
+  assert.strictEqual(full.endsAt.toISOString(), '2026-08-12T14:00:00.000Z')
+  const am = leaveWindowIn(SYDNEY, '2026-08-12', '2026-08-12', 'morning')
+  const pm = leaveWindowIn(SYDNEY, '2026-08-12', '2026-08-12', 'afternoon')
+  assert.strictEqual(am.endsAt.toISOString(), '2026-08-12T03:00:00.000Z', '13:00 in Sydney')
+  assert.strictEqual(pm.startsAt.toISOString(), am.endsAt.toISOString(), 'the halves meet exactly')
+  assert.strictEqual(am.startsAt.getTime(), full.startsAt.getTime())
+  assert.strictEqual(pm.endsAt.getTime(), full.endsAt.getTime())
+
+  // Spring forward on Sunday 4 October 2026: 23 hours, and 13:00 is UTC+11
+  const spring = leaveWindowIn(SYDNEY, '2026-10-04', '2026-10-04')
+  assert.strictEqual((spring.endsAt.getTime() - spring.startsAt.getTime()) / 3_600_000, 23)
+  assert.strictEqual(leaveWindowIn(SYDNEY, '2026-10-04', '2026-10-04', 'morning').endsAt.toISOString(), '2026-10-04T02:00:00.000Z')
+  // Fall back on Sunday 5 April 2026: 25 hours, and 13:00 is UTC+10
+  const autumn = leaveWindowIn(SYDNEY, '2026-04-05', '2026-04-05')
+  assert.strictEqual((autumn.endsAt.getTime() - autumn.startsAt.getTime()) / 3_600_000, 25)
+  assert.strictEqual(leaveWindowIn(SYDNEY, '2026-04-05', '2026-04-05', 'afternoon').startsAt.toISOString(), '2026-04-05T03:00:00.000Z')
+  // A run of days: from the first midnight to the midnight after the last, across the change
+  const run = leaveWindowIn(SYDNEY, '2026-10-03', '2026-10-05')
+  assert.strictEqual(run.startsAt.toISOString(), '2026-10-02T14:00:00.000Z')
+  assert.strictEqual(run.endsAt.toISOString(), '2026-10-05T13:00:00.000Z')
+})
+
+test('TEN-66 a cap or conflict refusal and the admins\' warning name the day on the studio\'s clock: Sydney\'s midnight is still the evening before in Singapore', () => {
+  // Bob is away on 18 August; the applicant asks for the same day. The peak is the window's start:
+  // midnight on the 18th in Sydney, which is 14:00 UTC on the 17th.
+  const day = (timezone: string) => leaveWindowIn(timezone, '2026-08-18', '2026-08-18')
+  const input = (timezone: string, type: LeaveType) => ({
+    type,
+    conflictPartnerIds: ['Bob'],
+    window: day(timezone),
+    timezone,
+    peers: [{ instructorId: 'Bob', instructorName: 'Bob', type: 'annual' as const, ...day(timezone) }],
+    studyCap: 1,
+  })
+  const refusal = checkLeaveCaps(input(SYDNEY, 'annual'))
+  assert.ok(!refusal.ok && refusal.message.includes('already on leave on 18 Aug 2026.'), JSON.stringify(refusal))
+  assert.ok(leaveCapWarning(input(SYDNEY, 'medical')).includes('also away on 18 Aug 2026.'))
+  // The same instant read on Singapore's clock is the 17th: the zone passed in decides.
+  const sydneyWindow = { ...input(SYDNEY, 'medical'), timezone: SINGAPORE }
+  assert.ok(leaveCapWarning(sydneyWindow).includes('also away on 17 Aug 2026.'))
+})
 
 // -- what the sums count, and what a Pool is worth against them ---------------
 const rows: LeaveDaysRow[] = [
@@ -873,6 +927,7 @@ const base = { today: '2026-08-10', pool: 14, committedDays: 0 } as const
       type,
       conflictPartnerIds: o.conflictsWith ?? [],
       window: leaveWindow(from, to, o.halfDay ?? 'none'),
+      timezone: SINGAPORE,
       peers,
       studyCap: o.studyCap ?? 1,
     })
@@ -1149,6 +1204,7 @@ test('a Supporting Document is taken by a pending or approved request only, and 
     type,
     conflictPartnerIds: o.conflictsWith ?? [],
     window: leaveWindow(from, to, 'none'),
+    timezone: SINGAPORE,
     peers,
     studyCap: o.studyCap ?? 1,
   })

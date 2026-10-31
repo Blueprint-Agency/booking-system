@@ -13,7 +13,7 @@ import { receiptPdf } from './pdf'
  * the INV rows of the Scenario Inventory (`docs/md/test-scenarios.md`).
  */
 
-const STUDIO = { name: 'Northwind Yoga', logoUrl: null }
+const STUDIO = { name: 'Northwind Yoga', logoUrl: null, timezone: 'Asia/Singapore' }
 
 const paid: ReceiptRow = {
   tenantId: '00000000-0000-4000-8000-000000000001',

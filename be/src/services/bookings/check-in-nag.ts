@@ -35,7 +35,7 @@ import { staffUsers } from '../../db/schema/identity'
 import { emailEveryAdmin, sendTemplatedEmail } from '../notifications/send'
 import { sessionTimeFormat } from '../notifications/send-booking-email'
 import { requireTenantUrl } from '../tenants/urls'
-import { loadTenantById } from '../tenants/tenants'
+import { tenantTimezone } from '../tenants/tenants'
 import { localDate } from '../tenants/term-dates'
 import { reportError } from '../../shared/logger'
 import { now as clockNow } from '../../lib/clock'
@@ -198,7 +198,7 @@ async function nag(c: Claimed): Promise<void> {
       .from(staffUsers)
       .where(and(eq(staffUsers.tenantId, c.tenantId), eq(staffUsers.id, c.instructorId)))
       .limit(1)
-    const day = localDate((await loadTenantById(c.tenantId))?.timezone ?? 'UTC', c.startsAt)
+    const day = localDate(await tenantTimezone(c.tenantId), c.startsAt)
     const deskLink = (path: string) => `${portal}${path}?date=${day}&session=${c.session}`
     const variables = (checkinPath: string) => ({
       instructor_name: instructor?.name || 'The instructor',

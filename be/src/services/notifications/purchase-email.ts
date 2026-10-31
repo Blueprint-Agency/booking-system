@@ -9,18 +9,19 @@
  * sentence, which is what keeps ONE template correct for four kinds without
  * touching the renderer.
  *
- * Pure on purpose: it imports the studio's clock and nothing else, so the
- * copy that promises Activation can be checked without a database, an SMTP
- * server or a payment provider.
+ * Pure on purpose: it imports the studio-time formatters and nothing else, so
+ * the copy that promises Activation can be checked without a database, an SMTP
+ * server or a payment provider. The studio's zone is handed in.
  */
-import { sgFormat } from '../../lib/time'
+import { zoneFormat } from '../../lib/studio-time'
 import { sgdText, toCents } from '../../shared/money'
 import { isDormant } from '../packages/validity'
 
 export type PurchasedKind = 'credit_bundle' | 'unlimited' | 'trial' | 'pt'
 
-/** "14 Feb 2027" — a date a member reads, in the studio's only clock. */
-const SG_DATE = sgFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+/** "14 Feb 2027" — a date a member reads, on the studio's clock. */
+const studioDate = (timezone: string) =>
+  zoneFormat(timezone, 'en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
 
 /** Both forms are spelled out — four nouns do not need an English pluraliser. */
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
@@ -76,6 +77,7 @@ export function validityLine(
   expiresAt: Date | null,
   durationMonths: number | null,
   validityDays: number | null,
+  timezone: string,
 ): string {
   if (isDormant({ kind, expiresAt })) {
     const length =
@@ -88,7 +90,7 @@ export function validityLine(
         : ['your first class', 'when you make your first booking']
     return `Valid ${length} from ${first} — your package activates ${when}.`
   }
-  return expiresAt ? `Expires ${SG_DATE.format(expiresAt)}` : 'See your account for the expiry date'
+  return expiresAt ? `Expires ${studioDate(timezone).format(expiresAt)}` : 'See your account for the expiry date'
 }
 
 /**
@@ -142,6 +144,8 @@ export interface PurchaseEmailInput {
   receiptUrl: string | null
   /** Where a grant with no Receipt points instead — the page that lists what they own. */
   accountUrl: string
+  /** The studio's zone: a date in the email is its day. */
+  timezone: string
 }
 
 /**
@@ -169,6 +173,7 @@ export function composePurchaseEmail(input: PurchaseEmailInput): {
         input.expiresAt,
         input.durationMonths,
         input.validityDays,
+        input.timezone,
       ),
       amount_paid: amountPaid(input.amountPaidSgd),
       receipt_url: input.receiptUrl || input.accountUrl,
