@@ -16,7 +16,7 @@
  *
  * A booking already checked in is left alone: its member is in the room.
  */
-import { and, eq, ne } from 'drizzle-orm'
+import { and, asc, eq, ne } from 'drizzle-orm'
 import { db } from '../../db'
 import { bookings } from '../../db/schema/bookings'
 import { classPackages, clientPackages } from '../../db/schema/packages'
@@ -66,6 +66,9 @@ async function bookingsRefusedBy(reader: Tx | typeof db, tenantId: string, class
         ne(bookings.checkInState, 'attended'),
       ),
     )
+    // A fixed order, so the bookings are cancelled in the same sequence whichever
+    // plan Postgres picks for the join.
+    .orderBy(asc(bookings.id))
   return rows.filter(r => !acceptsPackage(rule, r.sourceClassPackageId))
 }
 
