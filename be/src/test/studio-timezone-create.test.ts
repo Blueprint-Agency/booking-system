@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { after, before, describe, test } from 'node:test'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
 import { withEnv } from './with-env'
 
@@ -65,12 +65,22 @@ describe('a studio’s time zone at creation', { skip: integrationTestsEnabled ?
   })
 
   test('TEN-104 creating a studio on a name that is not an IANA zone is refused 400 timezone_invalid, and no studio is made', async () => {
-    for (const timezone of ['Mars/Base', 'Asia', 'Not a zone', 'GMT+8', '+08:00', '-05:00', 'Asia/Singapre']) {
+    // Names Intl reads but a zone is not: a bare Area, an offset, and the old
+    // three-letter ids (AET, CTT, NET, ECT and SystemV/EST5 Postgres refuses
+    // outright; IST, PST and the like it reads as another offset).
+    const names: unknown[] = [
+      'Mars/Base', 'Asia', 'Not a zone', 'GMT+8', '+08:00', '-05:00', 'Asia/Singapre', 'Singapore',
+      'AET', 'IST', 'PST', 'CET', 'SystemV/EST5',
+      // Not text at all.
+      5, true, ['Asia/Singapore'], { zone: 'Asia/Singapore' },
+    ]
+    for (const timezone of names) {
       const slug = nextSlug()
+      const label = JSON.stringify(timezone)
       const res = await create({ slug, name: `Domain ${slug}`, timezone })
-      assert.equal(res.status, 400, timezone)
-      assert.equal(((await res.json()) as { error: string }).error, 'timezone_invalid', timezone)
-      assert.deepEqual(await tenantRows(slug), [], `no studio was made on ${timezone}`)
+      assert.equal(res.status, 400, label)
+      assert.equal(((await res.json()) as { error: string }).error, 'timezone_invalid', label)
+      assert.deepEqual(await tenantRows(slug), [], `no studio was made on ${label}`)
     }
   })
 
@@ -98,5 +108,44 @@ describe('a studio’s time zone at creation', { skip: integrationTestsEnabled ?
     const lookup = await harness.app.request(`/api/v1/public/tenants/by-slug/${sydney}`)
     assert.equal(lookup.status, 200)
     assert.equal(((await lookup.json()) as { tenant: { timezone: string } }).tenant.timezone, 'Australia/Sydney')
+  })
+
+  test('TEN-105 a zone padded with spaces is stored trimmed, and one typed in the wrong case under the zone list’s own spelling', async () => {
+    for (const [typed, stored] of [
+      [' Australia/Sydney ', 'Australia/Sydney'],
+      ['asia/singapore', 'Asia/Singapore'],
+      ['AMERICA/NEW_YORK', 'America/New_York'],
+      [' utc', 'UTC'],
+    ] as const) {
+      const slug = nextSlug()
+      const res = await create({ slug, name: `Domain ${slug}`, timezone: typed })
+      assert.equal(res.status, 201, `${typed}: ${await res.text()}`)
+      assert.equal((await tenantRows(slug))[0]!.timezone, stored, typed)
+    }
+  })
+
+  test('TEN-107 a legacy link name the runtime lists is stored under the name the tz database gives the zone today, and Postgres can read what was stored', async () => {
+    const legacy: Record<string, string> = {
+      'Africa/Asmera': 'Africa/Asmara',
+      'America/Buenos_Aires': 'America/Argentina/Buenos_Aires',
+      'America/Godthab': 'America/Nuuk',
+      'Asia/Calcutta': 'Asia/Kolkata',
+      'Asia/Katmandu': 'Asia/Kathmandu',
+      'Asia/Rangoon': 'Asia/Yangon',
+      'Asia/Saigon': 'Asia/Ho_Chi_Minh',
+      'Europe/Kiev': 'Europe/Kyiv',
+      'Pacific/Enderbury': 'Pacific/Kanton',
+      'Pacific/Truk': 'Pacific/Chuuk',
+    }
+    for (const [typed, stored] of Object.entries(legacy)) {
+      const slug = nextSlug()
+      const res = await create({ slug, name: `Domain ${slug}`, timezone: typed })
+      assert.equal(res.status, 201, `${typed}: ${await res.text()}`)
+      const row = (await tenantRows(slug))[0]!
+      assert.equal(row.timezone, stored, typed)
+      // The sweep that ends Terms asks Postgres for this zone; it must know it.
+      const read = await harness.db.execute(sql`select (now() at time zone ${row.timezone}) as local`)
+      assert.equal(read.length, 1, `${row.timezone} is a zone Postgres reads`)
+    }
   })
 })

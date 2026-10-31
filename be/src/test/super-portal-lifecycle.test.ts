@@ -183,7 +183,7 @@ describe('super portal studio lifecycle', { skip: integrationTestsEnabled ? fals
     const taken = await throwawayStudio('life-taken')
     const firstAdmin = `first-admin@${DOMAIN}`
     const create = (slug: string) =>
-      platform('POST', '/tenants', { slug, name: 'Lifecycle refused', admin_email: firstAdmin, term_months: 3 })
+      platform('POST', '/tenants', { slug, name: 'Lifecycle refused', timezone: 'Asia/Singapore', admin_email: firstAdmin, term_months: 3 })
 
     // The reserved list as be/CONTEXT.md § Slug names it, and the browser journeys' prefix.
     const reserved = ['admin', 'api', 'portal', 'www', 'dev', 'staging', 'app', 'mail', 'clerk', 'assets']
@@ -226,14 +226,14 @@ describe('super portal studio lifecycle', { skip: integrationTestsEnabled ? fals
     const shortest = `l${run.slice(-2)}`
     const longest = `life-${run}-${'x'.repeat(63 - `life-${run}-`.length)}`
     for (const slug of [shortest, longest]) {
-      const created = expectReply(await platform('POST', '/tenants', { slug, name: 'Lifecycle bound' }), 201, undefined, slug)
+      const created = expectReply(await platform('POST', '/tenants', { slug, name: 'Lifecycle bound', timezone: 'Asia/Singapore' }), 201, undefined, slug)
       throwaways.push({ id: created.tenant.id, slug })
       assert.equal(created.tenant.slug, slug)
       assert.ok(await tenantBySlug(slug), `${slug} is a studio`)
     }
 
     // Only the Platform administrator creates a studio.
-    await refusedToOutsiders('POST', '/tenants', { slug: `life-outsider-${run}`, name: 'Lifecycle outsider' })
+    await refusedToOutsiders('POST', '/tenants', { slug: `life-outsider-${run}`, name: 'Lifecycle outsider', timezone: 'Asia/Singapore' })
     assert.equal(await tenantBySlug(`life-outsider-${run}`), null)
   })
 
@@ -563,7 +563,7 @@ describe('super portal studio lifecycle', { skip: integrationTestsEnabled ? fals
       assert.match(String(reply.body?.message), says, `${what}: ${JSON.stringify(reply.body)}`)
     }
     const create = (over: Record<string, unknown>) =>
-      platform('POST', '/tenants', { slug: `life-said-${run}`, name: 'Lifecycle said', admin_email: `said@${DOMAIN}`, term_months: 3, ...over })
+      platform('POST', '/tenants', { slug: `life-said-${run}`, name: 'Lifecycle said', timezone: 'Asia/Singapore', admin_email: `said@${DOMAIN}`, term_months: 3, ...over })
     await writesNothing('every refused form', async () => {
       sentence(await create({ name: 'n'.repeat(201) }), /studio name.*200/i, 'a long studio name')
       sentence(await create({ name: '' }), /studio name/i, 'a blank studio name')
