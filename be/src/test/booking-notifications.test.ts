@@ -584,6 +584,66 @@ describe('booking and cancellation emails over HTTP', { skip: integrationTestsEn
     })
   })
 
+  test("NTF-60 a member cancelling their own scheduled private session request over the cancellation cap keeps the session and gets the forfeit email alone, not also the cancelled one", async () => {
+    await withCancelCap(one, 0, async () => {
+      const leo = await member(one, 'Leo')
+      const pkg = await givePt(one, leo, 4)
+      const { requestId } = await ptRequest(one, leo, pkg, { scheduled: true })
+      drain()
+
+      const res = await expectStatus(await memberCancelRequest(leo, requestId), 200)
+      assert.equal(res.status, 'cancelled_after_scheduled')
+      assert.equal(res.refundOutcome, 'forfeited')
+      assert.equal(await balance(pkg), 4, 'the session is not returned')
+
+      const mail = drain()
+      assert.deepEqual(mail.map(m => [m.to, m.template]), [[leo.email, 'pt_cancelled_forfeited']], 'exactly one email, and it is the forfeit one')
+      assert.ok(mail[0]!.text.includes(one.instructor.name), 'the instructor is named')
+      assert.match(mail[0]!.text, /past the number of cancellations the studio allows in one cycle/)
+    })
+  })
+
+  test('NTF-60 a 2-on-1 partner of a request its requester cancelled over the cap is still told it was cancelled, with nothing returned', async () => {
+    await withCancelCap(one, 0, async () => {
+      const mia = await member(one)
+      const leo = await member(one, 'Leo')
+      const pkg = await givePt(one, mia, 2)
+      const { requestId } = await ptRequest(one, mia, pkg, { scheduled: true, partner: leo })
+      drain()
+
+      const res = await expectStatus(await memberCancelRequest(mia, requestId), 200)
+      assert.equal(res.refundOutcome, 'forfeited')
+      assert.equal(await balance(pkg), 2, 'neither session is returned')
+
+      const mail = drain()
+      assert.deepEqual(
+        mail.map(m => [m.to, m.template]).sort(),
+        [
+          [leo.email, 'pt_request_cancelled'],
+          [mia.email, 'pt_cancelled_forfeited'],
+        ].sort(),
+      )
+      assert.doesNotMatch(mail.find(m => m.to === leo.email)!.text, /returned to your package/)
+    })
+  })
+
+  test('NTF-60 a member cancelling their own scheduled private session request within the cap still gets the cancelled email, with the session returned, and no forfeit email', async () => {
+    await withCancelCap(one, 5, async () => {
+      const leo = await member(one, 'Leo')
+      const pkg = await givePt(one, leo, 4)
+      const { requestId } = await ptRequest(one, leo, pkg, { scheduled: true })
+      drain()
+
+      const res = await expectStatus(await memberCancelRequest(leo, requestId), 200)
+      assert.equal(res.refundOutcome, 'session_returned')
+      assert.equal(await balance(pkg), 5)
+
+      const mail = drain()
+      assert.deepEqual(mail.map(m => [m.to, m.template]), [[leo.email, 'pt_request_cancelled']])
+      assert.match(mail[0]!.text, /1 session has been returned to your package\./)
+    })
+  })
+
   test('NTF-54 with the forfeit emails switched off the member is not mailed and each is logged skipped; a studio that left them on mails', async () => {
     await harness.db.insert(schema.emailSwitches).values([
       { tenantId: one.id, slug: 'class_cancelled_forfeited', enabled: false },

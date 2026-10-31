@@ -193,6 +193,9 @@ describe('private session request emails over HTTP', { skip: integrationTestsEna
     return drain().filter(m => emails.includes(m.to))
   }
 
+  const balance = async (clientPackageId: string) =>
+    (await harness.db.select().from(schema.clientPackages).where(eq(schema.clientPackages.id, clientPackageId)))[0]!.creditsOrSessionsRemaining
+
   const logRows = (email: string) =>
     harness.db
       .select({ slug: schema.emailLog.templateSlug, status: schema.emailLog.status })
@@ -241,6 +244,7 @@ describe('private session request emails over HTTP', { skip: integrationTestsEna
       await exec(sql`DELETE FROM pt_request_slots WHERE pt_request_id IN (${requests})`)
       await exec(sql`DELETE FROM pt_requests WHERE client_id IN (${clients})`)
       await exec(sql`DELETE FROM client_packages WHERE client_id IN (${clients})`)
+      await exec(sql`DELETE FROM purchases WHERE client_id IN (${clients})`)
       await exec(sql`DELETE FROM clients WHERE email LIKE ${ours}`)
       await exec(sql`DELETE FROM pt_packages WHERE name LIKE ${`${PT_PACKAGE_NAME}%`}`)
       await exec(sql`DELETE FROM rooms WHERE name = ${ROOM_NAME}`)
@@ -269,6 +273,9 @@ describe('private session request emails over HTTP', { skip: integrationTestsEna
     assert.equal(mail[0]!.subject, 'Your private session request was received')
     assert.match(mail[0]!.text, /Hi Ana,/)
     assert.match(mail[0]!.text, /9:00 am or .*2:30 pm/, 'both proposed times, as the member typed them')
+    assert.match(mail[0]!.text, /The session for this request is held from your package until it is answered\./)
+    assert.doesNotMatch(mail[0]!.text, /deducted/i)
+    assert.equal(await balance(solo), 9, 'the session is in fact held: submitting debits the package')
 
     await request(one, ana, '2on1', pair, partner)
     assert.deepEqual(pairs(drain()), [[ana.email, 'pt_request_submitted']], 'the partner is not mailed on submission')
@@ -383,6 +390,29 @@ describe('private session request emails over HTTP', { skip: integrationTestsEna
     assert.equal(mail[0]!.subject, 'Your private session request expired')
     assert.match(mail[0]!.text, /Hi Jon,/)
     assert.match(mail[0]!.text, /9:00 am or .*2:30 pm/, 'the times they proposed')
+    assert.equal(await balance(pair), 10, 'both held sessions are back')
+    assert.match(mail[0]!.text, /2 sessions have been returned to your package\./, 'the email says what the package took back')
+    assert.doesNotMatch(mail[0]!.text, /nothing was deducted/i)
+    harness.clock.reset()
+  })
+
+  test('NTF-61 a request that lapses on a package a Refund has Voided is emailed that it expired, and not that a session came back, because none did', async () => {
+    harness.clock.set(new Date())
+    const vera = await member(one, 'Vera')
+    const solo = await givePt(one, vera, '1on1')
+    const requestId = await request(one, vera, '1on1', solo)
+    const [purchase] = await harness.db
+      .insert(schema.purchases)
+      .values({ tenantId: one.id, clientId: vera.clientId, kind: 'pt_package', totalSgd: '900.00', status: 'refunded' })
+      .returning({ id: schema.purchases.id })
+    await harness.db.update(schema.clientPackages).set({ purchaseId: purchase!.id, active: false }).where(eq(schema.clientPackages.id, solo))
+    drain()
+
+    const mail = await expireAfter(requestId, [vera])
+    assert.deepEqual(pairs(mail), [[vera.email, 'pt_request_expired']])
+    assert.match(mail[0]!.text, /was not answered in time, so it has expired\./)
+    assert.doesNotMatch(mail[0]!.text, /returned to your package|deducted/i)
+    assert.equal(await balance(solo), 9, 'the Voided package took nothing back')
     harness.clock.reset()
   })
 

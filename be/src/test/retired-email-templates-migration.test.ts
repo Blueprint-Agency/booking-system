@@ -7,15 +7,18 @@ import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from
 
 const run = Date.now().toString(36)
 const MIGRATION = path.resolve(process.cwd(), 'src/db/migrations/0138_retire_unsent_email_templates.sql')
-const RETIRED = ['welcome', 'referral_credited']
+const RETIRED = ['welcome', 'referral_credited', 'pt_session_declined', 'workshop_waitlist_promoted']
 
 /**
- * Migration 0138: a studio created before the `welcome` and `referral_credited`
- * templates were retired (nothing ever sent either) loses both rows, the one it
- * edited as much as the one it never touched, and keeps every other template.
+ * Migration 0138: a studio created before the `welcome`, `referral_credited`,
+ * `pt_session_declined` and `workshop_waitlist_promoted` templates were retired
+ * (nothing sends any of them) loses all four rows, the ones it edited as much
+ * as the ones it never touched, and keeps every other template. A switch row
+ * for any of them goes too.
  *
- * Two throwaway studios, provisioned with today's templates, then given the two
- * rows an older studio holds. The migration's own SQL is run against them, twice.
+ * Two throwaway studios, provisioned with today's templates, then given the
+ * four rows an older studio holds. The migration's own SQL is run against them,
+ * twice.
  */
 describe('migration 0138: the retired email templates leave studios created before', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
   let harness!: TestApp
@@ -57,10 +60,21 @@ describe('migration 0138: the retired email templates leave studios created befo
     }
   })
 
-  test('NTF-51 both retired templates are removed from every studio, an edited one included, every other template stays, and a second run changes nothing', async () => {
+  async function switchSlugsOf(tenantId: string): Promise<string[]> {
+    const rows = await harness.db.select({ slug: schema.emailSwitches.slug }).from(schema.emailSwitches).where(eq(schema.emailSwitches.tenantId, tenantId))
+    return rows.map(r => r.slug).sort()
+  }
+
+  test('NTF-51 all four retired templates are removed from every studio, an edited one included, with their switches, every other template stays, and a second run changes nothing', async () => {
     const [plain, edited] = [studios[0]!, studios[1]!]
     const kept = await slugsOf(plain.id)
-    assert.ok(!kept.some(s => RETIRED.includes(s)), 'a studio created today is not given either')
+    assert.ok(!kept.some(s => RETIRED.includes(s)), 'a studio created today is not given any of them')
+
+    // A studio that had switched off one of the retired emails, and another that is still sent.
+    await harness.db.insert(schema.emailSwitches).values([
+      ...RETIRED.map(slug => ({ tenantId: edited.id, slug, enabled: false })),
+      { tenantId: edited.id, slug: 'pt_request_submitted', enabled: false },
+    ])
 
     for (const studio of studios) {
       await harness.db.insert(schema.emailTemplates).values(
@@ -78,9 +92,11 @@ describe('migration 0138: the retired email templates leave studios created befo
     await migrate()
     assert.deepEqual(await slugsOf(plain.id), kept, 'the untouched studio keeps every other template')
     assert.deepEqual(await slugsOf(edited.id), kept, 'the studio that edited them loses them too')
+    assert.deepEqual(await switchSlugsOf(edited.id), ['pt_request_submitted'], 'their switches go, a live email\'s stays')
 
     await migrate()
     assert.deepEqual(await slugsOf(plain.id), kept, 'a second run changes nothing')
     assert.deepEqual(await slugsOf(edited.id), kept)
+    assert.deepEqual(await switchSlugsOf(edited.id), ['pt_request_submitted'])
   })
 })

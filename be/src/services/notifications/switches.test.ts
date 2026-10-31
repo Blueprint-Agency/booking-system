@@ -34,10 +34,6 @@ const MEMBER_LOCKED = [
 const STAFF_SWITCHABLE = ['checkin_nag', 'instructor_cancel_class', 'classpass_overbooked', 'leave_request_submitted', 'leave_approved', 'leave_rejected', 'leave_revoked']
 const STAFF_LOCKED = ['staff_two_factor_code', 'staff_password_reset', 'admin_invite', 'instructor_invite', 'staff_email_change_link', 'staff_email_changed_notice']
 
-// Seeded, and no sender yet: a private-session request is never declined in the
-// app (staff schedule or cancel it), and a workshop has no waitlist to promote from.
-const NO_SENDER = ['pt_session_declined', 'workshop_waitlist_promoted']
-
 const sorted = (slugs: Iterable<string>) => [...slugs].sort()
 
 test('NTF-38 every email a studio sends is classified to members or staff, and locked or switchable, as the spec lists it', () => {
@@ -66,8 +62,9 @@ test('NTF-38 every classified email has a plain-language name of its own, not it
   assert.equal(new Set(names).size, names.length, 'two emails share a name')
 })
 
-test('NTF-38 a template slug is either classified or one no sender uses, so a new email cannot ship unclassified', () => {
+test('NTF-38 every template a studio is seeded has a sender and is classified, and nothing is classified that is not seeded, so a template no code sends cannot ship', () => {
+  const seeded = new Set(Object.keys(TEMPLATE_VARIABLES))
   const classified = new Set(Object.keys(STUDIO_EMAILS))
-  const unclassified = Object.keys(TEMPLATE_VARIABLES).filter(slug => !classified.has(slug))
-  assert.deepEqual(sorted(unclassified), sorted(NO_SENDER))
+  assert.deepEqual(sorted([...seeded].filter(slug => !classified.has(slug))), [], 'seeded, but no email is classified for it')
+  assert.deepEqual(sorted([...classified].filter(slug => !seeded.has(slug))), [], 'classified, but no template is seeded for it')
 })
