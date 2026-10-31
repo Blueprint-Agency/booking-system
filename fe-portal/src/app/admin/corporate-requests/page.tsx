@@ -5,7 +5,8 @@ import { Loader2 } from "lucide-react";
 import { useRequestDeepLink } from "@/components/attention/deep-links";
 import { useAttention } from "@/components/attention/attention-provider";
 import { requestParam } from "@/lib/attention";
-import { PageHeader, Badge, Pagination, usePaged } from "@/components/ui";
+import { PageHeader, Badge, LoadFailure, Pagination, usePaged } from "@/components/ui";
+import { answeredElsewhere } from "@/lib/failed-read";
 import { useWorkspace } from "@/lib/workspace-context";
 import { scheduleErrorMessage } from "@/lib/schedule";
 import { CorporateRequestDrawer } from "@/components/corporate-requests/corporate-request-drawer";
@@ -115,7 +116,10 @@ function CorporateRequestsView() {
       );
       setRequests(res.corporate_requests.map(fromApi));
     } catch (err) {
-      setError(scheduleErrorMessage(err, "Failed"));
+      // The previous tab's rows are not this tab's: none are kept. A `401` or
+      // maintenance is answered by the sign-in and the maintenance screen.
+      setRequests([]);
+      if (!answeredElsewhere(err)) setError(scheduleErrorMessage(err, "Failed"));
     } finally {
       setLoading(false);
     }
@@ -199,13 +203,11 @@ function CorporateRequestsView() {
         ))}
       </div>
 
-      {error && (
-        <div className="rounded-lg border border-error/30 bg-error/5 p-3 text-xs text-error">
-          {error}
+      {error ? (
+        <div className="rounded-xl border border-border bg-card">
+          <LoadFailure what="the corporate requests" onRetry={load} />
         </div>
-      )}
-
-      {loading ? (
+      ) : loading ? (
         <div className="flex items-center justify-center gap-2 rounded-xl border border-border bg-card py-16 text-sm text-muted">
           <Loader2 className="h-4 w-4 animate-spin" /> Loading requests…
         </div>

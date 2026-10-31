@@ -40,7 +40,28 @@ export function workspaceLocations(
   return full ?? short;
 }
 
-/** What the update helper's guard throws, so the form can tell it from any other failure. */
+/**
+ * The question asked before a location is archived: how many live Unlimited
+ * Plans call it home (`count`), or that the count could not be read (`null`).
+ * Null when nothing is stranded and nothing need be asked. An unread count is
+ * never taken as 0: the admin is told, and may still archive.
+ */
+export function archiveWarning(count: number | null, locationName: string): string | null {
+  if (count === null) {
+    return (
+      `Couldn't check whether any live Unlimited Plan calls ${locationName} home, ` +
+      `so archiving it may strand members. Archive anyway?`
+    );
+  }
+  if (count <= 0) return null;
+  return (
+    `${count} live Unlimited ${count === 1 ? "Plan calls" : "Plans call"} ` +
+    `${locationName} home. Archiving it strands ` +
+    `${count === 1 ? "that member" : "those members"}. Archive anyway?`
+  );
+}
+
+/** What the update helper's guard throws,so the form can tell it from any other failure. */
 export class LocationNotLoadedInFullError extends Error {
   constructor() {
     super(

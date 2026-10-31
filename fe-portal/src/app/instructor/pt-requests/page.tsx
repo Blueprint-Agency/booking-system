@@ -3,9 +3,10 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRequestDeepLink } from "@/components/attention/deep-links";
 import { useAttention } from "@/components/attention/attention-provider";
 import { CalendarCheck, Loader2, X } from "lucide-react";
-import { Button, EmptyState, Label, PageHeader } from "@/components/ui";
+import { Button, EmptyState, Label, LoadFailure, PageHeader } from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
-import { permissionRefusal } from "@/lib/access-refusal";
+import { PERMISSION_REFUSED, permissionRefusal } from "@/lib/access-refusal";
+import { answeredElsewhere } from "@/lib/failed-read";
 import { ApiError } from "@/lib/api";
 import { LATEST_DATE, formatRelative } from "@/lib/formatters";
 import { scheduleErrorMessage } from "@/lib/schedule";
@@ -80,10 +81,13 @@ function InstructorPtRequestsView() {
       setRequests(res.pt_requests ?? []);
       setRooms(rm.rooms ?? []);
     } catch (err) {
-      setError(
-        permissionRefusal(err) ??
-          (err instanceof ApiError ? `HTTP ${err.status}` : "Network error"),
-      );
+      // A `401` or maintenance is answered by the sign-in and the maintenance screen.
+      if (!answeredElsewhere(err)) {
+        setError(
+          permissionRefusal(err) ??
+            (err instanceof ApiError ? `HTTP ${err.status}` : "Network error"),
+        );
+      }
       setRequests([]);
     } finally {
       setLoading(false);
@@ -110,13 +114,16 @@ function InstructorPtRequestsView() {
         description="The shared queue of pending private-session requests. Pick one up by scheduling it — it's assigned to you automatically."
       />
 
-      {error && (
-        <div className="rounded-lg border border-error/30 bg-error/5 px-3 py-2 text-xs text-error">
-          Failed to load requests: {error}
+      {/* A queue that failed to load is never drawn as "No pending requests". */}
+      {error ? (
+        <div className="rounded-xl border border-border bg-card shadow-soft">
+          <LoadFailure
+            what="the PT requests"
+            detail={error === PERMISSION_REFUSED ? error : undefined}
+            onRetry={load}
+          />
         </div>
-      )}
-
-      {loading ? (
+      ) : loading ? (
         <div className="flex items-center justify-center py-16 text-muted">
           <Loader2 className="h-5 w-5 animate-spin" />
         </div>

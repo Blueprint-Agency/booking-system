@@ -2,6 +2,7 @@
 import { Suspense, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { ContentLoading } from "@/components/ui/content-loading";
+import { LoadFailure } from "@/components/ui/load-failure";
 import { AttentionProvider } from "@/components/attention/attention-provider";
 import { LocationParamSync } from "@/components/attention/deep-links";
 import { AdminNav } from "./admin-nav";
@@ -10,7 +11,7 @@ import { LocationGate } from "./location-gate";
 import { useWorkspace } from "@/lib/workspace-context";
 
 export function AdminShell({ children }: { children: React.ReactNode }) {
-  const { loading, currentStaff } = useWorkspace();
+  const { loading, meFailed, refresh, currentStaff } = useWorkspace();
   const router = useRouter();
 
   // Role-aware landing: instructors don't use the admin surface. Bounce them to
@@ -41,6 +42,8 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
             <main className="flex-1 overflow-auto px-4 py-4 sm:px-6 sm:py-5 lg:px-8 lg:py-6">
               {ready ? (
                 <LocationGate>{children}</LocationGate>
+              ) : meFailed && !loading ? (
+                <LoadFailure what="your workspace" className="py-24" onRetry={refresh} />
               ) : (
                 <ContentLoading label="Loading workspace" />
               )}
