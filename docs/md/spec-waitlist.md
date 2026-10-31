@@ -214,11 +214,11 @@ The instructor session page gets the same roster, Add member (online, then buffe
 
 - New slug `class_waitlist_promoted`, variables `client_name, class_name, date, time, location_name, instructor_name, cancel_by` (the moment that class's window closes). Subject: "You're in — {{class_name}}". Body says a seat opened, they've been booked, the credit used, and that they can cancel free until `{{cancel_by}}`. Seeded in `email-copy.ts`, declared in `TEMPLATE_VARIABLES`, so the slug-parity test in `email-copy.test.ts` covers it.
 - No email on join, withdraw, expiry, or skip, or when staff remove one member from the line. A whole-class cancel is the one removal that emails: each member still waiting gets the class-cancelled email (§6). A skipped member sees "Can't pay" only through what the app already tells them when they try to book.
-- `workshop_waitlist_promoted` stays seeded and unsent (workshops are §12).
+- No workshop waitlist email exists: workshops are §12, and the `workshop_waitlist_promoted` template that was seeded for them, and never sent, is deleted (migration 0138).
 
 ### 12. Workshops and PT sessions
 
-Out of v1. Workshop days keep `capacity_waitlist` and the claim-link template already seeded; Mindbody treats multi-day courses differently (no auto-enrol, staff enrol and charge when a spot opens), which matches the card-paid, tier-based booking here and wants its own spec. PT sessions keep the columns; a 1-on-1 has no meaningful queue.
+Out of v1. Workshop days keep `capacity_waitlist`, but no claim-link template exists (the seeded one, never sent, is deleted); Mindbody treats multi-day courses differently (no auto-enrol, staff enrol and charge when a spot opens), which matches the card-paid, tier-based booking here and wants its own spec. PT sessions keep the columns; a 1-on-1 has no meaningful queue.
 
 ### 12a. Mindbody migration
 

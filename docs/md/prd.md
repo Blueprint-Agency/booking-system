@@ -87,7 +87,7 @@ Anywhere the PRD specifies an "inbox" surface, this is the underlying pattern: a
 | Create / edit / archive workshops | ✗ | ✓ | ✗ |
 | Edit cancellation policy + windows | ✗ | ✓ | ✗ |
 | Edit pricing (packages, workshops, private rates) | ✗ | ✓ | ✗ own rate only on profile |
-| Approve / decline private-session request | ✗ | ✓ | ✓ own inbox only |
+| Schedule or cancel a private-session request (a request is never declined) | ✗ | ✓ | ✓ own inbox only |
 | Manually grant / adjust client credits (mandatory reason) | ✗ | ✓ | ✗ |
 | Manually grant / adjust private sessions (mandatory reason) | ✗ | ✓ | ✗ |
 | Reset / re-request a waiver | ✗ | ✓ (per user) | ✗ |

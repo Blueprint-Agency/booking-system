@@ -95,7 +95,7 @@ be/
     │   │   │   ├── promotions.ts      # CRUD nested under class_packages / pt_packages / workshops (§5d, §19)
     │   │   │   ├── workshops.ts       # workshops CRUD + days + tiers + tier_day junction (§19)
     │   │   │   ├── schedule.ts        # class create/edit/admin-cancel + workshop admin-cancel (§7)
-    │   │   │   ├── pt-requests.ts     # PT Request triage queue — approve/decline/schedule (§9)
+    │   │   │   ├── pt-requests.ts     # PT Request triage queue — schedule/cancel; a request is never declined (§9)
     │   │   │   ├── pt-sessions.ts     # admin cancel of confirmed PT sessions
     │   │   │   ├── bookings.ts        # admin cancel + roster
     │   │   │   ├── check-in.ts        # generic page + per-session (§11)
@@ -148,8 +148,7 @@ be/
     │   ├── pt-sessions/
     │   │   ├── request.ts             # Client submits pt_requests row (no inbox insert in v1)
     │   │   ├── schedule.ts            # scheduleFromRequest — converts pt_requests → pt_sessions + bookings
-    │   │   ├── decline.ts             # Decline / expire / cancel a pt_requests row
-    │   │   └── cancel.ts              # Cancel a confirmed pt_sessions row
+    │   │   └── cancel.ts              # Cancel a pt_requests row (pending or scheduled) and its pt_sessions row; the expiry sweep ends a lapsed pending one here
     │   ├── promotions/
     │   │   └── resolve.ts             # bestPriceFor(parent_type, parent_id) — best-price-wins resolver
     │   ├── packages/
@@ -952,11 +951,9 @@ class_booking_confirmed
 class_waitlist_promoted                # sent by services/waitlist/promote.ts when a freed online seat books the head of the line
 pt_request_submitted                   # sent to the requester when a PT Request is made (NTF-55)
 pt_session_approved                    # sent when staff schedule a PT Request, the implicit approval (NTF-57)
-pt_session_declined                    # seeded, no sender: a request is never declined in the app
 pt_request_expired                     # sent by the expiry sweep (§5) when it ends a pending request past expires_at (NTF-59)
 pt_request_cancelled                   # a PT Request cancelled before or after scheduling (#359, NTF-11)
 workshop_purchase_confirmed
-workshop_waitlist_promoted             # NEW — fired when cancellation frees a seat and waitlist promotes (deferred behaviour, slug seeded now)
 class_cancelled_credit_returned
 class_cancelled_forfeited              # a member's cancel that kept the credit, with `reason_line` from `forfeitLine` (NTF-52)
 pt_cancelled_session_returned
@@ -981,14 +978,9 @@ corporate_purchase_confirmed           # a paid corporate package: no credits, t
 purchase_receipt                       # Merch (paid or free) and a standalone Cross-Location Add-On: the Receipt is the email (#388, migration 0114 for older studios)
 ```
 
-**The unreachable-slug gap is closed.** `pt_request_expired` and `workshop_waitlist_promoted` are now members of `TemplateSlug`, are declared in `TEMPLATE_VARIABLES`, and `db/seed/email-copy.test.ts` asserts slug-for-slug parity in both directions, so the class of gap that left the purchase templates unsent for months cannot reopen silently.
+**The unreachable-slug gap is closed.** Every slug is a member of `TemplateSlug`, is declared in `TEMPLATE_VARIABLES`, and `db/seed/email-copy.test.ts` asserts slug-for-slug parity with the seeded copy in both directions. `services/notifications/switches.test.ts` asserts that every seeded slug is a classified email, so a template no code sends cannot ship, and the class of gap that left the purchase templates unsent for months cannot reopen silently.
 
-**Templates with no sender.** A template only reaches a member when some service calls it. These two are seeded with real copy and have no caller in `be/src`, so they are not on the Emails page:
-
-| Slug | Why |
-|---|---|
-| `pt_session_declined` | A PT Request is never declined in the app: staff schedule it or cancel it (`admin-restructure.md` §9, `be-portal.md` §3c), and a cancel sends `pt_request_cancelled`. Nothing triggers it. |
-| `workshop_waitlist_promoted` | Workshops have no waitlist (join, queue or promotion) to promote from; `spec-waitlist.md` §12. |
+**Templates that were never sent are deleted, not kept seeded.** A template only reaches a member when some service calls it. `welcome` (nothing creates an account as a welcome), `referral_credited` (referral credit is not built), `pt_session_declined` (a PT Request is never declined in the app: staff schedule it or cancel it, `admin-restructure.md` §9, `be-portal.md` §3c, and a cancel sends `pt_request_cancelled`) and `workshop_waitlist_promoted` (workshops have no waitlist, `spec-waitlist.md` §12) were seeded with real copy and had no caller in `be/src`. They are no longer seeded or declared, and migration 0138 deletes their rows and switches from the studios created before.
 
 **The booking and cancellation emails (#359).** Sent after the action commits, never able to undo or fail it: a send fault is a failed `email_log` row, and a missing template or a failed read is reported (`shared/logger.ts`) and swallowed — the same contract as the purchase confirmations. Composed sentences live in `services/notifications/booking-email.ts` (pure), the reads and sends in `send-booking-email.ts`. Links are variables built per send from the studio's own origin (`classes_url`, `account_url`, `workshops_url`, `checkin_url`), so the default wording names no origin and migration 0108 could write it into studios created before it (it updates a row only while it is still byte-identical to its old default, adds a missing one, and touches nothing else).
 
@@ -996,10 +988,10 @@ purchase_receipt                       # Merch (paid or free) and a standalone C
 |---|---|---|---|
 | `class_booking_confirmed` | `services/bookings/book.ts`, member or staff booking (a waitlist promotion sends `class_waitlist_promoted` instead) | the member | `credits_line`: the credits used and what remains, or that an Unlimited Plan covered it |
 | `class_cancelled_credit_returned`, `pt_cancelled_session_returned` | `services/bookings/cancel.ts` (a member's own cancel whose refund fired), and a member leaving a manual session in time (`pt-sessions/manual.ts`) | the member | `refund_line`: what came back |
-| `class_cancelled_forfeited`, `pt_cancelled_forfeited` | `services/bookings/cancel.ts` (a member's own cancel that spent something and kept it, in place of the returned email), and a member leaving a manual session past the cap (`pt-sessions/manual.ts`) | the member | `reason_line`: `policy/evaluate-cancellation.ts:forfeitLine`, the window, the cap or both. A cancel that spent nothing (an Unlimited Plan) sends none |
+| `class_cancelled_forfeited`, `pt_cancelled_forfeited` | `services/bookings/cancel.ts` (a member's own cancel that spent something and kept it, in place of the returned email), a member leaving a manual session past the cap (`pt-sessions/manual.ts`), and a member cancelling their own scheduled request past the cap (`pt-sessions/cancel.ts`, in place of `pt_request_cancelled`, NTF-60) | the member | `reason_line`: `policy/evaluate-cancellation.ts:forfeitLine`, the window, the cap or both. A cancel that spent nothing (an Unlimited Plan) sends none |
 | `pt_request_submitted` | `services/pt-sessions/request.ts`, after the request commits (`notifications/send-pt-request-email.ts`) | the requester | `starts_at`: every time the member proposed, as typed; `instructor_name` is "the studio", as a request names none |
 | `pt_session_approved` | `services/pt-sessions/schedule.ts`, after the schedule commits | every member the session booked (the requester and a 2-on-1 partner) | the instructor, the Location, the time and a link to their bookings |
-| `pt_request_expired` | `services/pt-sessions/cancel.ts:cancelPtRequest`, when `expireStaleSessions` ends a pending request (not a Remove, not a member's own cancel) | the requester | the times they had proposed |
+| `pt_request_expired` | `services/pt-sessions/cancel.ts:cancelPtRequest`, when `expireStaleSessions` ends a pending request (not a Remove, not a member's own cancel) | the requester | the times they had proposed; `refund_line`, the sessions the package took back (empty where a Refund had Voided it, which takes none) |
 | `admin_cancel_class` | `services/bookings/cancel-class.ts`, admin or main-instructor cancel, and each unbooked class a series end cancels (`services/schedule/series.ts`) | every member booked, and every member still waiting in its line (spec-waitlist §6), once each | `refund_line`: the credits returned, or that the booking used none; to a waiting member, that their place in line took nothing from their package |
 | `admin_cancel_pt` | `services/pt-sessions/cancel.ts` → `manual.ts`, staff cancelling a manual session | every member seated | `refund_line`: the session returned |
 | `admin_cancel_workshop` | `services/workshops/cancel.ts` | every attendee | `amount_paid` in `sgdText` form; nothing is refunded automatically (#272), so it says the refund is being arranged |
@@ -1109,7 +1101,7 @@ The prior `promo_codes_enabled` flag is **removed**. Promotions (per `fe-client-
 | Workshop admin-cancel | Triggered (not scheduled) by admin route | `services/workshops/cancel.ts:cancelWorkshop`: each confirmed booking on the workshop → `state='cancelled'`, `refund_outcome='n_a'`. Nobody is refunded automatically (#272): an Admin refunds a paid booking from the member's page. After commit, every attendee is emailed (NTF-10). No Inbox item is written. |
 | Class waitlist promote | Triggered (not scheduled) — `services/bookings/cancel.ts` calls `services/waitlist/promote.ts:promoteFromWaitlist` inside the cancel transaction, under the class row lock, when a confirmed **online** seat is cancelled outside the Cancellation Window. Books the first member in line whose package can pay (same path as a member booking), skips the rest without dropping them, and sends `class_waitlist_promoted` after commit (`spec-waitlist.md` §5). | — |
 | `expireWaitlists` | Every 5 min, per Tenant (`jobs/index.ts`) | `waitlist_entries` still `waiting` on a class whose `starts_at` has passed → `expired`. Reads already treat them so. |
-| Workshop waitlist promote | **Deferred — not in v1.** Slug `workshop_waitlist_promoted` is seeded; it has no sender, so it is not on the studio's Emails page. When waitlist behaviour lands, this becomes a triggered handler on booking-cancel that picks the oldest waitlist row for each affected day and offers it. | — |
+| Workshop waitlist promote | **Not built.** Workshops have no waitlist (`spec-waitlist.md` §12), and no template is seeded for it. When it is built, it becomes a triggered handler on booking-cancel that picks the oldest waitlist row for each affected day and offers it, with an email of its own. | — |
 
 ### BullMQ (added when refund durability is required)
 

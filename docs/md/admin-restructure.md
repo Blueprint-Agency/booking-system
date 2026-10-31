@@ -858,7 +858,7 @@ The one classification of every email, which the send check, the API and the pag
 
 - `pt_request_cancelled` is one email for a member's and a staff cancel, so it is locked whole. `checkin_nag` goes to the instructor and every admin; one switch covers both.
 - `pt_session_approved` (staff scheduling a request is its approval) and `pt_request_expired` (the studio's machinery ended it) are staff or system acts on a member's request, so both are locked. `pt_request_submitted` and the two forfeited cancels answer the member's own act, as their siblings do, so they are switchable.
-- Template slugs no code sends (`pt_session_declined`, `workshop_waitlist_promoted`) are not listed: a request is never declined in the app (§9, staff schedule or cancel it), and a workshop has no waitlist to promote from (`spec-waitlist.md` §12). The super portal's own `platform_*` mail is not a studio's and is not listed. `welcome` and `referral_credited` are no longer templates at all: nothing would have sent either, and migration 0138 removed their rows.
+- The super portal's own `platform_*` mail is not a studio's and is not listed. `welcome`, `referral_credited`, `pt_session_declined` and `workshop_waitlist_promoted` are no longer templates at all: nothing would have sent any of them (a request is never declined in the app, §9, staff schedule or cancel it; a workshop has no waitlist to promote from, `spec-waitlist.md` §12), and migration 0138 removed their rows.
 
 ### 16b. Template List
 
@@ -878,8 +878,8 @@ The emails' triggers and variables, for reference. Some rows below (the PT reque
 | 3 | Class booking confirmed | Client books a class | Client | `{{client_name}}`, `{{class_name}}`, `{{instructor_name}}`, `{{date}}`, `{{time}}`, `{{location}}`, `{{credits_used}}`, `{{credits_remaining}}` |
 | 4 | PT request submitted | Client submits PT request (§9) | Client | `{{client_name}}`, `{{instructor_name}}` (the studio: a request names no instructor), `{{starts_at}}` (every time proposed) |
 | 5 | PT session approved | Admin/instructor schedules the PT request (§9, the implicit approval) | Client, and a 2on1 partner | `{{client_name}}`, `{{instructor_name}}`, `{{starts_at}}`, `{{location}}`, `{{qr_url}}` |
-| 6 | PT session declined | Not built: there is no decline in the app, staff schedule or cancel (§9) | — | `{{client_name}}`, `{{instructor_name}}`, `{{decline_note}}` |
-| 6b | PT request expired | The expiry job ends a pending request unanswered | Client | `{{client_name}}`, `{{instructor_name}}` (the studio), `{{starts_at}}` (every time proposed) |
+| 6 | ~~PT session declined~~ | Retired: a request is never declined in the app, staff schedule or cancel (§9), and no `pt_session_declined` template exists | — | — |
+| 6b | PT request expired | The expiry job ends a pending request unanswered | Client | `{{client_name}}`, `{{instructor_name}}` (the studio), `{{starts_at}}` (every time proposed), `{{refund_line}}` (the sessions the package took back; empty for a package a Refund Voided) |
 | 7 | Workshop purchase confirmed | Client purchases a workshop tier | Client | `{{client_name}}`, `{{workshop_name}}`, `{{tier_name}}`, `{{date}}`, `{{location}}`, `{{amount_paid}}` |
 
 **Client-initiated cancellations**
@@ -889,7 +889,7 @@ The emails' triggers and variables, for reference. Some rows below (the PT reque
 | 8 | Class cancelled — credit returned | Client cancels within cap + within window | Client | `{{client_name}}`, `{{class_name}}`, `{{date}}`, `{{credits_returned}}` |
 | 9 | Class cancelled — forfeited | Client cancels late or over cap and the credit is kept (an Unlimited Plan's cancel spent none, so sends none) | Client | `{{client_name}}`, `{{class_name}}`, `{{date}}`, `{{reason_line}}` (`forfeitLine`) |
 | 10 | PT cancelled — session returned | Client cancels within cap + within window | Client | `{{client_name}}`, `{{instructor_name}}`, `{{date}}`, `{{sessions_returned}}` |
-| 11 | PT cancelled — forfeited | A member's cancel of a private session booking, or of their seat on a manual session, keeps the session (past the cap; inside the window it is refused) | Client | `{{client_name}}`, `{{instructor_name}}`, `{{starts_at}}`, `{{reason_line}}` (`forfeitLine`) |
+| 11 | PT cancelled — forfeited | A member's cancel of a private session booking, of their own scheduled request, or of their seat on a manual session, keeps the session (past the cap; inside the window it is refused) | Client | `{{client_name}}`, `{{instructor_name}}`, `{{starts_at}}`, `{{reason_line}}` (`forfeitLine`) |
 
 **Admin-initiated cancellations**
 

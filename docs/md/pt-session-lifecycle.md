@@ -19,7 +19,7 @@ are referenced where they share policy but are not the subject here. Companion t
 | Client cancel ownership assertion | ✅ done | `cancel.ts`, `routes/client/pt-sessions.ts` |
 | P7 — fe-portal pt-requests list/schedule/cancel wired to BE | ⛔ deferred | blocked on a portal-wide live-data pattern (no admin page calls `makeApi` yet; sibling corporate dialog is also seed-based) |
 | P8 — 2-on-1 new-partner "create account" loop | ⛔ deferred | needs P7 + admin client-create surface |
-| email notifications | ✅ done | `pt_request_submitted`, `pt_session_approved`, `pt_request_expired`, `pt_request_cancelled` and `pt_cancelled_session_returned` / `pt_cancelled_forfeited`, after commit (`services/notifications/send-pt-request-email.ts`, `send-booking-email.ts`); `pt_session_declined` has no sender, as a request is never declined |
+| email notifications | ✅ done | `pt_request_submitted`, `pt_session_approved`, `pt_request_expired`, `pt_request_cancelled` and `pt_cancelled_session_returned` / `pt_cancelled_forfeited`, after commit (`services/notifications/send-pt-request-email.ts`, `send-booking-email.ts`); a request is never declined, so there is no declined email |
 
 Verified with `npx tsc --noEmit` in `be/` (EXIT=0; no test infra per project convention).
 **D1 resolved**: client scheduled-cancels are gated by the PT window + shared cap
@@ -185,7 +185,9 @@ Single entry point for client (`/me/pt-sessions/:id/cancel`, `source='client'`) 
   - Email `pt_request_cancelled` to the requester and a 2on1 partner (NTF-11). A member who
     cancels one booking on its own (`bookings/cancel.ts`), or leaves a manual session, gets
     `pt_cancelled_session_returned` when the session came back and `pt_cancelled_forfeited` when
-    the cap kept it (NTF-09, NTF-53).
+    the cap kept it (NTF-09, NTF-53). A member cancelling their own request past the cap gets
+    `pt_cancelled_forfeited` instead of `pt_request_cancelled` (one email; the partner still gets
+    `pt_request_cancelled`) (NTF-60).
 - **terminal** → idempotent no-op.
 
 This makes "client cancels before the window → refunded; admin cancels → always refunded" true,

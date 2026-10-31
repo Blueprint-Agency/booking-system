@@ -4,7 +4,7 @@ import { ptRequests, ptSessions } from '../../db/schema/schedule'
 import { bookings, cancellations } from '../../db/schema/bookings'
 import { clients } from '../../db/schema/identity'
 import { activeAdminIds, recordUpdate, staffNameFor, studioWhen } from '../attention/updates'
-import { lockMemberAndEvaluateCancellation, staffCancelInTime } from '../policy/evaluate-cancellation'
+import { lockMemberAndEvaluateCancellation, staffCancelInTime, type EvaluateResult } from '../policy/evaluate-cancellation'
 import { actorOfSource, keepCredit, refundCredits, type Tx } from '../packages/ledger'
 import { reverseActivationOnCancel } from '../packages/activation'
 import { ptSessionCost } from './cost'
@@ -98,13 +98,10 @@ export async function cancelPtRequest(
   // (RFD-38) or an Admin's act as a booking cancel can, and Postgres aborts one
   // of the two: it runs again. The emails it owes are gathered by the attempt
   // that returns, so an aborted attempt adds none (PT-161).
-  const { result, mail, expired } = await retryingTransaction('PT request cancel', async tx => {
+  const { result, mail } = await retryingTransaction('PT request cancel', async tx => {
     const mail = emptyPtCancelMail()
     const result = await cancelPtRequestInTx(tx, tenantId, input, mail)
-    // Only the expiry job's own end of a pending request: a Remove, which also
-    // ends one as the studio's machinery, is not a lapse.
-    const expired = input.expired && result.status === 'cancelled_before_scheduled' ? [input.ptRequestId] : []
-    return { result, mail, expired }
+    return { result, mail }
   })
   // Sent only once the request's transaction has committed (`afterCommit`;
   // NTF-09, NTF-10, NTF-11). Sending never throws.
@@ -112,7 +109,7 @@ export async function cancelPtRequest(
     afterCommit(() => sendPtCancelMail(tenantId, mail))
   }
   // A pending request that lapsed tells its requester so, its own way.
-  if (expired.length) afterCommit(() => sendPtRequestExpiredEmails(tenantId, expired))
+  if (mail.expired.length) afterCommit(() => sendPtRequestExpiredEmails(tenantId, mail.expired))
   return result
 }
 
@@ -207,9 +204,14 @@ async function cancelPtRequestInTx(
       .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, ptRequestId)))
     // NTF-11. An expiry or a Remove is the studio's machinery, not a cancel
     // anyone made, and tells the member its own way.
+    const sessionsReturned = req.debitedClientPackageId ? returned : 0
     if (source !== 'system') {
-      mail.request.push({ clientId: req.clientId, sessionsReturned: req.debitedClientPackageId ? returned : 0, ptSessionId: null })
+      mail.request.push({ clientId: req.clientId, sessionsReturned, ptSessionId: null })
     }
+    // Only the expiry job's own end of a pending request: a Remove, which also
+    // ends one as the studio's machinery, is not a lapse. What the email says
+    // came back is what the package took back, so a Voided one says nothing.
+    if (input.expired) mail.expired.push({ ptRequestId, sessionsReturned })
     return {
       status: 'cancelled_before_scheduled',
       refundedSessions: returned,
@@ -276,6 +278,9 @@ async function cancelPtRequestInTx(
   let refundSessions = 0
   let wasWithinWindow = true
   let wasWithinCap = true
+  // The member's own cancel is judged once, and the verdict is kept: the email
+  // that tells them why the session was kept names its cause (below).
+  let judged: EvaluateResult | null = null
   if (staff) {
     refundSessions = cost
     // The window never decides a staff cancel's refund, but it is recorded
@@ -289,6 +294,7 @@ async function cancelPtRequestInTx(
       sessionStartsAt: session.startsAt,
       now,
     })
+    judged = evaluation
     wasWithinWindow = evaluation.wasWithinWindow
     wasWithinCap = evaluation.wasWithinCap
     // Hard deadline: inside the window (or after start) the cancel is rejected,
@@ -417,9 +423,18 @@ async function cancelPtRequestInTx(
   // sessions returned to them, a 2-on-1 partner, who paid nothing, without.
   // Returned only when there was a package to return them to, as on the
   // pending path: `refundToPackage` moves nothing without one.
+  //
+  // A member whose own cancel kept the session is told why instead
+  // (`pt_cancelled_forfeited`), and not also that it was cancelled: one email.
+  // The partner, who kept nothing, is still told of the cancel.
   if (source !== 'system') {
     const returned = req.debitedClientPackageId ? refundSessions : 0
+    const forfeitedTo = source === 'client' && refundOutcome === 'forfeited' && judged ? requesterBookingId : null
+    if (forfeitedTo && judged) {
+      mail.memberForfeited.push({ bookingId: forfeitedTo, reason: judged.reason, windowHours: judged.windowHours })
+    }
     for (const bk of sessionBookings) {
+      if (bk.id === forfeitedTo) continue
       mail.request.push({
         clientId: bk.clientId,
         sessionsReturned: bk.clientId === req.clientId ? returned : 0,
