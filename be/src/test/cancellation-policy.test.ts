@@ -451,6 +451,7 @@ describe('cancellation policy over HTTP', { skip: integrationTestsEnabled ? fals
     await harness.db.execute(sql`DELETE FROM pt_session_clients WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM bookings WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM pt_session_supporting_instructors WHERE pt_session_id IN (SELECT id FROM pt_sessions WHERE pt_request_id IN (${ptRequests}))`)
+    await harness.db.execute(sql`UPDATE pt_requests SET scheduled_pt_session_id = NULL WHERE id IN (${ptRequests})`)
     await harness.db.execute(sql`DELETE FROM pt_sessions WHERE pt_request_id IN (${ptRequests})`)
     await harness.db.execute(sql`DELETE FROM pt_request_slots WHERE pt_request_id IN (${ptRequests})`)
     await harness.db.execute(sql`DELETE FROM pt_requests WHERE client_id IN (${clients})`)

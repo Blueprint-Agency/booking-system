@@ -432,6 +432,7 @@ describe('refunds over HTTP', { skip: integrationTestsEnabled ? false : SKIP_REA
     await harness.db.execute(sql`DELETE FROM bookings WHERE client_id IN (${clients})`)
     const sessions = sql`SELECT id FROM pt_sessions WHERE pt_request_id IN (SELECT id FROM pt_requests WHERE client_id IN (${clients}))`
     await harness.db.execute(sql`DELETE FROM pt_session_clients WHERE pt_session_id IN (${sessions})`)
+    await harness.db.execute(sql`UPDATE pt_requests SET scheduled_pt_session_id = NULL WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM pt_sessions WHERE id IN (${sessions})`)
     await harness.db.execute(sql`DELETE FROM pt_request_slots WHERE pt_request_id IN (SELECT id FROM pt_requests WHERE client_id IN (${clients}))`)
     await harness.db.execute(sql`DELETE FROM pt_requests WHERE client_id IN (${clients})`)

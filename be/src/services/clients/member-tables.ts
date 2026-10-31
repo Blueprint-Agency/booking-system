@@ -173,7 +173,6 @@ export const MEMBER_TABLES: readonly MemberTable[] = [
   // The money a Promo Code took off, and a use of that code's limit.
   byClientId('promo_code_redemptions', [{ keptBecause: ACCOUNTS, set: sql`client_id = NULL`, where: clientIdIs }]),
   byClientId('merch_orders', [{ keptBecause: ACCOUNTS, set: sql`client_id = NULL`, where: clientIdIs }]),
-  byClientId('waiver_signatures'),
   {
     table: 'pt_requests',
     // The requester, or the member they named as their 2-on-1 partner.
@@ -221,12 +220,6 @@ export const MEMBER_TABLES: readonly MemberTable[] = [
     columns: ['recipient_user_id', 'recipient_email'],
     where: m =>
       sql`recipient_user_kind = 'client' AND (recipient_user_id = ${m.clientId} OR lower(recipient_email) = lower(${m.email}))`,
-  },
-  {
-    table: 'inbox_items',
-    // A notification about a member carries their id in its payload.
-    columns: ['payload'],
-    where: m => sql`payload->>'clientId' = ${m.clientId}`,
   },
   // A staff Update that names the member. Deleted: it is a notice to a
   // staff member, with no accounting value, and its snapshot may hold their name.
@@ -287,6 +280,11 @@ export const UNEXPORTED_MEMBER_COLUMNS: readonly { table: string; column: string
     table: 'corporate_sessions',
     column: 'client_name',
     why: 'The corporate client’s name as staff typed it, not a member.',
+  },
+  {
+    table: 'waiver_signatures',
+    column: 'client_id',
+    why: 'Nothing writes this table (waivers are not being built, #233) and the next deploy drops it, so it is neither exported nor erased in the meantime.',
   },
 ]
 

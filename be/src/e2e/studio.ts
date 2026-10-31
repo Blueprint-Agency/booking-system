@@ -616,8 +616,17 @@ export async function removeE2eStudio({ db, slug }: { db: Db; slug: string }): P
   const [tenant] = await db.select().from(schema.tenants).where(eq(schema.tenants.slug, slug))
 
   if (!tenant) return false
-  const { order } = await tenantTableOrder()
+  const { order, deferred } = await tenantTableOrder()
   await db.transaction(async tx => {
+    // The references no write order satisfies (a PT request and its session
+    // name each other) are untied first, as `clearStudioRows` does.
+    for (const [table, columns] of Object.entries(deferred)) {
+      await tx.execute(sql`
+        UPDATE ${sql.identifier(table)}
+        SET ${sql.join(columns.map(c => sql`${sql.identifier(c)} = NULL`), sql`, `)}
+        WHERE tenant_id = ${tenant.id}
+      `)
+    }
     for (const table of [...order].reverse()) {
       await tx.execute(sql`DELETE FROM ${sql.identifier(table)} WHERE tenant_id = ${tenant.id}`)
     }

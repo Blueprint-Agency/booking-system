@@ -6,7 +6,6 @@ import path from 'node:path'
 import { and, eq, lte, sql } from 'drizzle-orm'
 import { frontendOrigin, integrationTestsEnabled, SKIP_REASON, startTestApp, inTenantContext, type TestApp } from '../../../src/test/harness'
 import { withEnv } from '../../../src/test/with-env'
-import { buildEmailTemplates } from '../../../src/db/seed/email-copy'
 
 const OPERATOR = 'mindbody-operator@platform.test'
 
@@ -214,11 +213,11 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
     assert.equal(await count('locations', studio.tenant.id), 2)
     // Hatha and Vinyasa Flow, plus the Personal Training focus the PT import needs.
     assert.equal(await count('class_types', studio.tenant.id), 3)
-    // Every template a provisioned studio gets: exactly the ones the seed builds.
-    assert.equal(
-      await count('email_templates', studio.tenant.id),
-      buildEmailTemplates({ clientUrl: 'https://app.test', portalUrl: 'https://portal.test', studio: { name: 'Test Studio' } }).length,
-    )
+    // Every template a provisioned studio gets, class_waitlist_promoted,
+    // class_rule_cancelled, pt_request_cancelled and
+    // corporate_purchase_confirmed, purchase_receipt and
+    // classpass_overbooked included.
+    assert.equal(await count('email_templates', studio.tenant.id), 39)
     assert.equal(await count('clients', studio.tenant.id), 8)
 
     // A member cancellation reads the policy, and finds the studio's own.
