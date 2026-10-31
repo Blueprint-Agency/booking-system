@@ -19,6 +19,7 @@ import {
   autoOpenKey,
   bellLabel,
   bubbleText,
+  needsActionTabLabel,
   locationFromHref,
   locationParam,
   rememberAutoOpenDecided,
@@ -211,4 +212,19 @@ test("ATN-99 the member page lists the wanted purchase first, whichever field ca
   assert.equal(isWantedPurchase("p1", id), false);
   assert.equal(isWantedPurchase(null, id), false);
   assert.equal(isWantedPurchase(id, null), false);
+});
+
+test("ADM-02 a bell whose summary could not be read says so, instead of showing no bubble", () => {
+  assert.equal(bubbleText(0, true), "!");
+  assert.equal(bubbleText(7, true), "!");
+  assert.equal(bellLabel(0, true), "Notifications, couldn't check what needs attention");
+  // A summary that did load is unchanged.
+  assert.equal(bubbleText(0, false), null);
+  assert.equal(bellLabel(3, false), "Notifications, 3 need attention");
+});
+
+test("ADM-02 the Needs action tab shows a count only when the summary loaded", () => {
+  assert.equal(needsActionTabLabel(0), "Needs action (0)");
+  assert.equal(needsActionTabLabel(4), "Needs action (4)");
+  assert.equal(needsActionTabLabel(null), "Needs action");
 });
