@@ -200,8 +200,9 @@ export async function cancelClassInTx(
   }
 
   // Nobody is left queued for a class that will not run (spec-waitlist.md §6).
-  // A member also booked on it (a ClassPass booking settles no Waitlist entry)
-  // is told once, by the booking's email.
+  // A member also booked on it and still waiting (booking settles the entry, so
+  // only an entry that predates that is both) is told once, by the booking's
+  // email.
   const booked = new Set(confirmed.map(bk => bk.clientId))
   const waiting = (await removeLineForCancelledClass(tx, tenantId, classId, actorStaffId, now)).filter(id => !booked.has(id))
 

@@ -267,8 +267,8 @@ export async function listForClass(
 
 /**
  * The member now holds a seat on the class by some other road than the line —
- * they booked it themselves, or staff booked them — so their place in its line
- * is spent. Without this they would sit in the line holding a seat, counting
+ * they booked it themselves, staff booked them, or a ClassPass booking was
+ * recorded for them — so their place in its line is spent. Without this they would sit in the line holding a seat, counting
  * against its length and in the way of the next promotion.
  */
 export async function settleWaitingOnBooking(
