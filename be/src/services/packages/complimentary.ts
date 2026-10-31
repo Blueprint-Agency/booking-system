@@ -13,7 +13,7 @@
  * Nothing is emailed. The admin comping a class tells the member; a templated
  * "your purchase is confirmed" for something nobody bought is not that message.
  */
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, asc, eq, inArray } from 'drizzle-orm'
 import { db, retryingTransaction } from '../../db'
 import { isRetryableAbort } from '../../db/retryable-abort'
 import { bookings } from '../../db/schema/bookings'
@@ -390,5 +390,7 @@ async function liveBookingsOn(tenantId: string, clientPackageId: string): Promis
         eq(bookings.state, 'confirmed'),
       ),
     )
+    // A fixed order, so the bookings are cancelled in the same sequence on every run.
+    .orderBy(asc(bookings.id))
   return rows.map(r => r.id)
 }

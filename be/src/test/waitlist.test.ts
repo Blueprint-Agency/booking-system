@@ -1093,10 +1093,6 @@ describe('class waitlist over HTTP', { skip: integrationTestsEnabled ? false : S
     }
   }
 
-  /** The member whose booking a scan of `rows` meets first, as the service's own unordered read meets it. */
-  const metFirst = async (rows: ReturnType<typeof sql>) =>
-    ((await harness.db.execute(rows)) as unknown as { client_id: string; class_id: string }[])[0]!
-
   test('WTL-43 an Admin cancels a member’s booking on one class and its promotion passes by a member who cannot pay to the head of the line the member frees a seat on: both go through, the head is booked into that seat once, and each credit comes back once', async () => {
     const later = await addClass(one, { online: 1, waitlist: 3 }, 5 * DAY)
     const full = await addClass(one, { online: 1, waitlist: 3 })
@@ -1140,17 +1136,14 @@ describe('class waitlist over HTTP', { skip: integrationTestsEnabled ? false : S
       const full = await addClass(one, { online: 2, waitlist: 3 })
       const pair = [await member(one, false), await member(one, false)]
       const seats = new Map<Member, string>()
+      const onChanged = new Map<Member, string>()
       for (const w of pair) {
         await grantOf('class', refused.id)(w)
-        await booked(w, changed)
+        onChanged.set(w, await booked(w, changed))
         seats.set(w, await booked(w, full))
       }
-      const { client_id: firstRefused } = await metFirst(sql`
-        SELECT b.client_id FROM bookings b
-        JOIN client_packages cp ON cp.id = b.client_package_id
-        LEFT JOIN class_packages p ON p.id = cp.source_class_package_id
-        WHERE b.tenant_id = ${one.id} AND b.class_id = ${changed} AND b.state = 'confirmed' AND b.check_in_state <> 'attended'`)
-      const [canceller, other] = (pair[0]!.clientId === firstRefused ? pair : [...pair].reverse()) as [Member, Member]
+      // The rule change cancels the refused bookings in booking id order.
+      const [canceller, other] = [...pair].sort((a, b) => (onChanged.get(a)! < onChanged.get(b)! ? -1 : 1)) as [Member, Member]
       const seat = seats.get(canceller)!
       const promotedFirst = await member(one)
       const head = await member(one)
@@ -1220,13 +1213,10 @@ describe('class waitlist over HTTP', { skip: integrationTestsEnabled ? false : S
       const elsewhere = await addClass(one, { online: 1, waitlist: 3 }, 5 * DAY)
       const given = await member(one, false)
       const comp = await grantOf('class', one.classPackageId, { complimentary: true })(given)
-      for (const c of pair) await booked(given, c)
-      const { class_id: removedFirst } = await metFirst(sql`
-        SELECT b.class_id FROM bookings b
-        LEFT JOIN classes c ON c.id = b.class_id
-        LEFT JOIN pt_sessions s ON s.id = b.pt_session_id
-        WHERE b.tenant_id = ${one.id} AND b.client_package_id = ${comp} AND b.state = 'confirmed'`)
-      const [first, second] = (pair[0] === removedFirst ? pair : [...pair].reverse()) as [string, string]
+      const heldOn = new Map<string, string>()
+      for (const c of pair) heldOn.set(c, await booked(given, c))
+      // The Remove cancels the package's bookings in booking id order.
+      const [first, second] = [...pair].sort((a, b) => (heldOn.get(a)! < heldOn.get(b)! ? -1 : 1)) as [string, string]
       const promoted = await member(one)
       const head = await member(one)
       const seat = await booked(promoted, elsewhere)
