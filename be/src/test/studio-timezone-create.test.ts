@@ -54,7 +54,7 @@ describe('a studio’s time zone at creation', { skip: integrationTestsEnabled ?
     await harness.close()
   })
 
-  test('TEN-100 creating a studio with no time zone, a blank one or an all-space one is refused 400 timezone_required, and no studio is made', async () => {
+  test('TEN-103 creating a studio with no time zone, a blank one or an all-space one is refused 400 timezone_required, and no studio is made', async () => {
     for (const extra of [{}, { timezone: '' }, { timezone: '   ' }, { timezone: null }]) {
       const slug = nextSlug()
       const res = await create({ slug, name: `Domain ${slug}`, ...extra })
@@ -64,7 +64,7 @@ describe('a studio’s time zone at creation', { skip: integrationTestsEnabled ?
     }
   })
 
-  test('TEN-101 creating a studio on a name that is not an IANA zone is refused 400 timezone_invalid, and no studio is made', async () => {
+  test('TEN-104 creating a studio on a name that is not an IANA zone is refused 400 timezone_invalid, and no studio is made', async () => {
     for (const timezone of ['Mars/Base', 'Asia', 'Not a zone', 'GMT+8', '+08:00', '-05:00', 'Asia/Singapre']) {
       const slug = nextSlug()
       const res = await create({ slug, name: `Domain ${slug}`, timezone })
@@ -74,7 +74,7 @@ describe('a studio’s time zone at creation', { skip: integrationTestsEnabled ?
     }
   })
 
-  test('TEN-102 a studio created on a real zone is on it, whichever zone it is, and the studio list and the public lookup both read it back', async () => {
+  test('TEN-105 a studio created on a real zone is on it, whichever zone it is, and the studio list and the public lookup both read it back', async () => {
     const sydney = nextSlug()
     const kolkata = nextSlug()
     const utc = nextSlug()
