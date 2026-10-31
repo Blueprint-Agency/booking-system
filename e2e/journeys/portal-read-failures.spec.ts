@@ -1,4 +1,4 @@
-import { expect, test, type Page, type Route } from '@playwright/test'
+import { expect, test, type Browser, type BrowserContext, type Page, type Route } from '@playwright/test'
 import { signInStaff, studio } from '../src/studio'
 
 /**
@@ -46,20 +46,41 @@ async function failRead(
 /** Every Try again names what it retries; this finds the one for `what`. */
 const tryAgain = (page: Page, what: string) => page.getByRole('button', { name: `Try loading ${what} again` })
 
-async function signInAdmin(page: Page) {
+const portalUrl = (path: string) => `${studio().urls.portal}${path}`
+
+/**
+ * The admin signs in once, for the whole file: the sign-in is rate limited per
+ * account ("Too many attempts"), and a sign-in per test would take the minute's
+ * allowance from the journeys that run after this file. Each test opens a fresh
+ * page with that session's storage, so a route registered before its first page
+ * still sees every call, as it would from a sign-in.
+ */
+let adminSession: Awaited<ReturnType<BrowserContext['storageState']>>
+
+test.beforeAll(async ({ browser }) => {
   const { staff } = studio()
-  await signInStaff(page, staff.admin)
-  await page.waitForURL(/\/admin/)
-}
+  const context = await browser.newContext({ viewport: { width: 1280, height: 800 } })
+  try {
+    const page = await context.newPage()
+    await signInStaff(page, staff.admin)
+    await page.waitForURL(/\/admin/)
+    adminSession = await context.storageState()
+  } finally {
+    await context.close()
+  }
+})
+
+const adminPage = (browser: Browser) =>
+  browser.newPage({ viewport: { width: 1280, height: 800 }, storageState: adminSession })
 
 test('ADM-02 when the notification summary cannot be read, the bell says it could not check, the panel offers Try again, and Try again brings the real bell in', async ({
   browser,
 }) => {
-  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
+  const page = await adminPage(browser)
   try {
     const summary = await failRead(page, '/portal/attention/summary')
     const panel = await failRead(page, '/portal/attention')
-    await signInAdmin(page)
+    await page.goto(portalUrl('/admin'))
 
     const bell = page.getByTestId('attention-bell')
     await expect(bell).toHaveAttribute('aria-label', /couldn.t check what needs attention/i)
@@ -87,11 +108,10 @@ test('ADM-03 when the staff list cannot be read, the Staff page says so with Try
   browser,
 }) => {
   const { staff } = studio()
-  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
+  const page = await adminPage(browser)
   try {
     const failing = await failRead(page, '/portal/admin/staff')
-    await signInAdmin(page)
-    await page.goto(new URL('/admin/staff', page.url()).toString())
+    await page.goto(portalUrl('/admin/staff'))
 
     await expect(page.getByRole('alert').filter({ hasText: "Couldn't load the staff list." })).toBeVisible()
     await expect(tryAgain(page, 'the staff list')).toBeVisible()
@@ -112,11 +132,10 @@ test('ADM-03 when the staff list cannot be read, the Staff page says so with Try
 test('ADM-04 when the member search on a class roster fails, it says it could not search and never "No members match.", and Try again searches again', async ({
   browser,
 }) => {
-  const { urls, classes } = studio()
-  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
+  const { classes } = studio()
+  const page = await adminPage(browser)
   try {
-    await signInAdmin(page)
-    await page.goto(`${urls.portal}/admin/schedule/class/${classes.staffWaitlist.id}`)
+    await page.goto(portalUrl(`/admin/schedule/class/${classes.staffWaitlist.id}`))
     await page.getByRole('button', { name: 'Add member' }).click()
 
     const failing = await failRead(page, '/portal/admin/clients')
@@ -126,7 +145,8 @@ test('ADM-04 when the member search on a class roster fails, it says it could no
     expect(failing.served(), 'the journey served the 500 to the member search').toBeGreaterThan(0)
 
     await failing.stop()
-    await tryAgain(page, 'the member search').click()
+    // This line has its own sentence ("Couldn't search members."), so its Try again is named "Try the member search again".
+    await page.getByRole('button', { name: 'Try the member search again' }).click()
     await expect(page.getByText("Couldn't search members.")).toHaveCount(0)
   } finally {
     await page.close()
@@ -136,11 +156,10 @@ test('ADM-04 when the member search on a class roster fails, it says it could no
 test('ADM-05 when the schedule cannot be read, the admin timetable says so with Try again instead of drawing an empty week, and Try again draws the grid', async ({
   browser,
 }) => {
-  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
+  const page = await adminPage(browser)
   try {
     const failing = await failRead(page, '/portal/admin/schedule')
-    await signInAdmin(page)
-    await page.goto(new URL('/admin/schedule', page.url()).toString())
+    await page.goto(portalUrl('/admin/schedule'))
 
     await expect(page.getByRole('alert').filter({ hasText: "Couldn't load the schedule." })).toBeVisible()
     await expect(page.getByText('Loading schedule…')).toHaveCount(0)
@@ -160,11 +179,10 @@ test('ADM-05 when the schedule cannot be read, the admin timetable says so with 
 test('ADM-06 when the partial payments cannot be read, the page says so with Try again and never says "Nothing has gone quiet", and Try again brings the real page in', async ({
   browser,
 }) => {
-  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
+  const page = await adminPage(browser)
   try {
     const failing = await failRead(page, '/portal/admin/purchases/silent')
-    await signInAdmin(page)
-    await page.goto(new URL('/admin/purchases', page.url()).toString())
+    await page.goto(portalUrl('/admin/purchases'))
 
     await expect(page.getByRole('alert').filter({ hasText: "Couldn't load the partial payments." })).toBeVisible()
     await expect(page.getByText('Nothing has gone quiet')).toHaveCount(0)
@@ -184,8 +202,7 @@ test('ADM-06 when the partial payments cannot be read, the page says so with Try
 test("ADM-07 when the count of Unlimited Plans calling a location home cannot be read, archiving asks the admin, saying it could not check, and declining archives nothing", async ({
   browser,
 }) => {
-  const { urls } = studio()
-  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
+  const page = await adminPage(browser)
   try {
     const failing = await failRead(page, '/live-unlimited-count')
     const asked: string[] = []
@@ -198,8 +215,7 @@ test("ADM-07 when the count of Unlimited Plans calling a location home cannot be
       if (req.method() === 'POST' && req.url().endsWith('/archive')) archives.push(req.url())
     })
 
-    await signInAdmin(page)
-    await page.goto(`${urls.portal}/admin/locations`)
+    await page.goto(portalUrl('/admin/locations'))
     await page.getByRole('button', { name: 'Archive', exact: true }).first().click()
 
     await expect.poll(() => asked.length).toBeGreaterThan(0)
@@ -215,11 +231,10 @@ test("ADM-07 when the count of Unlimited Plans calling a location home cannot be
 test('ADM-08 when a portal read is answered 401, the session ends and the admin is sent to sign in, with no "Couldn\'t load" left on screen', async ({
   browser,
 }) => {
-  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
+  const page = await adminPage(browser)
   try {
-    await signInAdmin(page)
     await failRead(page, '/portal/admin/staff', 401)
-    await page.goto(new URL('/admin/staff', page.url()).toString())
+    await page.goto(portalUrl('/admin/staff'))
 
     await page.waitForURL(/\/login/)
     await expect(page.getByText(/Couldn.t load the staff list/)).toHaveCount(0)
