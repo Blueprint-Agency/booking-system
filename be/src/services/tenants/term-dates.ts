@@ -53,13 +53,9 @@ export function localDate(timezone: string, at: Date = clockNow()): string {
 }
 
 /** Today on this studio's clock — the default start of a new Term. A zone the
- *  runtime cannot read falls back to UTC rather than refusing to provision. */
-export function todayFor(timezone: string | undefined, at: Date = clockNow()): string {
-  try {
-    return localDate(timezone ?? 'UTC', at)
-  } catch {
-    return localDate('UTC', at)
-  }
+ *  runtime cannot read is an error (`RangeError`), never read as another. */
+export function todayFor(timezone: string, at: Date = clockNow()): string {
+  return localDate(timezone, at)
 }
 
 type TermFields = Pick<TenantRow, 'timezone' | 'termEndDate'>
@@ -67,8 +63,6 @@ type TermFields = Pick<TenantRow, 'timezone' | 'termEndDate'>
 /** Has this studio's Term ended — is it on or past its end date, on its own clock? */
 export function termEnded(tenant: TermFields, at: Date = clockNow()): boolean {
   if (!tenant.termEndDate) return false
-  // A zone the runtime cannot read is read as UTC: at worst a few hours out,
-  // never a studio left open indefinitely or closed for good.
   return todayFor(tenant.timezone, at) >= tenant.termEndDate
 }
 

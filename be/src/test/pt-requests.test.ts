@@ -4194,7 +4194,7 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
   })
 
   test('TEN-68 a staff member scheduling a private session after the package ends is refused in the studio\'s time: a Sydney admin reads 9:00 am on the day, not Singapore\'s hour', async () => {
-    const coach = await staff(two, 'coach-two', 'instructor')
+    const coach = await staff(two, 'coach-sydney-desk', 'instructor')
     const mia = await member(two, 'Mia Staff Sydney')
     const packageId = await givePt(two, mia, '1on1')
     // Ends at 09:00 on 20 August 2031 in Sydney, which is 23:00 UTC on the 19th.

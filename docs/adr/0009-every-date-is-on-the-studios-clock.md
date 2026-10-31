@@ -17,7 +17,9 @@ emails printing Singapore times.
 
 **One clock per studio, read everywhere.** The zone is the IANA `timezone` on the Tenant's row. It is
 picked from the zone list when the studio is created, required (no platform default), and **not
-changed after**: neither the super portal nor a studio's Admins can edit it. Every calendar day,
+changed after**: neither the super portal nor a studio's Admins can edit it. Until slice 5 the
+`tenants.timezone` column still carries its `Asia/Singapore` default, and the provisioning service
+names that default for a studio created without a zone; no rule reads either as a fallback. Every calendar day,
 wall-clock time, day boundary, "today", "N days ahead", email date and on-screen time is the
 studio's, for everyone: a member, an Admin or a Platform administrator acting as one sees the
 studio's clock, not their device's.
@@ -39,13 +41,25 @@ slot's date and time, the Term) keep their calendar day, read on the studio's cl
 matters should a zone edit ever be added.
 
 **In the backend**, one module, `lib/studio-time.ts`, takes the zone as an argument and is the only
-place instants turn into the studio's clock and back. No service has a default zone or a `UTC`
-fallback: a missing zone is a bug that shows. A service is handed the zone or reads it once through
+place instants turn into the studio's clock and back, and every date or time a service words goes
+through its cached formatter (`zoneFormat`). No rule or service has a default zone or a `UTC`
+fallback: a missing studio, or a zone the runtime cannot read, is an error that shows. A service is handed the zone or reads it once through
 the cached Tenant row (`tenantTimezone`). **In each frontend**, one date module takes the zone, which
 arrives with the slug lookup the proxies already make and is carried on the brand object.
 
 **The server process's own zone is no part of any of this.** Tests run in `TZ=UTC`; production's
 `TZ` is set to UTC last, as its own small deploy, once a search for zone-less calls is clean.
+
+## Where the new rules can differ from what was stored
+
+The gap and repeat rules are now one, for every caller. A Class Series in a zone with daylight
+saving that is extended through a repeated hour (02:30 at fall-back) produces its new occurrence at
+the **first** 02:30, where the older series code produced the second; occurrences already stored are
+never moved. A ClassPass booking email names a wall-clock time, so the booking is matched to the
+class by the studio's local wall time and finds the class at either occurrence of a repeated hour.
+The ClassPass roster check still keys a roster's class by its instant (the first occurrence), so a
+class stored at the second occurrence of a repeated hour is reported as not found in that check, one
+hour a year in a zone with daylight saving.
 
 ## What it replaced
 

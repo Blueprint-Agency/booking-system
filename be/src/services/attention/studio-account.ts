@@ -1,3 +1,4 @@
+import { instantAt } from '../../lib/studio-time'
 import { providerAccountStatus } from '../billing/provider-credentials'
 import { loadTenantById } from '../tenants/tenants'
 import { localDate } from '../tenants/term-dates'
@@ -48,7 +49,7 @@ export const studioTermEnding: AttentionProvider = {
         subjectId: ctx.tenantId,
         location: null,
         // When the warning began: the start of the window before the end date.
-        occurredAt: new Date(Date.parse(`${plusDays(end, -TERM_WARNING_DAYS)}T00:00:00Z`)),
+        occurredAt: instantAt(ctx.timezone, plusDays(end, -TERM_WARNING_DAYS), '00:00'),
         title: `Your studio's term with ReserveToday ends on ${written(end)}`,
         detail: "After that, members and staff can't use the apps. Contact ReserveToday to renew",
         href: null,

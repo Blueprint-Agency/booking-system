@@ -87,7 +87,11 @@ const offsetAt = (timezone: string, instant: number) => wallClockAsUtc(timezone,
 /** The calendar day `instant` falls on in `timezone`. This is also "today", from
  *  any instant: `localDate(tz, now)`. */
 export function localDate(timezone: string, instant: Date): PlainDate {
-  return new Date(wallClockAsUtc(timezone, instant.getTime())).toISOString().slice(0, 10)
+  // Built from the formatter's parts, not from `toISOString()`, which writes a year
+  // past 9999 as `+010000` and would put that in a date.
+  const parts = zoneFormat(timezone, 'en-US', { year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(instant)
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find(p => p.type === type)?.value ?? ''
+  return `${part('year').padStart(4, '0')}-${part('month').padStart(2, '0')}-${part('day').padStart(2, '0')}`
 }
 
 /**

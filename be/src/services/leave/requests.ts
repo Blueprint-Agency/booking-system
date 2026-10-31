@@ -1209,7 +1209,9 @@ export async function decideLeaveRequest(
   const check = rules.checkAdminLeaveDecision(input.action, row, await studioToday(tenantId))
   if (!check.ok) throw new ConflictError(check.code, { message: check.message })
 
-  const now = new Date()
+  // The app's instant, as every rule that turns on "now" reads it: the decision is stamped
+  // at it and the revoke email names it.
+  const now = clockNow()
   const revoking = input.action === 'revoke'
   const [updated] = await db
     .update(leaveRequests)

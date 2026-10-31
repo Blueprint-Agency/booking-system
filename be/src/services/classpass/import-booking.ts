@@ -44,13 +44,27 @@ type ClassMatch = { classId: string } | { reason: ClassPassReviewReason }
 /** A class at a Location and start, as `pickClass` chooses among them. */
 export type ClassAtTime = { id: string; lifecycle: string; typeName: string }
 
-/** The class at `locationId` starting at `startsAt` that ClassPass means. */
-async function matchClass(tenantId: string, locationId: string, startsAt: Date, className: string): Promise<ClassMatch> {
+/** A wall-clock time on a date in a studio's zone, which is what an email names. */
+type WallTime = { localDate: string; localTime: string; timezone: string }
+
+/**
+ * The class at `locationId` starting at that wall-clock time that ClassPass
+ * means. Compared on the studio's local wall time, not an instant: the email
+ * says "2:30 AM", and the class stored for it is at either occurrence when
+ * daylight saving repeats that hour, or at the shifted time when it skips it.
+ */
+async function matchClass(tenantId: string, locationId: string, at: WallTime, className: string): Promise<ClassMatch> {
   const found = await db
     .select({ id: classes.id, lifecycle: classes.lifecycle, typeName: classTypes.name })
     .from(classes)
     .innerJoin(classTypes, eq(classTypes.id, classes.classTypeId))
-    .where(and(eq(classes.tenantId, tenantId), eq(classes.locationId, locationId), eq(classes.startsAt, startsAt)))
+    .where(
+      and(
+        eq(classes.tenantId, tenantId),
+        eq(classes.locationId, locationId),
+        sql`(${classes.startsAt} at time zone ${at.timezone}) = ${`${at.localDate} ${at.localTime}`}::timestamp`,
+      ),
+    )
   return pickClass(found, className)
 }
 
@@ -98,7 +112,11 @@ async function activeClassStart(tenantId: string, classId: string): Promise<Date
 }
 
 /** The class at the email's mapped Location and time, or why there is none. */
-async function classFor(tenantId: string, fields: { locationName: string; className: string }, startsAt: Date): Promise<ClassMatch> {
+async function classFor(
+  tenantId: string,
+  fields: { locationName: string; className: string },
+  at: WallTime,
+): Promise<ClassMatch> {
   const [mapping] = await db
     .select({ locationId: classpassLocationMappings.locationId })
     .from(classpassLocationMappings)
@@ -109,7 +127,7 @@ async function classFor(tenantId: string, fields: { locationName: string; classN
       ),
     )
   if (!mapping) return { reason: 'unmapped_location' }
-  return matchClass(tenantId, mapping.locationId, startsAt, fields.className)
+  return matchClass(tenantId, mapping.locationId, at, fields.className)
 }
 
 /**
@@ -147,9 +165,10 @@ export async function placeClassPassBooking(
     match = { classId: options.classId }
   } else {
     if (!isComplete(fields)) return unparsed
-    placed.startsAt = zonedInstant(fields.localDate, fields.localTime, await tenantTimezone(tenantId))
+    const timezone = await tenantTimezone(tenantId)
+    placed.startsAt = zonedInstant(fields.localDate, fields.localTime, timezone)
     if (held) return { ...placed, clientId: held.clientId, bookingId: held.id, outcome: 'noop', reason: null }
-    match = await classFor(tenantId, fields, placed.startsAt)
+    match = await classFor(tenantId, fields, { localDate: fields.localDate, localTime: fields.localTime, timezone })
   }
   if ('reason' in match) return review(match.reason)
 

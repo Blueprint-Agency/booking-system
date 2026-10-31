@@ -2,8 +2,9 @@ import { and, eq, gt, gte, inArray, isNotNull, lt, lte } from 'drizzle-orm'
 import { currentTenantId, db } from '../../db'
 import { clientPackages, classPackages } from '../../db/schema/packages'
 import { clients } from '../../db/schema/identity'
-import { tenants } from '../../db/schema/tenancy'
 import { now } from '../../lib/clock'
+import { zoneFormat } from '../../lib/studio-time'
+import { tenantTimezone } from '../tenants/tenants'
 import { reportError } from '../../shared/logger'
 import { contentsLine } from '../notifications/purchase-email'
 import { sendTemplatedEmail } from '../notifications/send'
@@ -83,9 +84,7 @@ export async function sendLapsingAlerts(): Promise<void> {
     )
   if (!lapsing.length) return
 
-  const [tenant] = await db.select({ timezone: tenants.timezone }).from(tenants).where(eq(tenants.id, tenantId))
-  const date = new Intl.DateTimeFormat('en-GB', {
-    timeZone: tenant!.timezone,
+  const date = zoneFormat(await tenantTimezone(tenantId), 'en-GB', {
     day: 'numeric',
     month: 'short',
     year: 'numeric',
