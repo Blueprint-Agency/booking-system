@@ -9,9 +9,11 @@ import {
   DialogFooter,
   EmptyState,
   Label,
+  LoadFailure,
   PageHeader,
   Textarea,
 } from "@/components/ui";
+import { answeredElsewhere } from "@/lib/failed-read";
 import { LeaveCalendar } from "@/components/leave-calendar";
 import { useAttention } from "@/components/attention/attention-provider";
 import { useRequestDeepLink } from "@/components/attention/deep-links";
@@ -119,7 +121,8 @@ function AdminLeaveView() {
       );
       setRequests(res.leave_requests ?? []);
     } catch (err) {
-      setError(leaveErrorMessage(err, "Couldn't load leave requests"));
+      // A `401` or maintenance is answered by the sign-in and the maintenance screen.
+      if (!answeredElsewhere(err)) setError(leaveErrorMessage(err, "Couldn't load leave requests"));
       setRequests([]);
     } finally {
       setLoading(false);
@@ -259,12 +262,6 @@ function AdminLeaveView() {
         description="Leave requests from instructors and admins. Any admin can decide any request, their own included. Approving makes the absence binding — an instructor on approved leave can no longer be scheduled."
       />
 
-      {error && (
-        <div className="mb-4 rounded-lg border border-error/30 bg-error/5 p-3 text-xs text-error">
-          {error}
-        </div>
-      )}
-
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         {/* Status filters belong to the list; the calendar shows every request
             it is allowed to show, so they are hidden rather than left inert. */}
@@ -283,7 +280,9 @@ function AdminLeaveView() {
                       : "border-border bg-card text-muted"
                   }`}
                 >
-                  {FILTER_LABEL[f]} ({count})
+                  {/* No count for a list that failed to load: it would read as 0. */}
+                  {FILTER_LABEL[f]}
+                  {!error && ` (${count})`}
                 </button>
               );
             })}
@@ -308,6 +307,14 @@ function AdminLeaveView() {
 
       {view === "calendar" ? (
         <LeaveCalendar />
+      ) : error ? (
+        <div className="rounded-xl border border-border bg-card shadow-soft">
+          <LoadFailure
+            what="the leave requests"
+            detail={error.startsWith("Couldn't load") ? undefined : error}
+            onRetry={load}
+          />
+        </div>
       ) : loading ? (
         <div className="flex items-center justify-center py-16 text-muted">
           <Loader2 className="h-5 w-5 animate-spin" />

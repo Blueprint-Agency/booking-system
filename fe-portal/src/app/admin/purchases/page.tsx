@@ -6,7 +6,8 @@ import { purchaseParam, withWantedFirst } from "@/lib/attention";
 import { AlertTriangle, Loader2, Wallet } from "lucide-react";
 import { toast } from "sonner";
 
-import { Badge, Button, EmptyState, PageHeader, Pagination, usePaged } from "@/components/ui";
+import { Badge, Button, EmptyState, LoadFailure, PageHeader, Pagination, usePaged } from "@/components/ui";
+import { answeredElsewhere } from "@/lib/failed-read";
 import { RefundDialog } from "@/components/clients/refund-dialog";
 import { useWorkspace } from "@/lib/workspace-context";
 import { runsStudio } from "@/lib/staff-role";
@@ -91,7 +92,12 @@ function UnfinishedPurchases() {
       setRows(res.purchases);
       setSilentAfterDays(res.silent_after_days);
     } catch (err) {
-      setError(err instanceof ApiError ? `HTTP ${err.status}` : "Network error");
+      // Held money is never drawn as "nothing": no rows, no count, no total.
+      // A `401` or maintenance is answered by the sign-in and the maintenance screen.
+      setRows([]);
+      if (!answeredElsewhere(err)) {
+        setError(err instanceof ApiError ? `HTTP ${err.status}` : "Network error");
+      }
     } finally {
       setLoading(false);
     }
@@ -122,13 +128,11 @@ function UnfinishedPurchases() {
         Nothing is refunded automatically — every one of these is somebody&apos;s decision.
       </div>
 
-      {error && (
-        <div className="rounded-lg border border-error/30 bg-error/5 p-3 text-xs text-error">
-          {error}
+      {error ? (
+        <div className="rounded-xl border border-border bg-card">
+          <LoadFailure what="the partial payments" onRetry={load} />
         </div>
-      )}
-
-      {loading ? (
+      ) : loading ? (
         <div className="flex items-center justify-center gap-2 rounded-xl border border-border bg-card py-16 text-sm text-muted">
           <Loader2 className="h-4 w-4 animate-spin" /> Loading partial payments…
         </div>

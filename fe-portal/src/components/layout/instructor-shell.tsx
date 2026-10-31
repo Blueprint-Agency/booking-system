@@ -2,6 +2,7 @@
 import { Suspense, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { ContentLoading } from "@/components/ui/content-loading";
+import { LoadFailure } from "@/components/ui/load-failure";
 import { AttentionProvider } from "@/components/attention/attention-provider";
 import { AttentionBell } from "@/components/attention/attention-bell";
 import { LocationParamSync } from "@/components/attention/deep-links";
@@ -27,7 +28,7 @@ function InstructorTopBar() {
 }
 
 export function InstructorShell({ children }: { children: React.ReactNode }) {
-  const { loading, currentStaff } = useWorkspace();
+  const { loading, meFailed, refresh, currentStaff } = useWorkspace();
   const router = useRouter();
 
   // Admins don't use the instructor surface — send them to /admin.
@@ -52,7 +53,13 @@ export function InstructorShell({ children }: { children: React.ReactNode }) {
           <div className="flex min-w-0 flex-1 flex-col">
             <InstructorTopBar />
             <main className="flex-1 overflow-auto px-4 py-4 sm:px-6 sm:py-5 lg:px-8 lg:py-6">
-              {ready ? children : <ContentLoading label="Loading workspace" />}
+              {ready ? (
+                children
+              ) : meFailed && !loading ? (
+                <LoadFailure what="your workspace" className="py-24" onRetry={refresh} />
+              ) : (
+                <ContentLoading label="Loading workspace" />
+              )}
             </main>
           </div>
         </div>

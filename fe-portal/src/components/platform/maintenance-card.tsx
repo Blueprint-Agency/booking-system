@@ -3,8 +3,9 @@
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { Button, EmptyState, Label, StatusBadge, Textarea } from "@/components/ui";
+import { Button, EmptyState, Label, LoadFailure, StatusBadge, Textarea } from "@/components/ui";
 import { ApiError, type Api } from "@/lib/api";
+import { answeredElsewhere } from "@/lib/failed-read";
 import { getMaintenance, setMaintenance, type PlatformMaintenance } from "@/lib/platform";
 
 /**
@@ -18,8 +19,12 @@ export function MaintenanceCard({ api }: { api: Api }) {
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [refused, setRefused] = useState(false);
+  // The switch could not be read: said, with Try again, never a spinner that never ends.
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
+    setFailed(false);
     getMaintenance(api).then(
       m => {
         setState(m);
@@ -29,10 +34,13 @@ export function MaintenanceCard({ api }: { api: Api }) {
         // A 404 is the backend refusing this account the super portal, which
         // it does not confirm exists: say so as /platform does, not as a fault.
         if (err instanceof ApiError && err.status === 404) setRefused(true);
-        else toast.error("Could not read maintenance mode.");
+        else if (!answeredElsewhere(err)) {
+          setFailed(true);
+          toast.error("Could not read maintenance mode.");
+        }
       },
     );
-  }, [api]);
+  }, [api, attempt]);
 
   async function save(enabled: boolean) {
     if (enabled && !state?.enabled && !window.confirm("Turn maintenance on? Every studio's member app and portal close until it is turned off.")) {
@@ -53,6 +61,9 @@ export function MaintenanceCard({ api }: { api: Api }) {
 
   if (refused) {
     return <EmptyState title="Not available" description="This address isn’t available for your account." />;
+  }
+  if (!state && failed) {
+    return <LoadFailure what="the maintenance switch" onRetry={() => setAttempt(n => n + 1)} />;
   }
   if (!state) {
     return (
