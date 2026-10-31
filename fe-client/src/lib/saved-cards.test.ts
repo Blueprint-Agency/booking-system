@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   cardBrandLabel,
   cardExpiry,
+  cardStillSaved,
   cardsAfterRemoval,
   cardsView,
   removeCardMessage,
@@ -16,7 +17,11 @@ const amex: SavedCard = { id: "pm_amex", brand: "amex", last4: "0005", exp_month
 test("PAY-76 a card reads as its brand, last four and expiry: a brand nobody wrote down is still named, an expiry is padded to the card's shape, and a card is good through the last day of its month", () => {
   assert.equal(cardBrandLabel("visa"), "Visa");
   assert.equal(cardBrandLabel("amex"), "American Express");
-  assert.equal(cardBrandLabel("cartes_bancaires"), "Cartes_bancaires");
+  // A code nobody wrote down is spoken, not spelled: no underscores, and the
+  // provider's "unknown" is just a card.
+  assert.equal(cardBrandLabel("cartes_bancaires"), "Cartes bancaires");
+  assert.equal(cardBrandLabel("unknown"), "Card");
+  assert.equal(cardBrandLabel("eftpos_au"), "EFTPOS");
 
   assert.equal(cardExpiry({ exp_month: 4, exp_year: 2031 }).label, "04/31");
   assert.equal(cardExpiry({ exp_month: 11, exp_year: 2029 }).label, "11/29");
@@ -44,9 +49,26 @@ test("PAY-78 a removed card leaves the list and the other stays, while a read th
   assert.deepEqual(cardsAfterRemoval({ status: "loading" }, "pm_visa"), { status: "loading" });
 });
 
-test("PAY-78 a failed remove says the card is still saved and names it, so the member is not left guessing whether it went", () => {
-  const text = removeCardMessage(visa);
-  assert.match(text, /Visa/);
-  assert.match(text, /4242/);
-  assert.match(text, /still saved/i);
+test("PAY-78 a failed remove names the card and says it is still saved only once a fresh read has confirmed it, otherwise that it may still be saved", () => {
+  const confirmed = removeCardMessage(visa, { stillSaved: true });
+  assert.match(confirmed, /Visa/);
+  assert.match(confirmed, /4242/);
+  assert.match(confirmed, /It's still saved\./);
+  assert.match(confirmed, /Please try again\./);
+
+  const unsure = removeCardMessage(visa, { stillSaved: null });
+  assert.match(unsure, /may still be saved/i);
+  assert.doesNotMatch(unsure, /It's still saved/);
+});
+
+test("PAY-78 a failed remove shows the server's own sentence in place of Please try again", () => {
+  const text = removeCardMessage(visa, { stillSaved: true, reason: "This studio isn't taking card payments." });
+  assert.match(text, /This studio isn't taking card payments\./);
+  assert.doesNotMatch(text, /Please try again/);
+});
+
+test("PAY-78 after a failed remove, a fresh read says whether the card is still listed, and nothing when the read failed too", () => {
+  assert.equal(cardStillSaved([visa, amex], "pm_visa"), true);
+  assert.equal(cardStillSaved([amex], "pm_visa"), false);
+  assert.equal(cardStillSaved(null, "pm_visa"), null);
 });
