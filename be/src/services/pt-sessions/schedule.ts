@@ -26,6 +26,7 @@ import { clientPackages } from '../../db/schema/packages'
 import { debitCredits, isVoided, lockPackages, refundCredits, type Tx } from '../packages/ledger'
 import { activateOnSchedule, assertPackageCoversSession } from '../packages/activation'
 import { now as clockNow } from '../../lib/clock'
+import { tenantTimezone } from '../tenants/tenants'
 import { generateBookingCodes } from '../bookings/qr'
 import { assertMemberFree, lockMemberTime } from '../bookings/member-time'
 import { assertRoomInLocation } from '../schedule/room-conflicts'
@@ -511,7 +512,9 @@ async function assertSeatsCoverStart(tx: Tx, tenantId: string, ptSessionId: stri
     .orderBy(clientPackages.id)
     .for('update', { of: clientPackages })
   const now = clockNow()
-  for (const pkg of paying) assertPackageCoversSession(pkg, startsAt, now)
+  if (paying.length === 0) return
+  const timezone = await tenantTimezone(tenantId)
+  for (const pkg of paying) assertPackageCoversSession(pkg, startsAt, now, timezone)
 }
 
 export async function updatePtSession(

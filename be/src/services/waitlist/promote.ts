@@ -23,7 +23,7 @@ import { lockMemberTime } from '../bookings/member-time'
 import { lockPackages } from '../packages/ledger'
 import { countSeats } from '../bookings/seats'
 import { sendTemplatedEmail } from '../notifications/send'
-import { loadTenantById } from '../tenants/tenants'
+import { tenantTimezone } from '../tenants/tenants'
 import { reportError } from '../../shared/logger'
 import { beforeWindow, nextToPromote, waitlistClosesAt, type PromotionOutcome } from './rules'
 import { waitingLine } from './line'
@@ -152,8 +152,7 @@ export async function sendPromotionEmails(tenantId: string, promotions: readonly
         .where(and(eq(classes.tenantId, tenantId), eq(classes.id, p.classId)))
         .limit(1)
       if (!row) continue
-      const tenant = await loadTenantById(tenantId)
-      const timeZone = tenant?.timezone ?? 'UTC'
+      const timeZone = await tenantTimezone(tenantId)
       const date = new Intl.DateTimeFormat('en-GB', {
         timeZone,
         weekday: 'short',

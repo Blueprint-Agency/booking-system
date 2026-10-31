@@ -20,7 +20,7 @@ import { amountPaid } from './purchase-email'
 import { classTypes, locations } from '../../db/schema/catalog'
 import { clients, staffUsers } from '../../db/schema/identity'
 import { classPackages, clientPackages } from '../../db/schema/packages'
-import { loadTenantById } from '../tenants/tenants'
+import { tenantTimezone } from '../tenants/tenants'
 import { requireTenantUrl } from '../tenants/urls'
 import { reportError } from '../../shared/logger'
 import { NotFoundError } from '../../shared/errors'
@@ -34,9 +34,8 @@ import type { PurchasedKind } from './purchase-email'
  * the check-in nag (../bookings/check-in-nag.ts).
  */
 export async function sessionTimeFormat(tenantId: string): Promise<Intl.DateTimeFormat> {
-  const tenant = await loadTenantById(tenantId)
   return new Intl.DateTimeFormat('en-GB', {
-    timeZone: tenant?.timezone ?? 'UTC',
+    timeZone: await tenantTimezone(tenantId),
     weekday: 'short',
     day: 'numeric',
     month: 'short',

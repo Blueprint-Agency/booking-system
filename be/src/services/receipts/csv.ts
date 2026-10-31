@@ -4,12 +4,13 @@
  * the rows `exportStudioReceipts` reads, as Finance's export is of its screen
  * (`services/finance/csv.ts`). Pure.
  */
-import { sgFormat } from '../../lib/time'
+import { zoneFormat } from '../../lib/studio-time'
 import { billToAddressLines } from '../billing-details/address'
 import type { StudioReceiptSummary } from './read'
 
 // The studio's own calendar day, sortable as text in a spreadsheet.
-const sgDate = sgFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' })
+const studioDate = (timezone: string) =>
+  zoneFormat(timezone, 'en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' })
 
 /** Each kind as the admin's Receipts page names it (fe-portal `receiptKindLabel`). */
 const KIND_LABELS: Record<StudioReceiptSummary['kind'], string> = {
@@ -52,13 +53,15 @@ function cell(value: string | null): string {
 /**
  * The file. A permanently deleted member's Receipt keeps its row, with the
  * member, email and Bill to empty as the Receipt now has them. A Receipt whose
- * Purchase chose no Billing details has the Bill to columns empty.
+ * Purchase chose no Billing details has the Bill to columns empty. Each date
+ * is the day the Receipt was issued on the studio's clock, `timezone`.
  */
-export function receiptsCsv(rows: readonly StudioReceiptSummary[]): string {
+export function receiptsCsv(rows: readonly StudioReceiptSummary[], timezone: string): string {
+  const date = studioDate(timezone)
   const lines = rows.map(r =>
     [
       r.number,
-      sgDate.format(r.issuedAt),
+      date.format(r.issuedAt),
       r.buyerName,
       r.buyerEmail,
       KIND_LABELS[r.kind],

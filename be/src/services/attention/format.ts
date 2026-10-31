@@ -6,28 +6,23 @@
  * is `en-US` because `en-GB` abbreviates September to "Sept".
  */
 
-/** "Tue 28 Oct, 7:00 pm", in `timezone`. */
-export function formatWhen(at: Date, timezone: string): string {
-  const parts = Object.fromEntries(
-    new Intl.DateTimeFormat('en-US', {
-      timeZone: timezone,
-      weekday: 'short',
-      day: 'numeric',
-      month: 'short',
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-    })
-      .formatToParts(at)
-      .map(p => [p.type, p.value]),
-  )
-  return `${parts.weekday} ${parts.day} ${parts.month}, ${parts.hour}:${parts.minute} ${String(parts.dayPeriod).toLowerCase()}`
-}
+import { zoneFormat } from '../../lib/studio-time'
 
 const zoned = (at: Date, timezone: string, opts: Intl.DateTimeFormatOptions) =>
-  Object.fromEntries(
-    new Intl.DateTimeFormat('en-US', { timeZone: timezone, ...opts }).formatToParts(at).map(p => [p.type, p.value]),
-  )
+  Object.fromEntries(zoneFormat(timezone, 'en-US', opts).formatToParts(at).map(p => [p.type, p.value]))
+
+/** "Tue 28 Oct, 7:00 pm", in `timezone`. */
+export function formatWhen(at: Date, timezone: string): string {
+  const parts = zoned(at, timezone, {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  })
+  return `${parts.weekday} ${parts.day} ${parts.month}, ${parts.hour}:${parts.minute} ${String(parts.dayPeriod).toLowerCase()}`
+}
 
 /** "Tue 28 Oct", in `timezone`. */
 export function formatDay(at: Date, timezone: string): string {

@@ -3,7 +3,7 @@ import { db } from '../../db'
 import type { InstructorPermission, StaffRole } from '../../db/enums'
 import { locations } from '../../db/schema/catalog'
 import { now as clockNow } from '../../lib/clock'
-import { loadTenantById } from '../tenants/tenants'
+import { tenantTimezone } from '../tenants/tenants'
 import { providers } from './registry'
 import { listUpdates, unreadUpdateCount, type UpdateView } from './updates'
 import {
@@ -26,8 +26,8 @@ export interface AttentionCaller {
 const DEFAULT_LIMIT_PER_GROUP = 5
 
 export async function contextFor(caller: AttentionCaller): Promise<AttentionContext> {
-  const [tenant, active] = await Promise.all([
-    loadTenantById(caller.tenantId),
+  const [timezone, active] = await Promise.all([
+    tenantTimezone(caller.tenantId),
     db
       .select({ id: locations.id, name: locations.name })
       .from(locations)
@@ -36,7 +36,7 @@ export async function contextFor(caller: AttentionCaller): Promise<AttentionCont
       )
       .orderBy(asc(locations.name)),
   ])
-  return { ...caller, locations: active, timezone: tenant?.timezone ?? 'UTC', now: clockNow() }
+  return { ...caller, locations: active, timezone, now: clockNow() }
 }
 
 export interface AttentionSummary {

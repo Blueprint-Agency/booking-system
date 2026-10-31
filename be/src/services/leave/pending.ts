@@ -5,6 +5,7 @@ import { leaveConflicts } from '../../db/schema/catalog'
 import { leaveRequests } from '../../db/schema/leave'
 import { globalPolicy } from '../../db/schema/policy'
 import { staffUsers } from '../../db/schema/identity'
+import { tenantTimezone } from '../tenants/tenants'
 import * as rules from './rules'
 
 /**
@@ -119,6 +120,7 @@ async function flagsFor(tenantId: string, requests: FlagInput[]): Promise<Map<st
   const flags = new Map<string, LeaveFlag>()
   const measured = requests.filter(r => r.isInstructor)
   if (measured.length === 0) return flags
+  const timezone = await tenantTimezone(tenantId)
 
   const from = measured.map(r => r.startDate).reduce((a, b) => (a < b ? a : b))
   const to = measured.map(r => r.endDate).reduce((a, b) => (a > b ? a : b))
@@ -176,14 +178,15 @@ async function flagsFor(tenantId: string, requests: FlagInput[]): Promise<Map<st
     instructorId: p.staffUserId,
     instructorName: p.name,
     type: p.type,
-    ...rules.leaveWindow(p.startDate, p.endDate, p.halfDay),
+    ...rules.leaveWindow(timezone, p.startDate, p.endDate, p.halfDay),
   }))
 
   for (const r of measured) {
     const over = rules.leaveCapExceedance({
       type: r.type,
       conflictPartnerIds: partners.get(r.staffUserId) ?? [],
-      window: rules.leaveWindow(r.startDate, r.endDate, r.halfDay),
+      window: rules.leaveWindow(timezone, r.startDate, r.endDate, r.halfDay),
+      timezone,
       // Excluded by person, as the submission path does.
       peers: peers.filter(p => p.instructorId !== r.staffUserId),
       studyCap: caps.study,

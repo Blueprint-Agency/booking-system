@@ -10,19 +10,21 @@
  * The portal renders these strings and derives nothing: **Untouched** is a
  * domain rule and lives on this side of the wire.
  */
-import { sgFormat } from '../../lib/time'
+import { zoneFormat } from '../../lib/studio-time'
 import { sgdText, toCents } from '../../shared/money'
 
-/** "12 Jun 2026" — the studio's only clock. */
-const SG_DATE = sgFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
-/** "3 Sept 2026, 19:00" — a class a member has to recognise. */
-const SG_DATETIME = sgFormat('en-GB', {
-  day: 'numeric',
-  month: 'short',
-  year: 'numeric',
-  hour: '2-digit',
-  minute: '2-digit',
-})
+/** "12 Jun 2026" — on the studio's clock. */
+const studioDate = (timezone: string) =>
+  zoneFormat(timezone, 'en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+/** "3 Sept 2026, 19:00" — a class a member has to recognise, on the studio's clock. */
+const studioDateTime = (timezone: string) =>
+  zoneFormat(timezone, 'en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
 
@@ -50,11 +52,11 @@ export function isUntouched(attendedCount: number): boolean {
  * "Used", with both halves named: the count includes no-shows, and a
  * sentence that said "attended" disagreed with the roster whenever one did.
  */
-export function attendedNotice(attendedCount: number, since: Date | null): string | null {
+export function attendedNotice(attendedCount: number, since: Date | null, timezone: string): string | null {
   if (isUntouched(attendedCount)) return null
   const classes = plural(attendedCount, 'class', 'classes')
   return since
-    ? `${classes} used (attended or no-show) since ${SG_DATE.format(since)}`
+    ? `${classes} used (attended or no-show) since ${studioDate(timezone).format(since)}`
     : `${classes} used (attended or no-show) on this purchase`
 }
 
@@ -76,10 +78,10 @@ export interface CancelledSession {
  * silently is not acceptable, so the empty case still says so out loud rather
  * than leaving the member to wonder.
  */
-export function cancelledClassesLine(sessions: CancelledSession[]): string {
+export function cancelledClassesLine(sessions: CancelledSession[], timezone: string): string {
   if (sessions.length === 0) return 'You had no upcoming bookings on it, so nothing was cancelled.'
   const named = sessions
-    .map(s => `${s.name} on ${SG_DATETIME.format(s.startsAt)}`)
+    .map(s => `${s.name} on ${studioDateTime(timezone).format(s.startsAt)}`)
     .join('; ')
   return `We have cancelled ${plural(sessions.length, 'upcoming booking', 'upcoming bookings')}: ${named}.`
 }
@@ -124,9 +126,9 @@ export function silentCutoff(now: Date): Date {
 }
 
 /** What the portal prints beside a silent Purchase. */
-export function silenceNotice(lastActivityAt: Date, now: Date): string {
+export function silenceNotice(lastActivityAt: Date, now: Date, timezone: string): string {
   const days = daysSilent(lastActivityAt, now)
-  return `No payment for ${plural(days, 'day', 'days')} — last paid ${SG_DATE.format(lastActivityAt)}`
+  return `No payment for ${plural(days, 'day', 'days')} — last paid ${studioDate(timezone).format(lastActivityAt)}`
 }
 
 /**
@@ -159,6 +161,8 @@ export interface RefundEmailInput {
   cancelled: CancelledSession[]
   /** Where the member checks what they still hold. */
   accountUrl: string
+  /** The studio's zone: the classes cancelled are named on its clock. */
+  timezone: string
 }
 
 export function composeRefundEmail(input: RefundEmailInput): {
@@ -171,7 +175,7 @@ export function composeRefundEmail(input: RefundEmailInput): {
       client_name: input.clientName,
       package_name: input.packageName,
       refund_line: voidedLine(input.packageName, input.amountSgd),
-      cancelled_line: cancelledClassesLine(input.cancelled),
+      cancelled_line: cancelledClassesLine(input.cancelled, input.timezone),
       account_url: input.accountUrl,
     },
   }

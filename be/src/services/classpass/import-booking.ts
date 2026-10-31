@@ -8,7 +8,7 @@ import { createClient } from '../clients/manage'
 import { emailEveryAdmin } from '../notifications/send'
 import { sessionTimeFormat } from '../notifications/send-booking-email'
 import { zonedInstant } from '../schedule/series-dates'
-import { loadTenantById } from '../tenants/tenants'
+import { tenantTimezone } from '../tenants/tenants'
 import { requireTenantUrl } from '../tenants/urls'
 import { normaliseClassPassLocation } from './location-name'
 import { isComplete, type ClassPassBookingFields } from './parse'
@@ -147,8 +147,7 @@ export async function placeClassPassBooking(
     match = { classId: options.classId }
   } else {
     if (!isComplete(fields)) return unparsed
-    const tenant = await loadTenantById(tenantId)
-    placed.startsAt = zonedInstant(fields.localDate, fields.localTime, tenant?.timezone ?? 'UTC')
+    placed.startsAt = zonedInstant(fields.localDate, fields.localTime, await tenantTimezone(tenantId))
     if (held) return { ...placed, clientId: held.clientId, bookingId: held.id, outcome: 'noop', reason: null }
     match = await classFor(tenantId, fields, placed.startsAt)
   }

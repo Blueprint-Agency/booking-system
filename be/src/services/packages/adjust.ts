@@ -14,7 +14,8 @@ import { bookings } from '../../db/schema/bookings'
 import { classes, ptSessions } from '../../db/schema/schedule'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 import { now as clockNow } from '../../lib/clock'
-import { sgFormat } from '../../lib/time'
+import { localDate, zoneFormat } from '../../lib/studio-time'
+import { tenantTimezone } from '../tenants/tenants'
 import { isVoided, recordAdjustment, type Tx } from './ledger'
 import { listActiveInstructors } from '../schedule/client-catalog'
 import { activationExpiry, computeActive } from './validity'
@@ -409,8 +410,9 @@ async function latestPaidStart(tx: Tx, tenantId: string, clientPackageId: string
   return starts.length ? new Date(Math.max(...starts.map(d => d.getTime()))) : null
 }
 
-const startDay = sgFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
-const startTime = sgFormat('en-GB', { hour: 'numeric', minute: '2-digit', hour12: true })
+const startDay = (timezone: string) =>
+  zoneFormat(timezone, 'en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+const startTime = (timezone: string) => zoneFormat(timezone, 'en-GB', { hour: 'numeric', minute: '2-digit', hour12: true })
 
 /**
  * Change a package's expiry (duration). Logged as a delta-0 manual_adjustment
@@ -426,6 +428,8 @@ const startTime = sgFormat('en-GB', { hour: 'numeric', minute: '2-digit', hour12
  */
 export async function setPackageExpiry(input: SetExpiryInput): Promise<ClientPackageRow> {
   if (!input.reason.trim()) throw new BadRequestError('reason_required')
+  // Every date this writes or words is a day on the studio's clock.
+  const timezone = await tenantTimezone(input.tenantId)
 
   return db.transaction(async tx => {
     await tx
@@ -440,7 +444,7 @@ export async function setPackageExpiry(input: SetExpiryInput): Promise<ClientPac
     if (earliest && input.expiresAt && input.expiresAt < earliest) {
       throw new ConflictError('expiry_before_paid_booking', {
         earliest_expires_at: earliest.toISOString(),
-        message: `This package pays for a booking at ${startTime.format(earliest)} on ${startDay.format(earliest)}. Set its expiry no earlier than that.`,
+        message: `This package pays for a booking at ${startTime(timezone).format(earliest)} on ${startDay(timezone).format(earliest)}. Set its expiry no earlier than that.`,
       })
     }
 
@@ -460,11 +464,11 @@ export async function setPackageExpiry(input: SetExpiryInput): Promise<ClientPac
       if (reach && earliest > reach) {
         throw new ConflictError('expiry_before_paid_booking', {
           earliest_expires_at: earliest.toISOString(),
-          message: `This package pays for a booking at ${startTime.format(earliest)} on ${startDay.format(earliest)}. Returned to Dormant it could end before then. Keep an expiry no earlier than that.`,
+          message: `This package pays for a booking at ${startTime(timezone).format(earliest)} on ${startDay(timezone).format(earliest)}. Returned to Dormant it could end before then. Keep an expiry no earlier than that.`,
         })
       }
     }
-    const fmt = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : 'Dormant')
+    const fmt = (d: Date | null) => (d ? localDate(timezone, d) : 'Dormant')
     const reason = `Expiry changed from ${fmt(pkg.expiresAt)} to ${fmt(input.expiresAt)}: ${input.reason.trim()}`
 
     // Extending an expired package's expiry must make its credits usable again

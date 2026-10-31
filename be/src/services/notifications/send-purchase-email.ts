@@ -28,7 +28,8 @@ import { corporateRequests, workshops, workshopDays, workshopTierDays } from '..
 import { requireTenantUrl } from '../tenants/urls'
 import { reportError } from '../../shared/logger'
 import { ConflictError, NotFoundError } from '../../shared/errors'
-import { sgFormat } from '../../lib/time'
+import { zoneFormat } from '../../lib/studio-time'
+import { tenantTimezone } from '../tenants/tenants'
 import { receiptPageUrl, withReceipt } from '../receipts/email'
 import type { ReceiptRow } from '../receipts/issue'
 import { purchaseReceipt } from '../receipts/read'
@@ -60,13 +61,14 @@ const workshopQrUrlFor = (tenantId: string) =>
 const corporateRequestsUrlFor = (tenantId: string) =>
   requireTenantUrl('client', tenantId).then(base => `${base}/account/bookings?type=corporate`)
 
-const SG_DATETIME = sgFormat('en-GB', {
-  day: 'numeric',
-  month: 'short',
-  year: 'numeric',
-  hour: '2-digit',
-  minute: '2-digit',
-})
+const studioDateTime = (timezone: string) =>
+  zoneFormat(timezone, 'en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 
 /**
  * The email a Purchase's confirmation is, carrying its Receipt, composed afresh
@@ -241,6 +243,7 @@ async function packageEmail(tenantId: string, clientPackageId: string, salePurch
       toSgd(toCents(row.packagePaidSgd) + toCents(row.crossLocationPaidSgd ?? 0)),
     receiptUrl: receipt ? await receiptPageUrl(tenantId, receipt.id) : null,
     accountUrl: await accountUrlFor(tenantId),
+    timezone: await tenantTimezone(tenantId),
   })
 
   return withReceipt(
@@ -472,7 +475,9 @@ async function workshopEmail(tenantId: string, bookingId: string): Promise<SendI
       variables: {
         client_name: row.clientName,
         workshop_name: row.workshopName,
-        date: firstDay ? SG_DATETIME.format(firstDay.startsAt) : 'See your account for the date',
+        date: firstDay
+          ? studioDateTime(await tenantTimezone(tenantId)).format(firstDay.startsAt)
+          : 'See your account for the date',
         qr_url: await workshopQrUrlFor(tenantId),
         code: row.code,
         // The sale's figure; a place booked before free places had a

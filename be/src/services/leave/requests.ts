@@ -20,8 +20,13 @@ import {
 } from '../../shared/errors'
 import { deleteUnreferencedObject, r2Bucket, putObject, signedObjectUrl } from '../../lib/r2'
 import { tenantKey } from '../../lib/object-key'
-import { sgFormat } from '../../lib/time'
+import { now as clockNow } from '../../lib/clock'
+import { localDate, zoneFormat } from '../../lib/studio-time'
+import { tenantTimezone } from '../tenants/tenants'
 import * as rules from './rules'
+
+/** Today on the studio's clock, at the app's own instant. */
+const studioToday = async (tenantId: string) => localDate(await tenantTimezone(tenantId), clockNow())
 
 /**
  * Leave requests a staff member files for themselves — an instructor or an
@@ -132,6 +137,8 @@ async function leavePoolsFor(
   tenantId: string,
   staffUserId: string,
   leaveYear: number,
+  /** The Leave Year it is now on the studio's clock, read before the transaction opened. */
+  thisYear: number,
 ): Promise<Record<rules.LeaveType, LeavePool>> {
   const [person] = await tx
     .select({
@@ -211,7 +218,7 @@ async function leavePoolsFor(
   }
 
   // A Leave Year that has not arrived is computed, never frozen. See above.
-  if (leaveYear > rules.leaveYearOf(rules.sgToday(new Date()))) return fresh
+  if (leaveYear > thisYear) return fresh
 
   await tx
     .insert(leavePools)
@@ -278,7 +285,7 @@ export type StaffLeaveFigures = Record<rules.LeaveType, LeaveFiguresResponse>
 
 /** Which Leave Year "now" is. The only one an admin may adjust: a future year
  *  has no stored Pool and a past one is frozen history. */
-const currentLeaveYear = () => rules.leaveYearOf(rules.sgToday(new Date()))
+const currentLeaveYear = async (tenantId: string) => rules.leaveYearOf(await studioToday(tenantId))
 
 async function yearRows(tx: Tx, tenantId: string, staffUserId: string, leaveYear: number) {
   return (
@@ -300,8 +307,9 @@ async function figuresFor(
   tenantId: string,
   staffUserId: string,
   leaveYear: number,
+  thisYear: number,
 ): Promise<StaffLeaveFigures> {
-  const pools = await leavePoolsFor(tx, tenantId, staffUserId, leaveYear)
+  const pools = await leavePoolsFor(tx, tenantId, staffUserId, leaveYear, thisYear)
   const rows = await yearRows(tx, tenantId, staffUserId, leaveYear)
   const of = (type: rules.LeaveType): LeaveFiguresResponse => {
     const f = rules.leavePoolFigures(type, pools[type].pool, rows, leaveYear)
@@ -337,12 +345,12 @@ async function currentLeaveFigures(
     .where(eq(globalPolicy.tenantId, tenantId))
     .limit(1)
   if (!policy) return new Map()
-  const leaveYear = currentLeaveYear()
+  const leaveYear = await currentLeaveYear(tenantId)
   return db.transaction(async tx => {
     const out = new Map<string, StaffLeaveFigures>()
     // ponytail: one round trip per staff member. Batch the pool/request reads
     // if the staff list ever gets long enough to notice.
-    for (const id of [...staffUserIds].sort()) out.set(id, await figuresFor(tx, tenantId, id, leaveYear))
+    for (const id of [...staffUserIds].sort()) out.set(id, await figuresFor(tx, tenantId, id, leaveYear, leaveYear))
     return out
   })
 }
@@ -400,9 +408,9 @@ export async function adjustRemainingDays(
   tenantId: string,
   input: AdjustRemainingInput,
 ): Promise<StaffLeaveFigures> {
-  const leaveYear = currentLeaveYear()
+  const leaveYear = await currentLeaveYear(tenantId)
   return db.transaction(async tx => {
-    const pools = await leavePoolsFor(tx, tenantId, input.staffUserId, leaveYear)
+    const pools = await leavePoolsFor(tx, tenantId, input.staffUserId, leaveYear, leaveYear)
     const rows = await yearRows(tx, tenantId, input.staffUserId, leaveYear)
 
     for (const type of LEAVE_TYPES) {
@@ -431,7 +439,7 @@ export async function adjustRemainingDays(
           ),
         )
     }
-    return figuresFor(tx, tenantId, input.staffUserId, leaveYear)
+    return figuresFor(tx, tenantId, input.staffUserId, leaveYear, leaveYear)
   })
 }
 
@@ -460,17 +468,19 @@ function balances(
  *  whole history (all years — the balances are the year-scoped part).
  *
  *  Which year "no year" means is a domain question, so it is answered here and
- *  not in the route: the leave year the Singapore-local today falls in.
+ *  not in the route: the leave year today falls in on the studio's clock.
  *
  *  A read that writes: this is where a Leave Year's Pool is first materialised,
  *  so it runs in a transaction under the staff member's lock. */
 export async function getOwnLeave(
   tenantId: string,
   staffUserId: string,
-  leaveYear = rules.leaveYearOf(rules.sgToday(new Date())),
+  year?: number,
 ): Promise<{ leave_year: number; balances: LeaveBalance[]; requests: LeaveRequestRow[] }> {
+  const thisYear = await currentLeaveYear(tenantId)
+  const leaveYear = year ?? thisYear
   return db.transaction(async tx => {
-    const pool = await leavePoolsFor(tx, tenantId, staffUserId, leaveYear)
+    const pool = await leavePoolsFor(tx, tenantId, staffUserId, leaveYear, thisYear)
     const rows = await tx
       .select()
       .from(leaveRequests)
@@ -521,7 +531,11 @@ export async function submitLeaveRequest(
   tenantId: string,
   input: SubmitLeaveInput,
 ): Promise<LeaveRequestRow> {
-  const now = new Date()
+  // The app's clock, and the studio's zone: read before the transaction opens, so
+  // nothing inside it needs a second connection.
+  const now = clockNow()
+  const timezone = await tenantTimezone(tenantId)
+  const today = localDate(timezone, now)
   const leaveYear = rules.leaveYearOf(input.startDate)
   const halfDay = input.halfDay ?? 'none'
 
@@ -606,7 +620,7 @@ export async function submitLeaveRequest(
     // Takes this person's own row lock and returns the Pool this submission is
     // measured against, materialising it if this is the first anyone has
     // touched `leaveYear`, all under that one lock.
-    const pool = await leavePoolsFor(tx, tenantId, input.staffUserId, leaveYear)
+    const pool = await leavePoolsFor(tx, tenantId, input.staffUserId, leaveYear, rules.leaveYearOf(today))
 
     // The query narrows to this tenant, person and leave year; which statuses
     // and which type count is the pure rule's business.
@@ -626,7 +640,7 @@ export async function submitLeaveRequest(
       startDate: input.startDate,
       endDate: input.endDate,
       halfDay,
-      today: rules.sgToday(now),
+      today,
       pool: pool[input.type].pool,
       committedDays: rules.sumLeaveDays(existing.map(toDaysRow), {
         type: input.type,
@@ -680,12 +694,13 @@ export async function submitLeaveRequest(
         instructorId: p.staffUserId,
         instructorName: p.name,
         type: p.type,
-        ...rules.leaveWindow(p.startDate, p.endDate, p.halfDay),
+        ...rules.leaveWindow(timezone, p.startDate, p.endDate, p.halfDay),
       }))
       const capInput = {
         type: input.type,
         conflictPartnerIds: partnerIds,
-        window: rules.leaveWindow(input.startDate, input.endDate, halfDay),
+        window: rules.leaveWindow(timezone, input.startDate, input.endDate, halfDay),
+        timezone,
         peers,
         studyCap: caps.study,
       }
@@ -709,7 +724,7 @@ export async function submitLeaveRequest(
       await findOccupancyConflicts(
         tenantId,
         { kind: 'instructor', id: input.staffUserId },
-        rules.leaveWindow(input.startDate, input.endDate, halfDay),
+        rules.leaveWindow(timezone, input.startDate, input.endDate, halfDay),
         undefined,
         tx,
       ),
@@ -724,8 +739,8 @@ export async function submitLeaveRequest(
       throw new ConflictError('leave_clash', {
         message:
           events.length > 0
-            ? `${conflictMessage('Your schedule', events)} Cancel it before requesting leave.`
-            : `You already have leave ${leaveDaysPhrase(first)}. Withdraw or cancel that ` +
+            ? `${conflictMessage('Your schedule', events, timezone)} Cancel it before requesting leave.`
+            : `You already have leave ${leaveDaysPhrase(first, timezone)}. Withdraw or cancel that ` +
               `request before filing another over the same dates.`,
         conflicts,
       })
@@ -775,7 +790,7 @@ export async function transitionOwnLeaveRequest(
     .for('no key update')
   if (!row) throw new NotFoundError('leave_request_not_found')
 
-  const check = rules.checkOwnLeaveTransition(action, row, rules.sgToday(new Date()))
+  const check = rules.checkOwnLeaveTransition(action, row, await studioToday(tenantId))
   if (!check.ok) throw new ConflictError(check.code, { message: check.message })
 
   const [updated] = await db
@@ -1101,12 +1116,13 @@ export async function listLeaveCalendar(
     partners.set(p.a, [...(partners.get(p.a) ?? []), p.b])
     partners.set(p.b, [...(partners.get(p.b) ?? []), p.a])
   }
-  const view = rules.leaveWindow(from, to)
+  const timezone = await tenantTimezone(viewer.tenantId)
+  const view = rules.leaveWindow(timezone, from, to)
   const peers = rows.map(({ row, staffName }) => ({
     instructorId: row.staffUserId,
     instructorName: staffName,
     type: row.type,
-    ...rules.leaveWindow(row.startDate, row.endDate, row.halfDay),
+    ...rules.leaveWindow(timezone, row.startDate, row.endDate, row.halfDay),
   }))
   const teaching = new Set(rows.filter(r => r.staffRole === 'instructor').map(r => r.row.staffUserId))
   // ponytail: O(n²) over one calendar window's rows, which is a handful of
@@ -1117,6 +1133,7 @@ export async function listLeaveCalendar(
           type: self.type,
           conflictPartnerIds: partners.get(self.instructorId) ?? [],
           window: rules.clipWindow(self, view),
+          timezone,
           // Excluded by PERSON, as the submission path excludes them — one
           // person's own overlapping rows (a backdated medical over leave that
           // has already ended) are one instructor away, not two.
@@ -1189,7 +1206,7 @@ export async function decideLeaveRequest(
     .for('no key update')
   if (!row) throw new NotFoundError('leave_request_not_found')
 
-  const check = rules.checkAdminLeaveDecision(input.action, row, rules.sgToday(new Date()))
+  const check = rules.checkAdminLeaveDecision(input.action, row, await studioToday(tenantId))
   if (!check.ok) throw new ConflictError(check.code, { message: check.message })
 
   const now = new Date()
@@ -1288,9 +1305,9 @@ async function emailAdminsOfSubmission(
   )
 }
 
-/** "…on 10 August 2026 at 15:42" — a revocation is a moment, not just a day:
- *  someone may lose and refile leave inside one afternoon. */
-const revokedAtFormat = sgFormat('en-GB', { dateStyle: 'long', timeStyle: 'short' })
+/** "…on 10 August 2026 at 15:42" on the studio's clock — a revocation is a
+ *  moment, not just a day: someone may lose and refile leave inside one afternoon. */
+const revokedAtFormat = (timezone: string) => zoneFormat(timezone, 'en-GB', { dateStyle: 'long', timeStyle: 'short' })
 
 /** Approved, rejected or revoked — one recipient, one shape. `revokedBy` is set
  *  on a revocation only, and is what that template's extra two lines render. */
@@ -1326,7 +1343,7 @@ async function emailApplicantOfDecision(
         ...(revokedBy
           ? {
               revoked_by: await staffName(tenantId, revokedBy.staffId, 'An admin'),
-              revoked_at: revokedAtFormat.format(revokedBy.at),
+              revoked_at: revokedAtFormat(await tenantTimezone(tenantId)).format(revokedBy.at),
             }
           : {}),
       },

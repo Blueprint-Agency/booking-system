@@ -10,31 +10,24 @@
  * Pure: no database, no clock. See series-dates.test.ts.
  */
 
-/** A calendar day, `YYYY-MM-DD`. Not an instant. */
-export type PlainDate = string
+import {
+  addDays,
+  daysBetween,
+  instantAt,
+  isoWeekday,
+  localDate,
+  type IsoWeekday,
+  type LocalTime,
+  type PlainDate,
+} from '../../lib/studio-time'
 
-/** A wall-clock time, `HH:MM`. */
-export type LocalTime = string
-
-/** ISO weekday: Monday 1 … Sunday 7. */
-export type IsoWeekday = 1 | 2 | 3 | 4 | 5 | 6 | 7
-
-const MS_PER_DAY = 86_400_000
-const asUtcMidnight = (d: PlainDate) => Date.parse(`${d}T00:00:00Z`)
-
-export function addDays(date: PlainDate, days: number): PlainDate {
-  return new Date(asUtcMidnight(date) + days * MS_PER_DAY).toISOString().slice(0, 10)
-}
+// The calendar arithmetic and the zone rules live in `lib/studio-time`; this
+// module keeps the names its callers use.
+export { addDays, isoWeekday }
+export type { IsoWeekday, LocalTime, PlainDate }
 
 /** Whole days from `a` to `b`; negative if `b` is before `a`. */
-export function daysFrom(a: PlainDate, b: PlainDate): number {
-  return Math.round((asUtcMidnight(b) - asUtcMidnight(a)) / MS_PER_DAY)
-}
-
-export function isoWeekday(date: PlainDate): IsoWeekday {
-  const js = new Date(asUtcMidnight(date)).getUTCDay() // Sunday 0
-  return (js === 0 ? 7 : js) as IsoWeekday
-}
+export const daysFrom = daysBetween
 
 /** Every `weekday` from `from` to `to`, both inclusive, minus `excluded`. */
 export function seriesDates(opts: {
@@ -53,42 +46,18 @@ export function seriesDates(opts: {
   return out
 }
 
-/** Wall-clock fields of `instant` in `timezone`, read back as if they were UTC. */
-function wallClockAsUtc(instant: number, timezone: string): number {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hourCycle: 'h23',
-  }).formatToParts(new Date(instant))
-  const n = (type: Intl.DateTimeFormatPartTypes) =>
-    Number(parts.find(p => p.type === type)?.value)
-  return Date.UTC(n('year'), n('month') - 1, n('day'), n('hour'), n('minute'), n('second'))
-}
-
 /**
- * The instant at which it is `time` on `date` in `timezone`.
- *
- * `Intl` knows a zone's offset at an instant, not at a wall-clock time, so this
- * guesses with the offset at the wall time read as UTC and corrects once with
- * the offset at the guess — which settles on the right answer everywhere except
- * inside a spring-forward gap, where the time does not exist and the result
- * lands an hour later.
+ * The instant at which it is `time` on `date` in `timezone`: the studio-time
+ * module's rule, with the zone last as this module's callers have always
+ * passed it.
  */
 export function zonedInstant(date: PlainDate, time: LocalTime, timezone: string): Date {
-  const wall = Date.parse(`${date}T${time}:00Z`)
-  const offsetAt = (instant: number) => wallClockAsUtc(instant, timezone) - instant
-  const guess = wall - offsetAt(wall)
-  return new Date(wall - offsetAt(guess))
+  return instantAt(timezone, date, time)
 }
 
 /** The calendar day `instant` falls on in `timezone`. */
 export function localDateOf(instant: Date, timezone: string): PlainDate {
-  return new Date(wallClockAsUtc(instant.getTime(), timezone)).toISOString().slice(0, 10)
+  return localDate(timezone, instant)
 }
 
 export interface Occurrence {

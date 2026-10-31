@@ -7,6 +7,7 @@
 import { tenants, type TenantRow } from '../../db/schema/tenancy'
 import type { TenantStatus } from '../../db/enums'
 import { now as clockNow } from '../../lib/clock'
+import { localDate as studioLocalDate } from '../../lib/studio-time'
 
 /** The zone a studio created without one is on — the `tenants.timezone` column
  *  default, read from the schema so the two cannot disagree. */
@@ -48,13 +49,7 @@ export function termEndDate(start: string, months: number): string {
 
 /** The calendar date it is at `at` in `timezone`, as `YYYY-MM-DD`. */
 export function localDate(timezone: string, at: Date = clockNow()): string {
-  // `en-CA` formats as YYYY-MM-DD.
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(at)
+  return studioLocalDate(timezone, at)
 }
 
 /** Today on this studio's clock — the default start of a new Term. A zone the
