@@ -6,11 +6,11 @@ import { and, eq, inArray, sql } from 'drizzle-orm'
 import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
 
 const run = Date.now().toString(36)
-const MIGRATION = path.resolve(process.cwd(), 'src/db/migrations/0140_pt_request_copy_held_session.sql')
+const MIGRATION = path.resolve(process.cwd(), 'src/db/migrations/0139_pt_request_copy_held_session.sql')
 const SLUGS = ['pt_request_submitted', 'pt_request_expired']
 
 /**
- * Migration 0140: the request-received and request-expired emails stopped
+ * Migration 0139: the request-received and request-expired emails stopped
  * saying a private session request deducts nothing, because submitting one
  * debits the package. A studio created before gets the true wording in a row
  * still exactly the default it was written with, and never in a row it has put
@@ -21,7 +21,7 @@ const SLUGS = ['pt_request_submitted', 'pt_request_expired']
  * its link carrying the studio's own origin as the seeder baked it. The
  * migration's own SQL is run against them, twice.
  */
-describe('migration 0140: the private session request emails say the session is held, in studios created before', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
+describe('migration 0139: the private session request emails say the session is held, in studios created before', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
   let harness!: TestApp
   let schema!: typeof import('../db/schema')
   let layout!: typeof import('../services/mail/layout')
