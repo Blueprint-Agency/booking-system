@@ -971,15 +971,15 @@
     {
       "idx": 138,
       "version": "7",
-      "when": 1793360069689,
-      "tag": "0138_drop_unused_tables",
+      "when": 1793360613419,
+      "tag": "0138_retire_unsent_email_templates",
       "breakpoints": true
     },
     {
       "idx": 139,
       "version": "7",
-      "when": 1793360103317,
-      "tag": "0139_pt_requests_scheduled_session_fk",
+      "when": 1793426580922,
+      "tag": "0139_drop_unused_tables_and_session_fk",
       "breakpoints": true
     }
   ]

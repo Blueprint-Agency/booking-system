@@ -1,3 +1,15 @@
+-- Three tables nothing reads or writes are dropped: the admin Inbox (#237) and
+-- waivers (#233) are not being built. `inbox_items` takes its enum with it. Their
+-- rows are not archived anywhere else; the pre-migrate snapshot every deploy takes
+-- (docs/md/deployment.md) is the way back.
+DROP TABLE IF EXISTS "waiver" CASCADE;
+--> statement-breakpoint
+DROP TABLE IF EXISTS "waiver_signatures" CASCADE;
+--> statement-breakpoint
+DROP TABLE IF EXISTS "inbox_items" CASCADE;
+--> statement-breakpoint
+DROP TYPE IF EXISTS "public"."inbox_item_type";
+--> statement-breakpoint
 -- A request names the session it was scheduled as, and now the database holds it
 -- to a session that exists. Nothing ever added the foreign key, so a request can
 -- already name an id that is no session. Adding the constraint would refuse the

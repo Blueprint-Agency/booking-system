@@ -8,7 +8,7 @@ import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from
 
 const run = Date.now().toString(36)
 const DOMAIN = `${run}.pt-request-session-fk.test`
-const MIGRATION = path.resolve(process.cwd(), 'src/db/migrations/0139_pt_requests_scheduled_session_fk.sql')
+const MIGRATION = path.resolve(process.cwd(), 'src/db/migrations/0139_drop_unused_tables_and_session_fk.sql')
 const CONSTRAINT = 'pt_requests_scheduled_pt_session_id_pt_sessions_id_fk'
 
 /** The SQLSTATE of a failed statement, wherever the driver or drizzle left it. */

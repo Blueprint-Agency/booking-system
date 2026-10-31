@@ -1021,7 +1021,7 @@ id, template_slug (text), recipient_email (text), recipient_user_id (uuid, nulla
 
 **Indexes:** `(recipient_user_id, queued_at desc)`, `(status)`, `(template_slug, queued_at desc)`.
 
-**Waivers are not being built** (#233), and the `waiver` and `waiver_signatures` tables are gone (#508, migration `0138`). `tenant_settings.waiver_text` is a different thing and is not touched.
+**Waivers are not being built** (#233), and the `waiver` and `waiver_signatures` tables are gone (#508, migration `0139`). `tenant_settings.waiver_text` is a different thing and is not touched.
 
 #### `marketing_content` (singleton)
 
@@ -1061,7 +1061,7 @@ The prior `promo_codes_enabled` flag is **removed**. Promotions (per `fe-client-
 
 ### 4l. Inbox (§13)
 
-**The admin Inbox is not being built** (#237): its routes are gone, no cancel writes to it (#434), and the `inbox_items` table and its `inbox_item_type` enum are dropped (#508, migration `0138`). PT request triage lives on its own page (`/admin/pt-requests`) backed by the `pt_requests` table (§4e). What staff are told is the bell's Needs action and Updates (`be/docs/adr/0015`).
+**The admin Inbox is not being built** (#237): its routes are gone, no cancel writes to it (#434), and the `inbox_items` table and its `inbox_item_type` enum are dropped (#508, migration `0139`). PT request triage lives on its own page (`/admin/pt-requests`) backed by the `pt_requests` table (§4e). What staff are told is the bell's Needs action and Updates (`be/docs/adr/0015`).
 
 ---
 
