@@ -85,7 +85,7 @@ describe('a Receipt laid out as a business receipt', { skip: integrationTestsEna
     const slug = `rl-${run}-${studios++}`
     const adminEmail = `admin-${slug}@${DOMAIN}`
     const created = await expectStatus(
-      await post(operator, '/api/v1/platform/tenants', { slug, name: `Domain ${slug}`, admin_email: adminEmail }),
+      await post(operator, '/api/v1/platform/tenants', { slug, name: `Domain ${slug}`, timezone: 'Asia/Singapore', admin_email: adminEmail }),
       201,
     )
     const id: string = created.tenant.id

@@ -67,7 +67,8 @@ export type TermMonths = (typeof TERM_MONTHS)[number];
 export interface CreateTenantInput {
   slug: string;
   name: string;
-  timezone?: string;
+  /** The studio's IANA zone, required and fixed at creation. */
+  timezone: string;
   /** How long the first Term runs from today. Omitted leaves it open-ended. */
   term_months?: TermMonths;
   /** Omitted when the studio is being created to receive an archive: the
