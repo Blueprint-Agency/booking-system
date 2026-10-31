@@ -352,6 +352,8 @@ export const ERROR_CODES = {
   tenant_suspended: "tenant_suspended",
   tenant_term_ended: "tenant_term_ended",
   time_clash: "time_clash",
+  timezone_invalid: "timezone_invalid",
+  timezone_required: "timezone_required",
   tier_must_cover_at_least_one_day: "tier_must_cover_at_least_one_day",
   too_many_attempts: "too_many_attempts",
   too_many_requests: "too_many_requests",

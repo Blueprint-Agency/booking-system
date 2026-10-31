@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { studioZoneChoices } from "./studio-time-zones";
 
-test("TEN-104 the New studio zone picker starts on the administrator's own browser zone, whichever it is, never Singapore", () => {
+test("TEN-103 the New studio zone picker starts on the administrator's own browser zone, whichever it is, never Singapore", () => {
   for (const browser of ["Australia/Sydney", "America/New_York", "Europe/London", "Asia/Kolkata", "Pacific/Auckland"]) {
     assert.equal(studioZoneChoices(browser).initial, browser);
   }
@@ -10,7 +10,7 @@ test("TEN-104 the New studio zone picker starts on the administrator's own brows
   assert.notEqual(studioZoneChoices("").initial, "Asia/Singapore");
 });
 
-test("TEN-104 the picker lists the runtime's real IANA zones, each once and in order, and includes the browser's own", () => {
+test("TEN-103 the picker lists the runtime's real IANA zones, each once and in order, and includes the browser's own", () => {
   const { zones } = studioZoneChoices("Australia/Sydney");
   assert.deepEqual(zones, [...new Set(zones)], "no zone twice");
   assert.deepEqual(zones, [...zones].sort(), "in order");
@@ -21,7 +21,7 @@ test("TEN-104 the picker lists the runtime's real IANA zones, each once and in o
   assert.ok(zones.every(zone => /^[A-Za-z_]+(\/[A-Za-z_+\-0-9]+)*$/.test(zone)), "only zone names, no offsets");
 });
 
-test("TEN-104 a browser zone the runtime's list leaves out (UTC) is still offered, so the picker can start on it", () => {
+test("TEN-103 a browser zone the runtime's list leaves out (UTC) is still offered, so the picker can start on it", () => {
   const supported = ["Asia/Singapore", "Australia/Sydney"];
   const { initial, zones } = studioZoneChoices("UTC", supported);
   assert.equal(initial, "UTC");
