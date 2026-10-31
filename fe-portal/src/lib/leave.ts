@@ -107,6 +107,20 @@ export const LEAVE_HALF_DAY_SHORT: Record<HalfDay, string> = {
   afternoon: " (PM)",
 };
 
+/**
+ * An instructor's line in a picker: marked when they are away on the date, and,
+ * when the leave read failed (`unchecked`), marked as not checked, since a
+ * picker that says nothing reads as nobody being away.
+ */
+export function instructorOptionLabel(
+  name: string,
+  half: HalfDay | undefined,
+  unchecked: boolean,
+): string {
+  if (half) return `${name} — On leave${LEAVE_HALF_DAY_SHORT[half]}`;
+  return unchecked ? `${name} — leave not checked` : name;
+}
+
 /** A plain `YYYY-MM-DD` — never parsed as an instant, so no timezone shifting. */
 function formatLeaveDay(day: string): string {
   return formatDate(`${day}T00:00:00`, "d MMM yyyy");

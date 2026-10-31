@@ -10,16 +10,19 @@ import {
   type ReactNode,
 } from "react";
 import { usePathname } from "next/navigation";
-import { answeredElsewhere } from "@/lib/failed-read";
+import { answeredElsewhere, reportableFailure } from "@/lib/failed-read";
 import { getPortalToken } from "@/lib/portal-auth";
 import { reportError } from "@/lib/report-error";
 import { useWorkspace } from "@/lib/workspace-context";
 import {
   autoOpenDecision,
   autoOpenKey,
+  heldSummary,
   rememberAutoOpenDecided,
+  summaryUnchecked,
   wasAutoOpenDecided,
   type AttentionSummary,
+  type HeldSummary,
 } from "@/lib/attention";
 
 /** How often the counts are re-read while the tab is in front. */
@@ -66,10 +69,14 @@ const AttentionContext = createContext<AttentionValue>(EMPTY);
 export function AttentionProvider({ children }: { children: ReactNode }) {
   const { api, currentStaff, activeLocationId } = useWorkspace();
   const pathname = usePathname();
-  const [summary, setSummary] = useState<AttentionSummary | null>(null);
+  // The summary is held with the workspace it was read for: another workspace's
+  // counts are never shown for this one (`heldSummary`).
+  const [held, setHeld] = useState<HeldSummary | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
-  // The last read failed. Only matters while there is no summary to keep up.
-  const [failed, setFailed] = useState(false);
+  // The workspace whose last read failed, or null once a read lands.
+  const [failedKey, setFailedKey] = useState<string | null>(null);
+  const key = activeLocationId ?? "";
+  const summary = heldSummary(held, key);
   const decided = useRef(false);
   // The latest request wins: a slow answer for the workspace just left must not overwrite this one.
   const latest = useRef(0);
@@ -85,8 +92,8 @@ export function AttentionProvider({ children }: { children: ReactNode }) {
         activeLocationId ? { location_id: activeLocationId } : undefined,
       );
       if (mine !== latest.current) return;
-      setSummary(res);
-      setFailed(false);
+      setHeld({ key: activeLocationId ?? "", summary: res });
+      setFailedKey(null);
       if (!decided.current) {
         decided.current = true;
         const token = await getPortalToken();
@@ -102,8 +109,8 @@ export function AttentionProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       // A missed poll leaves the last number up; the next one tries again. With
       // no number yet, the bell says it could not check rather than showing none.
-      reportError(err, { scope: "attention-summary" });
-      if (mine === latest.current && !answeredElsewhere(err)) setFailed(true);
+      if (reportableFailure(err)) reportError(err, { scope: "attention-summary" });
+      if (mine === latest.current && !answeredElsewhere(err)) setFailedKey(activeLocationId ?? "");
     }
   }, [api, currentStaff, activeLocationId]);
 
@@ -133,12 +140,12 @@ export function AttentionProvider({ children }: { children: ReactNode }) {
       summary,
       total: summary?.total ?? 0,
       byGroup: summary?.by_group ?? {},
-      unchecked: summary === null && failed,
+      unchecked: summaryUnchecked(held, key, failedKey),
       refresh: () => void read(),
       panelOpen,
       setPanelOpen,
     }),
-    [summary, failed, read, panelOpen],
+    [summary, held, key, failedKey, read, panelOpen],
   );
 
   return <AttentionContext.Provider value={value}>{children}</AttentionContext.Provider>;

@@ -4,7 +4,7 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Download, Loader2, ReceiptText, Search } from "lucide-react";
 import { toast } from "sonner";
-import { Button, EmptyState, Input, PageHeader, Pagination, Select } from "@/components/ui";
+import { Button, EmptyState, Input, LoadFailure, PageHeader, Pagination, Select } from "@/components/ui";
 import { DateRangeFilter } from "@/components/date-range-filter";
 import { ReceiptStatusBadge as StatusBadge } from "@/components/receipts/receipt-status-badge";
 import { useWorkspace } from "@/lib/workspace-context";
@@ -196,12 +196,7 @@ function ReceiptsList() {
             <Loader2 className="h-4 w-4 animate-spin" /> Loading receipts…
           </div>
         ) : error && !loading ? (
-          <div className="py-12 text-center">
-            <p className="text-sm text-error">Failed to load: {error}</p>
-            <Button size="sm" variant="ghost" onClick={() => setAttempt((n) => n + 1)} className="mt-2">
-              Retry
-            </Button>
-          </div>
+          <LoadFailure what="the receipts" onRetry={() => setAttempt((n) => n + 1)} className="py-12" />
         ) : rows.length === 0 && total === 0 && !filtered ? (
           <EmptyState
             icon={ReceiptText}

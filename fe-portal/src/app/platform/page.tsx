@@ -406,16 +406,14 @@ export default function PlatformPage() {
       />
 
       {importsUnchecked && (
-        <p role="status" className="mb-3 rounded-lg border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-ink">
-          Couldn&apos;t check for running imports, so one may be under way without showing here.{" "}
-          <button
-            type="button"
-            onClick={() => setImportsAttempt(n => n + 1)}
-            className="font-semibold underline underline-offset-2"
-          >
-            Try again
-          </button>
-        </p>
+        <LoadFailure
+          what="the import check"
+          variant="inline"
+          sentence="Couldn't check for running imports."
+          detail="One may be under way without showing here."
+          onRetry={() => setImportsAttempt(n => n + 1)}
+          className="mb-3"
+        />
       )}
 
       {tenants.length === 0 ? (

@@ -20,8 +20,8 @@ import { runsStudio } from "@/lib/staff-role";
 import { sessionTenantRefusal } from "@/lib/session-tenant";
 import { getPortalToken, signOutPortal, usePortalSession } from "@/lib/portal-auth";
 import {
-  archiveWarning,
   assertLoadedInFull,
+  confirmArchive,
   latestRead,
   locationsToManage,
   workspaceLocations,
@@ -405,14 +405,12 @@ export function WorkspaceProvider({
       const loc = locations.find(l => l.id === id);
       // The warning is informational: a count that can't be read does not block
       // archiving, but it is said so, never taken as 0 (no one stranded).
-      const count = await api
-        .get<{ count: number }>(`/portal/admin/locations/${id}/live-unlimited-count`)
-        .then(r => r.count as number | null)
-        .catch(() => null);
-      const warning = archiveWarning(count, loc?.name ?? "this location");
-      if (warning !== null && !window.confirm(warning)) {
-        return false;
-      }
+      const agreed = await confirmArchive(
+        () => api.get<{ count: number }>(`/portal/admin/locations/${id}/live-unlimited-count`),
+        loc?.name ?? "this location",
+        question => window.confirm(question),
+      );
+      if (!agreed) return false;
       await api.post(`/portal/admin/locations/${id}/archive`);
       await refreshAllLocations();
       return true;

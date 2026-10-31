@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { ApiError } from "@/lib/api";
 import { X } from "lucide-react";
 import { LoadFailure } from "@/components/ui";
-import { answeredElsewhere } from "@/lib/failed-read";
+import { answeredElsewhere, reportableFailure } from "@/lib/failed-read";
 import { useWorkspace } from "@/lib/workspace-context";
 import { formatRelative } from "@/lib/formatters";
 import { reportError } from "@/lib/report-error";
@@ -77,7 +77,7 @@ export function AttentionPanel({
         }
       } catch (err) {
         if (!cancelled && !answeredElsewhere(err)) setFailed(true);
-        reportError(err, { scope: "attention-panel" });
+        if (reportableFailure(err)) reportError(err, { scope: "attention-panel" });
       }
     })();
     return () => {

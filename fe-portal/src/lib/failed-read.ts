@@ -5,14 +5,15 @@
  * `ReadState`: loading, loaded with its data, or failed, and draws "Couldn't
  * load …" with Try again for the last (`components/ui/load-failure.tsx`).
  *
- * A failure that something else answers keeps the screen waiting instead of
- * drawing a failure beneath it: a `401` is the workspace signing the person out
- * (`workspace-context.tsx`), and a `503` maintenance answer is the maintenance
- * screen (`maintenance-gate.tsx`).
+ * A failure that something else answers draws no failure of its own: a `401`
+ * on a call that sent a token ends the session (`session-expiry.ts`, wired in
+ * `api.ts`), and both shells then send the person to sign in; a `503`
+ * maintenance answer puts up the maintenance screen (`maintenance-gate.tsx`).
  *
  * Pure, so `node --test` loads it. fe-client has its own copy of the idea; the
  * apps share no code.
  */
+import { permissionRefusal } from "./access-refusal";
 import { maintenanceMessage } from "./maintenance";
 
 export type ReadState<T> =
@@ -48,16 +49,43 @@ export function afterFailedRead<T>(err: unknown): ReadState<T> {
 }
 
 /**
- * What a screen drawn from several reads shows: `failed` when any failed (it
- * names what it lacks, never an empty state), else `loading` while any is
- * still on its way, else `loaded`.
+ * Whether a failed read still needs reporting. `sendApiRequest` already reports
+ * a 5xx and a network failure or timeout (`lib/api-request.ts`), and a `401` or
+ * maintenance answer is no fault of the screen's. What is left is a 4xx the
+ * request does not report, and an error the screen itself threw.
  */
-export function combineReads(
-  ...reads: ReadState<unknown>[]
-): "loading" | "failed" | "loaded" {
-  if (reads.some((r) => r.status === "failed")) return "failed";
-  if (reads.some((r) => r.status === "loading")) return "loading";
-  return "loaded";
+export function reportableFailure(err: unknown): boolean {
+  if (answeredElsewhere(err)) return false;
+  const answer = statusOf(err);
+  if (answer) return answer.status < 500;
+  if (err instanceof Error || (typeof DOMException !== "undefined" && err instanceof DOMException)) {
+    if (err.name === "TimeoutError" || err.name === "AbortError") return false;
+    if (err instanceof TypeError && /fetch|network/i.test(err.message)) return false;
+  }
+  return true;
+}
+
+/**
+ * The reason to print beside "Couldn't load …", or undefined: a switch an
+ * Admin turned off, or a 4xx refusal that came with words. A server fault has
+ * none worth printing, and the line says only that it couldn't load.
+ */
+export function failureDetail(err: unknown): string | undefined {
+  const refused = permissionRefusal(err);
+  if (refused) return refused;
+  const answer = statusOf(err);
+  if (!answer || answer.status >= 500 || !answer.body || typeof answer.body !== "object") return undefined;
+  const { message } = answer.body as { message?: unknown };
+  return typeof message === "string" && message.trim() ? message : undefined;
+}
+
+/** A screen's failed list read: it failed, and perhaps why. Held in place of an error string. */
+export interface LoadError {
+  detail: string | undefined;
+}
+
+export function loadError(err: unknown): LoadError {
+  return { detail: failureDetail(err) };
 }
 
 /** "Couldn't load the studio list." */
@@ -71,17 +99,4 @@ export function loadFailureSentence(what: string): string {
  */
 export function rowsOf<T>(read: ReadState<readonly T[]>): readonly T[] {
   return read.status === "loaded" ? read.data : [];
-}
-
-/** Whether a list may say it is empty: only a read that loaded and found nothing. */
-export function mayDrawEmpty(read: ReadState<readonly unknown[]>): boolean {
-  return read.status === "loaded" && read.data.length === 0;
-}
-
-/**
- * A count a screen may print: the number once it loaded, else null (draw
- * nothing, or a dash). Never 0 for a read that has no answer.
- */
-export function countOf(read: ReadState<readonly unknown[]>): number | null {
-  return read.status === "loaded" ? read.data.length : null;
 }

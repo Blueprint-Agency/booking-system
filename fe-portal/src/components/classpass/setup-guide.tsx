@@ -338,10 +338,17 @@ function UnmappedLocations({
   }, [api, revision, attempt]);
 
   const names = items ? unmappedLocations(items) : [];
-  if (failed && !items) {
-    return <LoadFailure what="the ClassPass locations waiting in review" className="justify-start px-0 py-2" onRetry={() => setAttempt((n) => n + 1)} />;
-  }
-  if (names.length === 0) return null;
+  // A failed read says so; after a failed re-read the items from the last good
+  // read stay beneath it, and are not drawn as the whole list.
+  const failure = failed ? (
+    <LoadFailure
+      what="the ClassPass locations waiting in review"
+      variant="inline"
+      detail={items ? "Showing what loaded earlier." : undefined}
+      onRetry={() => setAttempt((n) => n + 1)}
+    />
+  ) : null;
+  if (names.length === 0) return failure;
 
   async function map(itemId: string, locationId: string) {
     setMapping(true);
@@ -357,6 +364,8 @@ function UnmappedLocations({
   }
 
   return (
+    <div className="space-y-2">
+      {failure}
     <ul className="space-y-2">
       {names.map((n) => (
         <li key={n.itemId} className="flex flex-col gap-2 rounded-md border border-border bg-paper p-2 sm:flex-row sm:items-center">
@@ -391,5 +400,6 @@ function UnmappedLocations({
         </li>
       ))}
     </ul>
+    </div>
   );
 }

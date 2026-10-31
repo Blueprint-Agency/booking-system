@@ -276,10 +276,14 @@ export function WorkshopEditor({
   // The locations, instructors or rooms could not be read: the form says so
   // instead of drawing empty selects, "Unknown" coaches and "No rooms".
   const [catalogFailed, setCatalogFailed] = useState(false);
+  // True once the catalog has been read, false again while a retry is in flight:
+  // a workshop is not saved against locations, coaches and rooms it hasn't seen.
+  const [catalogLoaded, setCatalogLoaded] = useState(false);
 
   const loadCatalog = useCallback(async () => {
     if (!api) return;
     setCatalogFailed(false);
+    setCatalogLoaded(false);
     try {
       const [loc, ins, rm] = await Promise.all([
         fetchActiveLocations(api),
@@ -287,6 +291,7 @@ export function WorkshopEditor({
         fetchActiveRooms(api),
       ]);
       setCatalog({ locations: loc, instructors: ins, rooms: rm });
+      setCatalogLoaded(true);
       if (!locationId && loc[0]) setLocationId(loc[0].id);
     } catch (err) {
       if (!answeredElsewhere(err)) setCatalogFailed(true);
@@ -527,7 +532,7 @@ export function WorkshopEditor({
                   className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-paper px-3 py-2"
                 >
                   <span className="min-w-0 flex-1 break-words text-sm text-ink">
-                    {ins?.name ?? (catalogFailed ? "Couldn't load this instructor" : "Unknown")}
+                    {ins?.name ?? (catalogLoaded ? "Unknown" : catalogFailed ? "Couldn't load this instructor" : "Loading…")}
                   </span>
                   <Input
                     type="number"
@@ -608,7 +613,7 @@ export function WorkshopEditor({
             .filter((r) => r.location_id === locationId)
             .map((r) => ({ id: r.id, name: r.name }))}
           locationChosen={!!locationId}
-          roomsUnknown={catalogFailed}
+          roomsUnknown={!catalogLoaded}
         />
       </Section>
 
@@ -643,7 +648,7 @@ export function WorkshopEditor({
         <Button variant="ghost" onClick={onCancel}>
           Cancel
         </Button>
-        <Button onClick={handleSave} disabled={saving || catalogFailed}>
+        <Button onClick={handleSave} disabled={saving || !catalogLoaded}>
           {saving ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" /> Saving…

@@ -32,7 +32,10 @@ export function AttentionBell() {
           <span
             data-testid="attention-bubble"
             aria-hidden="true"
-            className={`absolute -right-0.5 -top-0.5 inline-flex min-w-[18px] items-center justify-center rounded-full px-1 text-[11px] font-semibold leading-[18px] tabular-nums text-white ring-2 ring-card ${unchecked ? "bg-warning" : "bg-error"}`}
+            className={`absolute -right-0.5 -top-0.5 inline-flex min-w-[18px] items-center justify-center rounded-full px-1 text-[11px] font-semibold leading-[18px] tabular-nums ring-2 ring-card ${
+              // Dark ink on the amber (about 6.8:1); white on the red (about 4.9:1).
+              unchecked ? "bg-warning text-ink" : "bg-error text-white"
+            }`}
           >
             {text}
           </span>

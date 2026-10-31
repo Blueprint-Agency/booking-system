@@ -22,7 +22,7 @@ import {
 } from "@/components/date-range-filter";
 import { useWorkspace } from "@/lib/workspace-context";
 import type { Api } from "@/lib/api";
-import { answeredElsewhere } from "@/lib/failed-read";
+import { answeredElsewhere, loadError, type LoadError } from "@/lib/failed-read";
 import {
   fetchActiveInstructors,
   fetchActiveLocations,
@@ -129,7 +129,7 @@ function FinanceScreen() {
   const [listsAttempt, setListsAttempt] = useState(0);
   const [data, setData] = useState<FinanceResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<LoadError | null>(null);
   const [exporting, setExporting] = useState(false);
 
   // Local draft values for the inline-editable amount cells.
@@ -194,7 +194,7 @@ function FinanceScreen() {
       setDrafts({});
     } catch (err) {
       // A `401` or maintenance is answered by the sign-in and the maintenance screen.
-      if (!answeredElsewhere(err)) setError(financeErrorMessage(err, "Couldn't load finance"));
+      if (!answeredElsewhere(err)) setError(loadError(err));
     } finally {
       setLoading(false);
     }
@@ -465,22 +465,19 @@ function FinanceScreen() {
       )}
 
       {listsFailed && (
-        <div role="status" className="mb-4 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-ink">
-          Couldn&apos;t load the Location and instructor lists, so those filters are incomplete.{" "}
-          <button
-            type="button"
-            onClick={() => setListsAttempt((n) => n + 1)}
-            className="font-semibold underline underline-offset-2"
-          >
-            Try again
-          </button>
-        </div>
+        <LoadFailure
+          what="the Location and instructor lists"
+          variant="inline"
+          detail="Those filters are incomplete."
+          onRetry={() => setListsAttempt((n) => n + 1)}
+          className="mb-4"
+        />
       )}
 
       {/* A ledger that failed to load is never drawn as "Nothing in this period". */}
       {error ? (
         <div className="rounded-xl border border-border bg-card shadow-soft">
-          <LoadFailure what="the transactions" detail={error.startsWith("Couldn't load") ? undefined : error} onRetry={load} />
+          <LoadFailure what="the transactions" detail={error.detail} onRetry={load} />
         </div>
       ) : loading ? (
         <div className="flex items-center justify-center py-16 text-muted">

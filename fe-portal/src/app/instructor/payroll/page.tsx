@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { AlertCircle, Loader2, Wallet } from "lucide-react";
 import { EmptyState, LoadFailure, PageHeader } from "@/components/ui";
-import { answeredElsewhere } from "@/lib/failed-read";
+import { answeredElsewhere, loadError, type LoadError } from "@/lib/failed-read";
 import {
   DateRangeFilter,
   presetRange,
@@ -23,7 +23,7 @@ export default function InstructorPayrollPage() {
   const [range, setRange] = useState<DateRange>(() => presetRange("month"));
   const [data, setData] = useState<ApiInstructorPayrollResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<LoadError | null>(null);
 
   const load = useCallback(async () => {
     if (!api) return;
@@ -36,7 +36,7 @@ export default function InstructorPayrollPage() {
       setData(await fetchInstructorPayroll(api, range));
     } catch (err) {
       // A `401` or maintenance is answered by the sign-in and the maintenance screen.
-      if (!answeredElsewhere(err)) setError(payrollErrorMessage(err, "Couldn't load payroll"));
+      if (!answeredElsewhere(err)) setError(loadError(err));
     } finally {
       setLoading(false);
     }
@@ -86,7 +86,7 @@ export default function InstructorPayrollPage() {
         <div className="rounded-xl border border-border bg-card shadow-soft">
           <LoadFailure
             what="your teaching log"
-            detail={error.startsWith("Couldn't load") ? undefined : error}
+            detail={error.detail}
             onRetry={load}
           />
         </div>

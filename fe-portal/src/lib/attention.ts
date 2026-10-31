@@ -115,6 +115,34 @@ export function bellLabel(total: number, unchecked = false): string {
   return total > 0 ? `Notifications, ${total} need attention` : "Notifications";
 }
 
+/** A summary and the workspace it was read for ("" for the studio-wide view). */
+export interface HeldSummary {
+  key: string;
+  summary: AttentionSummary;
+}
+
+/**
+ * The summary to show for the workspace in front. One read for another
+ * workspace is not its counts: after a switch, a failed read must not show the
+ * workspace just left.
+ */
+export function heldSummary(held: HeldSummary | null, key: string): AttentionSummary | null {
+  return held !== null && held.key === key ? held.summary : null;
+}
+
+/**
+ * The workspace in front has no summary and its last read failed (`failedKey`
+ * is the workspace that read was for): the bell cannot say what needs
+ * attention, which is not the same as nothing.
+ */
+export function summaryUnchecked(
+  held: HeldSummary | null,
+  key: string,
+  failedKey: string | null,
+): boolean {
+  return heldSummary(held, key) === null && failedKey === key;
+}
+
 /** The Needs action tab: a count only once the summary has been read. */
 export function needsActionTabLabel(count: number | null): string {
   return count === null ? "Needs action" : `Needs action (${count})`;

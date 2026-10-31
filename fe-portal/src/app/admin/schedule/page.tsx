@@ -354,16 +354,13 @@ export default function SchedulePage() {
           )}
         >
           {instructorsFailed && !error && (
-            <div role="status" className="border-b border-warning/30 bg-warning/10 px-4 py-2 text-xs text-ink">
-              Couldn&apos;t load instructor names, so classes show no instructor.{" "}
-              <button
-                type="button"
-                onClick={() => setInstructorsAttempt((n) => n + 1)}
-                className="font-semibold underline underline-offset-2"
-              >
-                Try again
-              </button>
-            </div>
+            <LoadFailure
+              what="the instructor names"
+              variant="inline"
+              detail="Classes show no instructor until they load."
+              onRetry={() => setInstructorsAttempt((n) => n + 1)}
+              className="m-2"
+            />
           )}
           {/* A schedule that failed to load is never drawn as an empty week. */}
           {error ? (

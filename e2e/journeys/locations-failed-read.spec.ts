@@ -93,8 +93,8 @@ test('LOC-20 when the admin locations read fails, Manage locations says so and o
     await page.getByRole('button', { name: 'Manage locations' }).click()
 
     const manage = page.getByRole('dialog').filter({ hasText: 'Manage locations' })
-    await expect(manage.getByRole('alert')).toContainText(/could not be loaded/i)
-    await expect(manage.getByRole('button', { name: 'Retry' })).toBeVisible()
+    await expect(manage.getByRole('alert')).toContainText(/couldn.t load the studio's locations/i)
+    await expect(manage.getByRole('button', { name: /Try loading .* again/ })).toBeVisible()
     // Add stays; nothing that changes an existing location is offered.
     await expect(manage.getByRole('button', { name: 'Add location' })).toBeVisible()
     await expect(manage.getByRole('button', { name: 'Edit', exact: true })).toHaveCount(0)
@@ -103,9 +103,9 @@ test('LOC-20 when the admin locations read fails, Manage locations says so and o
     expect(failedReads, 'the journey served the 500 to the full read').toBeGreaterThan(0)
     expect(updates, 'no update request left the browser').toEqual([])
 
-    // The read recovers; Retry brings the full list in and editing works.
+    // The read recovers; Try again brings the full list in and editing works.
     failing = false
-    await manage.getByRole('button', { name: 'Retry' }).click()
+    await manage.getByRole('button', { name: /Try loading .* again/ }).click()
     await expect(manage.getByRole('button', { name: 'Edit', exact: true }).first()).toBeVisible()
     await expect(manage.getByRole('alert')).toHaveCount(0)
 

@@ -1,4 +1,5 @@
 "use client";
+import { LoadFailure } from "@/components/ui/load-failure";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { Loader2, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -118,12 +119,7 @@ export function ClassPassLocationMappings({
       </header>
 
       {loadError ? (
-        <div className="text-sm text-error">
-          Failed to load mappings: {loadError}{" "}
-          <button type="button" className="underline" onClick={load}>
-            Retry
-          </button>
-        </div>
+        <LoadFailure what="the location mappings" variant="inline" onRetry={load} />
       ) : mappings === null ? (
         <div className="flex items-center gap-2 text-sm text-muted">
           <Loader2 className="h-4 w-4 animate-spin" /> Loading mappings…

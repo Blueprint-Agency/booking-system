@@ -1,4 +1,5 @@
 "use client";
+import { LoadFailure } from "@/components/ui/load-failure";
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -109,19 +110,17 @@ export function BusinessDetailsDialog({ api, tenant, onOpenChange }: BusinessDet
     >
       {failed ? (
         <div className="flex flex-col gap-4">
-          <p className="text-sm text-error">Could not load the Business details: {failed}.</p>
+          <LoadFailure
+            what="the Business details"
+            onRetry={() => {
+              setFailed(null);
+              setAttempt((n) => n + 1);
+            }}
+            className="py-4"
+          />
           <DialogFooter>
             <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>
               Cancel
-            </Button>
-            <Button
-              type="button"
-              onClick={() => {
-                setFailed(null);
-                setAttempt((n) => n + 1);
-              }}
-            >
-              Retry
             </Button>
           </DialogFooter>
         </div>
