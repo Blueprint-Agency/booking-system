@@ -1,7 +1,10 @@
 import assert from 'node:assert'
-import { financeCsv } from './csv'
-import { summarizeFinance } from './totals'
+import { financeCsv as financeCsvIn } from './csv'
+import { summarizeFinance, type FinanceSummary } from './totals'
 import type { MoneyEvent } from './events'
+
+/** The studio these Singapore-dated cases are written for. */
+const financeCsv = (summary: FinanceSummary) => financeCsvIn(summary, 'Asia/Singapore')
 
 const at = (iso: string) => new Date(iso)
 
@@ -99,6 +102,16 @@ const lines = (csv: string) => csv.split('\r\n')
 {
   const csv = financeCsv(summarizeFinance([]))
   assert.strictEqual(lines(csv).length, 1)
+}
+
+// -- date and time are on the studio's own clock ------------------------------
+{
+  // 00:30 on 12 August in Sydney is 22:30 on the 11th in Singapore
+  const summary = summarizeFinance([
+    ev({ kind: 'purchase', occurredAt: at('2026-08-11T14:30:00.000Z'), listPriceSgd: '1.00', paidSgd: '1.00' }),
+  ])
+  assert.ok(lines(financeCsvIn(summary, 'Australia/Sydney'))[1]?.startsWith('2026-08-12,00:30,'))
+  assert.ok(lines(financeCsvIn(summary, 'Asia/Singapore'))[1]?.startsWith('2026-08-11,22:30,'))
 }
 
 console.log('finance/csv.test.ts ok')

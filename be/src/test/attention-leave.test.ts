@@ -3,7 +3,10 @@ import { after, before, describe, test } from 'node:test'
 import { eq } from 'drizzle-orm'
 import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
 import { connectPayments, usePaymentKey } from './attention-payments'
-import { sgToday } from '../lib/time'
+import { localDate } from '../lib/studio-time'
+
+// The studios here are provisioned on Singapore, the zone every fresh studio starts with.
+const sgToday = (now: Date) => localDate('Asia/Singapore', now)
 
 /**
  * Staff attention, leave requests: `leave_request_pending`, read
@@ -37,9 +40,14 @@ describe('Staff attention: leave requests', { skip: integrationTestsEnabled ? fa
     return (text ? JSON.parse(text) : {}) as Record<string, any>
   }
 
-  const freshStudio = async (): Promise<Studio> => {
+  const freshStudio = async (timezone?: string): Promise<Studio> => {
     const slug = `attl-${run}-${++studios}`
-    const { tenant } = await provision.provisionTenant({ slug, name: 'Attention Leave Studio', adminEmail: `owner@${slug}.test` })
+    const { tenant } = await provision.provisionTenant({
+      slug,
+      name: 'Attention Leave Studio',
+      adminEmail: `owner@${slug}.test`,
+      ...(timezone ? { timezone } : {}),
+    })
     await connectPayments(tenant.id)
     return { id: tenant.id, slug }
   }
@@ -71,7 +79,14 @@ describe('Staff attention: leave requests', { skip: integrationTestsEnabled ? fa
   const requestLeave = async (
     studio: Studio,
     who: Staff,
-    over: { type?: 'annual' | 'medical' | 'study'; start?: string; end?: string; days?: string; halfDay?: 'none' | 'morning' | 'afternoon' } = {},
+    over: {
+      type?: 'annual' | 'medical' | 'study'
+      start?: string
+      end?: string
+      days?: string
+      halfDay?: 'none' | 'morning' | 'afternoon'
+      createdAt?: Date
+    } = {},
   ) => {
     const start = over.start ?? dayOffset(10)
     const [row] = await harness.db
@@ -87,6 +102,7 @@ describe('Staff attention: leave requests', { skip: integrationTestsEnabled ? fa
         leaveYear: Number(start.slice(0, 4)),
         status: 'pending',
         reason: 'attention test',
+        ...(over.createdAt ? { createdAt: over.createdAt } : {}),
       })
       .returning({ id: schema.leaveRequests.id })
     return row!.id
@@ -174,6 +190,36 @@ describe('Staff attention: leave requests', { skip: integrationTestsEnabled ? fa
     assert.equal(byId.get(`leave_request_pending:${half}`)!.detail, '0.5 days · starts in 1 day')
     assert.equal(byId.get(`leave_request_pending:${today}`)!.detail, '1 day · starts today')
     assert.match(byId.get(`leave_request_pending:${half}`)!.title, /annual leave, \d{1,2} \w{3}( \d{4})? \(morning\)$/)
+  })
+
+  test('TEN-75 "starts today" and "starts in n days" count the studio\'s calendar days: at 00:30 in Sydney a request for that day starts today, where it starts tomorrow in Singapore', async () => {
+    // 00:30 on 16 October 2026 in Sydney (UTC+11); 22:30 on the 15th in Singapore.
+    harness.clock.set(new Date('2026-10-15T14:30:00Z'))
+    try {
+      for (const [timezone, expected] of [
+        ['Australia/Sydney', '1 day · starts today'],
+        ['Asia/Singapore', '1 day · starts in 1 day'],
+      ] as const) {
+        const studio = await freshStudio(timezone)
+        await archiveOwner(studio)
+        const anna = await staffAt(studio, 'anna')
+        const bruno = await staffAt(studio, 'bruno')
+        const id = await requestLeave(studio, anna, { start: '2026-10-16', days: '1.0' })
+        const item = (await leaveItems(bruno)).find(i => i.id === `leave_request_pending:${id}`)!
+        assert.equal(item.detail, expected, timezone)
+        assert.match(item.title, /annual leave, 16 Oct$/, 'the date is the plain date the request names')
+
+        // Two requests filed at the same moment are ordered by the start of their first day: the
+        // later-starting one is inserted first, so only the deadline can put the earlier one ahead.
+        const filedAt = new Date('2026-10-01T00:00:00Z')
+        const later = await requestLeave(studio, anna, { start: '2026-11-20', createdAt: filedAt })
+        const sooner = await requestLeave(studio, anna, { start: '2026-11-19', createdAt: filedAt })
+        const order = (await leaveItems(bruno)).map(i => i.id).filter(i => i.endsWith(later) || i.endsWith(sooner))
+        assert.deepEqual(order, [`leave_request_pending:${sooner}`, `leave_request_pending:${later}`], timezone)
+      }
+    } finally {
+      harness.clock.reset()
+    }
   })
 
   test('ATN-33 an instructor on study leave over the cap, or in a Leave Conflict, is flagged on the item', async () => {

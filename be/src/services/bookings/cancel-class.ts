@@ -27,7 +27,8 @@ import { now as clockNow } from '../../lib/clock'
 import { removeLineForCancelledClass } from '../waitlist/line'
 import { emailEveryAdmin } from '../notifications/send'
 import { sendClassCancelledByStudioEmails, sendClassCancelledToWaitlistEmails, type StudioCancelNotice } from '../notifications/send-booking-email'
-import { sgFormat } from '../../lib/time'
+import { zoneFormat } from '../../lib/studio-time'
+import { tenantTimezone } from '../tenants/tenants'
 import { activeAdminIds, recordUpdate, staffNameFor, studioWhen } from '../attention/updates'
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
 import type { Tx } from '../schedule/roster'
@@ -49,7 +50,7 @@ interface CancelClassResult {
   refundedCount: number
 }
 
-const sgDateTime = sgFormat('en-GB', { dateStyle: 'medium', timeStyle: 'short' })
+const studioDateTime = (timezone: string) => zoneFormat(timezone, 'en-GB', { dateStyle: 'medium', timeStyle: 'short' })
 
 export async function cancelClass(
   tenantId: string,
@@ -274,7 +275,7 @@ async function emailAdmins(args: {
         .limit(1)
       return {
         class_name: type?.name ?? 'Class',
-        date: sgDateTime.format(args.startsAt),
+        date: studioDateTime(await tenantTimezone(args.tenantId)).format(args.startsAt),
         instructor_name: instructor?.name ?? 'An instructor',
         reason: args.reason,
         refunded_count: String(args.refundedCount),

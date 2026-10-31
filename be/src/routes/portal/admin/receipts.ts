@@ -65,8 +65,14 @@ const app = new Hono()
   // Mounted before `/:id`, which would read `export.csv` as an id.
   .get('/export.csv', zValidator('query', exportQuery, explainReceiptsQuery), async c => {
     const q = c.req.valid('query')
-    const rows = await exportStudioReceipts(tenantId(c), { q: q.q, from: q.from, to: q.to, kind: q.kind, status: q.status })
-    return c.body(receiptsCsv(rows), 200, {
+    const { rows, timezone } = await exportStudioReceipts(tenantId(c), {
+      q: q.q,
+      from: q.from,
+      to: q.to,
+      kind: q.kind,
+      status: q.status,
+    })
+    return c.body(receiptsCsv(rows, timezone), 200, {
       'Content-Type': 'text/csv; charset=utf-8',
       'Content-Disposition': 'attachment; filename="receipts.csv"',
       'Access-Control-Expose-Headers': 'Content-Disposition',

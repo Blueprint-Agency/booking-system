@@ -37,6 +37,7 @@ import { activationExpiry } from '../packages/validity'
 import { lockMemberAndEvaluateCancellation, staffCancelInTime } from '../policy/evaluate-cancellation'
 import type { CancelSource, RefundOutcome as BookingRefundOutcome } from '../bookings/refund-outcome'
 import { now as clockNow } from '../../lib/clock'
+import { tenantTimezone } from '../tenants/tenants'
 import type { PtCancelMail } from '../notifications/send-booking-email'
 import { generateBookingCodes } from '../bookings/qr'
 import { assertRoomInLocation } from '../schedule/room-conflicts'
@@ -102,9 +103,16 @@ export interface AddManualPtSessionMemberInput extends Actor, ManualSeatInput {
  * A refusal's HTTP status. Only the binding is a 403: it is who asked, not the
  * package. An end before the session carries the sentence naming that end.
  */
-function refuse(refusal: SeatRefusal, pkg: SeatPackage | undefined, startsAt: Date, now: Date): never {
+function refuse(
+  refusal: SeatRefusal,
+  pkg: SeatPackage | undefined,
+  startsAt: Date,
+  now: Date,
+  /** The studio's zone, which the expiry sentence is written on. */
+  timezone: string,
+): never {
   if (refusal === 'bound_to_other_instructor') throw new ForbiddenError(refusal)
-  if (refusal === 'package_expires_before_session' && pkg) assertPackageCoversSession(pkg, startsAt, now)
+  if (refusal === 'package_expires_before_session' && pkg) assertPackageCoversSession(pkg, startsAt, now, timezone)
   throw new ConflictError(refusal)
 }
 
@@ -184,7 +192,7 @@ async function choosePackage(
       .limit(1)
     if (!pkg) throw new NotFoundError('client_package_not_found')
     const verdict = judge(pkg)
-    if (!verdict.ok) refuse(verdict.refusal, pkg, session.startsAt, now)
+    if (!verdict.ok) refuse(verdict.refusal, pkg, session.startsAt, now, await tenantTimezone(tenantId))
     return { pkg, warnings: verdict.warnings }
   }
 
@@ -207,7 +215,13 @@ async function choosePackage(
   const payer = ordered.find(c => c.verdict.ok)
   if (payer?.verdict.ok) return { pkg: payer.pkg, warnings: payer.verdict.warnings }
   const first = ordered[0]
-  refuse(first && !first.verdict.ok ? first.verdict.refusal : 'not_a_pt_package', first?.pkg, session.startsAt, now)
+  refuse(
+    first && !first.verdict.ok ? first.verdict.refusal : 'not_a_pt_package',
+    first?.pkg,
+    session.startsAt,
+    now,
+    await tenantTimezone(tenantId),
+  )
 }
 
 /**

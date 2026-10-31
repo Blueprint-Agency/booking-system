@@ -17,9 +17,10 @@ type LeaveType = (typeof LEAVE_TYPES)[number]
  * staff profile (`/portal/admin/staff`, which carries Assigned Days and this
  * Leave Year's figures), and the admin Global Policy (`/portal/admin/policy`).
  *
- * The leave service reads the wall clock (`new Date()`), not `lib/clock`, so a
- * year boundary cannot be staged here. Year-boundary rules are proved with
- * fixture data instead: a Pool stored for LAST Leave Year, and the current year
+ * The Leave Year is read on the studio's clock at the app's instant
+ * (`lib/clock`), so a year boundary can be staged with `harness.clock` and is,
+ * for a Sydney and a Singapore instructor. The rollover of a Pool is also proved
+ * with fixture data: a Pool stored for LAST Leave Year, and the current year
  * left unopened, is exactly "a new Leave Year has begun and no Pool exists".
  *
  * Global Policy is one row per studio and other files read it, so every test
@@ -271,8 +272,8 @@ describe('leave balances and pools over HTTP', { skip: integrationTestsEnabled ?
   before(async () => {
     harness = await startTestApp()
     schema = await import('../db/schema')
-    const { sgToday } = await import('../lib/time')
-    Y = Number(sgToday(new Date()).slice(0, 4))
+    const { localDate } = await import('../lib/studio-time')
+    Y = Number(localDate('Asia/Singapore', new Date()).slice(0, 4))
 
     one = harness.tenants.one
     two = harness.tenants.two
@@ -307,6 +308,24 @@ describe('leave balances and pools over HTTP', { skip: integrationTestsEnabled ?
   })
 
   // ── Instructor: own balances ──────────────────────────────────────────────
+
+  test('LEV-15, TEN-63 the Leave Year rolls over at midnight on 1 January on the studio\'s clock: a Sydney instructor is in the new year hours before a Singapore one', async () => {
+    const sing = await instructor('Rollover Sing')
+    const syd = await instructor('Rollover Syd', two)
+    try {
+      // 00:30 on 1 January 2028 in Sydney (UTC+11): 21:30 on 31 December in Singapore, and in UTC.
+      harness.clock.set(new Date('2027-12-31T13:30:00Z'))
+      assert.equal((await ownLeave(syd)).leave_year, 2028)
+      assert.equal((await ownLeave(sing)).leave_year, 2027)
+
+      // 01:00 on 1 January in Singapore, still 31 December in UTC: both studios are in the new year.
+      harness.clock.set(new Date('2027-12-31T17:00:00Z'))
+      assert.equal((await ownLeave(sing)).leave_year, 2028)
+      assert.equal((await ownLeave(syd)).leave_year, 2028)
+    } finally {
+      harness.clock.reset()
+    }
+  })
 
   test('LEV-13, LEV-03 an instructor reads their own balances: Assigned, Carried, Pool, Taken, pending, Remaining per type, no allowance', async () => {
     const ivy = await instructor('Ivy Fresh')

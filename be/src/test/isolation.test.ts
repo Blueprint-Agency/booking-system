@@ -1093,7 +1093,7 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
     // The tiles are a sum over exactly those rows, so a leak would show up here
     // as somebody else's revenue.
     assert.equal(forTwo.totals.gross_sgd, 200)
-    assert.ok(!financeCsvSvc.financeCsv(forTwo).includes(`${one.slug} Bundle`))
+    assert.ok(!financeCsvSvc.financeCsv(forTwo, 'Australia/Sydney').includes(`${one.slug} Bundle`))
   })
 
   // ── billing ───────────────────────────────────────────────────────────────

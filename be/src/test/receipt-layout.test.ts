@@ -373,7 +373,7 @@ describe('a Receipt laid out as a business receipt', { skip: integrationTestsEna
       amountSgd: '10.00',
       paidAt: '2026-09-16T03:00:00Z',
     }))
-    const bytes = await receiptPdf(stored(studio, { payments }), { name: 'Northwind Yoga', logoUrl: null })
+    const bytes = await receiptPdf(stored(studio, { payments }), { name: 'Northwind Yoga', logoUrl: null, timezone: 'Asia/Singapore' })
     const { extractText, getDocumentProxy } = await import('unpdf')
     const { text: pages } = await extractText(await getDocumentProxy(new Uint8Array(bytes)), { mergePages: false })
     assert.ok(pages.length >= 2, `sixty payments run onto a second page, not ${pages.length}`)
@@ -391,7 +391,7 @@ describe('a Receipt laid out as a business receipt', { skip: integrationTestsEna
     const { receiptDocument } = await import('../services/receipts/document')
     const { receiptHtml } = await import('../services/receipts/html')
     const { htmlToText } = await import('../services/mail/layout')
-    const brand = { name: 'Northwind Yoga', logoUrl: null }
+    const brand = { name: 'Northwind Yoga', logoUrl: null, timezone: 'Asia/Singapore' }
     const both = async (row: import('../services/receipts/issue').ReceiptRow): Promise<[string, string][]> => [
       ['the html', htmlToText(receiptHtml(receiptDocument(row, brand)))],
       ['the PDF', await pdfText(await receiptPdf(row, brand))],

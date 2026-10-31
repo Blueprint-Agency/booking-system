@@ -4,7 +4,7 @@ import { classTypes } from '../../db/schema/catalog'
 import { staffUsers } from '../../db/schema/identity'
 import { classes, corporateSessions, ptSessions, workshopDays, workshops } from '../../db/schema/schedule'
 import type { RosterEventKind } from '../schedule/roster'
-import { loadTenantById } from '../tenants/tenants'
+import { tenantTimezone } from '../tenants/tenants'
 import { localDate } from '../tenants/term-dates'
 import { formatClock, formatDay, formatWeekday, formatWhen } from './format'
 import { recordUpdate, type SessionAssignedPayload } from './updates'
@@ -98,8 +98,7 @@ export async function recordSessionAssigned(
 
   const what = await describe(tenantId, ref, opts.tx)
   if (!what) return
-  const tenant = await loadTenantById(tenantId)
-  const timezone = tenant?.timezone ?? 'UTC'
+  const timezone = await tenantTimezone(tenantId)
   const q = (opts.tx ?? db) as typeof db
   const [actor] = await q
     .select({ name: staffUsers.name })

@@ -1,6 +1,20 @@
 import assert from 'node:assert'
 import { test } from 'node:test'
-import { overlaps, occupies, conflictMessage, leaveConflicts, leaveDaysPhrase } from './occupancy'
+import {
+  overlaps,
+  occupies,
+  conflictMessage as conflictMessageIn,
+  leaveConflicts as leaveConflictsIn,
+  leaveDaysPhrase as leaveDaysPhraseIn,
+} from './occupancy'
+
+/** The studio the Singapore-dated cases below are written for. */
+const SINGAPORE = 'Asia/Singapore'
+const leaveConflicts = (runs: Parameters<typeof leaveConflictsIn>[0], window: Parameters<typeof leaveConflictsIn>[1]) =>
+  leaveConflictsIn(runs, window, SINGAPORE)
+const conflictMessage = (who: string, conflicts: Parameters<typeof conflictMessageIn>[1]) =>
+  conflictMessageIn(who, conflicts, SINGAPORE)
+const leaveDaysPhrase = (conflict: Parameters<typeof leaveDaysPhraseIn>[0]) => leaveDaysPhraseIn(conflict, SINGAPORE)
 
 /** `at('09:00-10:00')` → a window on 2026-01-01. */
 const at = (range: string) => {
@@ -207,5 +221,31 @@ assert.strictEqual(
   leaveDaysPhrase({ starts_at: '2026-08-12T05:00:00.000Z', ends_at: '2026-08-12T16:00:00.000Z' }),
   'on 12 Aug',
 )
+
+// --- the same sentences on a Sydney studio's clock ---
+
+const SYDNEY = 'Australia/Sydney'
+// 14:00 UTC on the 11th is midnight at the start of the 12th in Sydney
+assert.strictEqual(
+  leaveDaysPhraseIn({ starts_at: '2026-08-11T14:00:00.000Z', ends_at: '2026-08-12T14:00:00.000Z' }, SYDNEY),
+  'on 12 Aug',
+)
+assert.strictEqual(
+  conflictMessageIn('Anya', [onLeave('2026-08-11T14:00:00.000Z', '2026-08-14T14:00:00.000Z')], SYDNEY),
+  'Anya is on leave from 12 Aug to 14 Aug.',
+)
+// 10:00-11:00 UTC is 20:00-21:00 in Sydney in January (UTC+11)
+assert.strictEqual(
+  conflictMessageIn('Anya', [conflict('class')], SYDNEY),
+  'Anya is already booked — a class on 1 Jan, 21:00–22:00.',
+)
+// a leave day is Sydney's: a class at 00:30 on the 12th clashes, 00:30 on the 13th does not
+const syd = (iso: string) => {
+  const startsAt = new Date(iso)
+  return { startsAt, endsAt: new Date(startsAt.getTime() + 3_600_000) }
+}
+assert.strictEqual(leaveConflictsIn(leave, syd('2026-08-12T00:30:00+10:00'), SYDNEY).length, 1)
+assert.strictEqual(leaveConflictsIn(leave, syd('2026-08-13T00:30:00+10:00'), SYDNEY).length, 0)
+assert.strictEqual(leaveConflictsIn(leave, syd('2026-08-11T22:30:00+10:00'), SYDNEY).length, 0)
 
 console.log('occupancy.test ok')

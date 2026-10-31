@@ -17,7 +17,8 @@ import { isVoided, recordExpired, type Tx } from './ledger'
 import { effectiveExpiry, isDormant } from './validity'
 import { ConflictError } from '../../shared/errors'
 import { now as clockNow } from '../../lib/clock'
-import { sgFormat } from '../../lib/time'
+import { zoneFormat } from '../../lib/studio-time'
+import { tenantTimezone } from '../tenants/tenants'
 
 /**
  * Flip `active` off on the member's own packages whose expiry has passed —
@@ -65,24 +66,28 @@ export async function activatePackage(
     .where(and(eq(clientPackages.tenantId, tenantId), eq(clientPackages.id, clientPackageId)))
 }
 
-const expiryDay = sgFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
-const expiryTime = sgFormat('en-GB', { hour: 'numeric', minute: '2-digit', hour12: true })
+const expiryDay = (timezone: string) =>
+  zoneFormat(timezone, 'en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+const expiryTime = (timezone: string) =>
+  zoneFormat(timezone, 'en-GB', { hour: 'numeric', minute: '2-digit', hour12: true })
 
 /**
  * A Dormant package is judged by the expiry it would get by Activating at
- * `now`, the moment scheduling would start its clock (be/docs/adr/0011).
+ * `now`, the moment scheduling would start its clock (be/docs/adr/0011). The
+ * refusal names the expiry on the studio's clock.
  */
 export function assertPackageCoversSession(
   pkg: Parameters<typeof effectiveExpiry>[0],
   startsAt: Date,
   now: Date,
+  timezone: string,
 ): Date {
   const until = effectiveExpiry(pkg, now)
   if (!until) throw new ConflictError('package_not_consumable')
   if (startsAt <= until) return until
   throw new ConflictError('package_expires_before_session', {
     expires_at: until.toISOString(),
-    message: `The package paying for this session ends at ${expiryTime.format(until)} on ${expiryDay.format(until)}. Choose a time no later than that.`,
+    message: `The package paying for this session ends at ${expiryTime(timezone).format(until)} on ${expiryDay(timezone).format(until)}. Choose a time no later than that.`,
   })
 }
 
@@ -113,7 +118,7 @@ export async function activateOnSchedule(
     .for('update')
     .limit(1)
   if (!pkg) return
-  const until = assertPackageCoversSession(pkg, session.startsAt, clockNow())
+  const until = assertPackageCoversSession(pkg, session.startsAt, clockNow(), await tenantTimezone(tenantId))
   if (isDormant(pkg)) await activatePackage(tx, tenantId, clientPackageId, until, session.id)
 }
 

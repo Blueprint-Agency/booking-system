@@ -55,6 +55,7 @@ import type { Tx } from '../schedule/roster'
 import { closeCorporateRequestsForRefund } from '../corporate/requests'
 import { refundPromoCodeRedemption } from '../packages/promo-redemption'
 import { sendTemplatedEmail } from '../notifications/send'
+import { tenantTimezone } from '../tenants/tenants'
 import {
   heldPayments,
   REFUND_IN_FLIGHT_MS,
@@ -195,6 +196,7 @@ export async function refundStatesFor(
     separatelyBoughtAddOns(tenantId, pkgIds),
   ])
 
+  const timezone = await tenantTimezone(tenantId)
   const out: Record<string, RefundState> = {}
   for (const r of rows) {
     const count = Number(r.count ?? 0)
@@ -203,7 +205,7 @@ export async function refundStatesFor(
       purchaseId: r.purchaseId,
       refundable: holdsMoney(r.amountPaidSgd),
       attendedCount: count,
-      notice: attendedNotice(count, r.since ? new Date(r.since) : null),
+      notice: attendedNotice(count, r.since ? new Date(r.since) : null, timezone),
       paymentCount: h?.count ?? 0,
       progress: h?.progress ?? 'none',
       amountSgd: r.amountPaidSgd ?? '0.00',
@@ -694,6 +696,7 @@ export async function listWorkshopPurchases(
     promoCodesFor(tenantId, rows.map(r => r.purchaseId)),
   ])
 
+  const timezone = await tenantTimezone(tenantId)
   return rows.map(r => {
     const count = r.checkInState === 'attended' || r.checkInState === 'no_show' ? 1 : 0
     const h = r.purchaseId ? held.get(r.purchaseId) : undefined
@@ -711,7 +714,7 @@ export async function listWorkshopPurchases(
       purchasedAt: r.purchasedAt,
       cancelled: r.state === 'cancelled',
       refundable: holdsMoney(r.purchasePaidSgd),
-      refundNotice: attendedNotice(count, r.tierId ? sinceByTier.get(r.tierId) ?? null : null),
+      refundNotice: attendedNotice(count, r.tierId ? sinceByTier.get(r.tierId) ?? null : null, timezone),
     }
   })
 }
@@ -1427,6 +1430,7 @@ async function unwindPurchase(tx: Tx, tenantId: string, purchaseId: string): Pro
         amountSgd: purchase.amountPaidSgd,
         cancelled,
         accountUrl: await accountUrlFor(tenantId),
+        timezone: await tenantTimezone(tenantId),
       })
       await sendTemplatedEmail({
         tenantId,

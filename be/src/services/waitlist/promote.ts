@@ -23,8 +23,9 @@ import { lockMemberTime } from '../bookings/member-time'
 import { lockPackages } from '../packages/ledger'
 import { countSeats } from '../bookings/seats'
 import { sendTemplatedEmail } from '../notifications/send'
-import { loadTenantById } from '../tenants/tenants'
+import { tenantTimezone } from '../tenants/tenants'
 import { reportError } from '../../shared/logger'
+import { zoneFormat } from '../../lib/studio-time'
 import { beforeWindow, nextToPromote, waitlistClosesAt, type PromotionOutcome } from './rules'
 import { waitingLine } from './line'
 import { classCancelWindow } from '../policy/cancel-window'
@@ -133,6 +134,17 @@ export async function lockPromotionHead(
 export async function sendPromotionEmails(tenantId: string, promotions: readonly Promotion[]): Promise<void> {
   // One window for every class: read once, on the first email that needs it.
   let windowHours: number | undefined
+  // The studio's clock and the formats on it, once for every email.
+  let date: Intl.DateTimeFormat
+  let time: Intl.DateTimeFormat
+  try {
+    const timezone = await tenantTimezone(tenantId)
+    date = zoneFormat(timezone, 'en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+    time = zoneFormat(timezone, 'en-GB', { hour: 'numeric', minute: '2-digit', hour12: true })
+  } catch (err) {
+    reportError(err, 'waitlist promotion email failed', { scope: 'waitlist' })
+    return
+  }
   for (const p of promotions) {
     try {
       const [row] = await db
@@ -152,16 +164,6 @@ export async function sendPromotionEmails(tenantId: string, promotions: readonly
         .where(and(eq(classes.tenantId, tenantId), eq(classes.id, p.classId)))
         .limit(1)
       if (!row) continue
-      const tenant = await loadTenantById(tenantId)
-      const timeZone = tenant?.timezone ?? 'UTC'
-      const date = new Intl.DateTimeFormat('en-GB', {
-        timeZone,
-        weekday: 'short',
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric',
-      })
-      const time = new Intl.DateTimeFormat('en-GB', { timeZone, hour: 'numeric', minute: '2-digit', hour12: true })
       windowHours ??= await classCancelWindow(tenantId)
       const cancelBy = waitlistClosesAt(row.startsAt, windowHours)
 

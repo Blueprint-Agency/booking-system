@@ -221,7 +221,7 @@ test('FIN-43 an Unattributed row exports its Location as Unattributed, not blank
       occurredAt: at('2026-06-09T02:00:00.000Z'),
     }),
   ])
-  const [header, unattributed, located] = financeCsv(s).split('\r\n')
+  const [header, unattributed, located] = financeCsv(s, 'Asia/Singapore').split('\r\n')
   const column = header!.split(',').indexOf('location')
   assert.equal(unattributed!.split(',')[column], 'Unattributed')
   assert.equal(located!.split(',')[column], 'Riverside')

@@ -434,8 +434,8 @@ tx start
    co_client_id that is not a member here, 404 partner_client_not_found. Nothing is written or
    debited. (A foreign key cannot say this: its reference check skips Row-Level Security.)
 2. Validate slots[]: 1..N rows; end_time, where sent, > start_time; each proposed_date in
-   [today + min_book_in_advance_days, today + book_in_advance_days] (Singapore calendar
-   days, `pt_booking_config`, read on the app clock). Sooner is refused 400
+   [today + min_book_in_advance_days, today + book_in_advance_days] (the studio's calendar
+   days on its own clock, `pt_booking_config`, read on the app clock). Sooner is refused 400
    slot_date_too_soon { min_book_in_advance_days }; later, 400 slot_date_too_far
    { book_in_advance_days }. A studio with no config row reads as the seeded
    defaults (DEFAULT_PT_BOOKING_CONFIG: 3 and 7).
@@ -449,7 +449,7 @@ tx start
    WHERE id=client_package_id AND client_id=ctx.client_id.
    Required: kind='pt', not expired, session_type matches, credits_or_sessions_remaining >=
    (1 for 1on1, 2 for 2on1) → else 422 insufficient_pt_sessions.
-   Every slot must start (its Singapore date and start_time) by the package's expires_at,
+   Every slot must start (its date and start_time, a wall-clock time at the studio) by the package's expires_at,
    or, on a Dormant package, by the expiry it would get if staff scheduled the request now
    (now + validity_days); a slot starting at that instant is accepted (#444)
    → else 409 package_expires_before_session { expires_at, message }, nothing debited.

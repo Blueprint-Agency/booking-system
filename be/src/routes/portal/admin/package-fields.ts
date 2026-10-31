@@ -36,7 +36,7 @@ export const validityDaysField = z
   .min(1, VALIDITY_MESSAGE)
   .max(MAX_VALIDITY_DAYS, VALIDITY_MESSAGE)
 
-const PROMOTION_DATE_MESSAGE = 'A promotion starts and ends on a date and time, like 2026-01-31T09:00:00+08:00.'
+const PROMOTION_DATE_MESSAGE = 'A promotion starts and ends on a date and time, like 2026-01-31T09:00:00Z.'
 const promotionDate = dateTime('A promotion date', PROMOTION_DATE_MESSAGE)
 const PERCENT_MESSAGE = 'A promotion takes 1 to 99 percent off.'
 

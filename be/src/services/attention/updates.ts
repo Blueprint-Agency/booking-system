@@ -3,7 +3,7 @@ import { db } from '../../db'
 import type { InstructorPermission, StaffRole } from '../../db/enums'
 import { staffUpdates } from '../../db/schema/attention'
 import { staffUsers } from '../../db/schema/identity'
-import { loadTenantById } from '../tenants/tenants'
+import { tenantTimezone } from '../tenants/tenants'
 import { formatWhen } from './format'
 import { now as clockNow } from '../../lib/clock'
 import { dateTime } from '../../shared/date-time'
@@ -137,8 +137,7 @@ export async function staffNameFor(tenantId: string, staffId: string, fallback: 
 
 /** `at` as the studio writes it ("Tue 28 Oct, 7:00 pm"), for a payload. */
 export async function studioWhen(tenantId: string, at: Date): Promise<string> {
-  const tenant = await loadTenantById(tenantId)
-  return formatWhen(at, tenant?.timezone ?? 'UTC')
+  return formatWhen(at, await tenantTimezone(tenantId))
 }
 
 const PERMISSION_PHRASE: Record<InstructorPermission, string> = {

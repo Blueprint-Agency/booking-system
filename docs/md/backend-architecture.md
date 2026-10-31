@@ -194,13 +194,13 @@ be/
     │   ├── stripe.ts                  # Stripe SDK + signed webhook verification
     │   ├── r2.ts                      # S3 client + private-bucket put + signed-GET helpers
     │   ├── mailer.ts                  # Resend transport (API key + two from-addresses from env) + send wrapper
-    │   ├── time.ts                    # SGT (`Asia/Singapore`) conversions
+    │   ├── studio-time.ts             # The studio's clock: its zone (`tenants.timezone`) is an argument — calendar day, wall time → instant, day window, N days ahead, cached formatter
     │   ├── richtext.ts                # Sanitise/render rich text bodies (waiver, workshop description, email)
     │   ├── capacity.ts                # `getBookedCount(classId | workshopTierId)` query helpers
     │   └── feature-flags-cache.ts     # In-memory cache populated at boot + on toggle
     │
     ├── jobs/
-    │   ├── cron.ts                    # `node-cron` registrations — daily 03:00 SGT
+    │   ├── cron.ts                    # `node-cron` registrations — a 15-minute tick that asks each Tenant whether it is its hour (`jobs/local-time.ts`)
     │   ├── handlers/
     │   │   ├── checkin-nag.ts         # Every 15 min — sessions ended 24h ago with `pending` check-in (built as services/bookings/check-in-nag.ts)
     │   │   ├── credit-expiry.ts       # Daily — client_packages expiring in ~7 days
@@ -1253,7 +1253,19 @@ A booking that must get the same codes every time it is written derives the byte
 
 ### Timezone
 
-All timestamps stored UTC. `lib/time.ts` exposes SGT (`Asia/Singapore`) helpers for: cycle anchors, day-boundary edge cases (e.g. "7 days before expiry" calculated in SGT), schedule cron timing.
+Instants are stored UTC (`timestamptz`); plain dates (a Leave Request's days, a Class Series' dates, a PT request slot's date and time, the Term) are stored as the calendar day they name. Every date and time a person reads, and every day boundary a rule decides on, is on **the studio's own clock**: its IANA zone in `tenants.timezone`, fixed when the studio is created (`docs/adr/0009-every-date-is-on-the-studios-clock.md`).
+
+`lib/studio-time.ts` is the one place instants turn into that clock and back. Every function takes the zone as an argument, and nothing has a default zone, a UTC fallback or a fixed offset; a service that needs the zone is handed it or reads it once through `tenantTimezone(tenantId)` (the cached Tenant row). It provides:
+
+- `localDate(zone, instant)`: the calendar day an instant falls on, and so "today" from the app's clock;
+- `instantAt(zone, date, 'HH:MM')`: the instant of a wall-clock time on a date;
+- `dayWindow(zone, from, to?)`: a run of days as the half-open window from local midnight to the next local midnight;
+- `plusCalendarDays`, `addDays`, `daysBetween`: calendar-day arithmetic ("N days ahead" counts days, not multiples of 24 hours);
+- `zoneFormat(zone, locale, options)`: a formatter cached per zone, locale and layout.
+
+Daylight saving is the zone's rules on that date, never a stored offset. A wall time in a spring-forward gap resolves one hour later; a wall time that occurs twice at fall-back resolves to the first occurrence; a day is 23 or 25 hours long on a transition day; the Half Day boundary is 13:00 wall time. A daily job that targets an hour a zone skips that day does not run that day (`jobs/local-time.ts`).
+
+Leave (day and Half Day windows, clashes, the Leave Year, notice), the PT Book in advance window and slot times, Receipt filters, dates and CSVs, the Finance CSV, every email's dates and times, and Staff attention are all on this clock. The server process's own zone is no part of any of them (the tests run in `TZ=UTC`; production's `TZ` still reads `Asia/Kuala_Lumpur` until its own deploy).
 
 ### Referral conversion crediting
 
