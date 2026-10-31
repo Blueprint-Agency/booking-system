@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { EARLIEST_DATE, LATEST_DATE, isFilterDay } from "@/lib/formatters";
+import { dropDrafts, noDrafts, shownDay, typeDay } from "@/lib/date-range-draft";
+import { EARLIEST_DATE, LATEST_DATE } from "@/lib/formatters";
 import { localDay, localDayRange } from "@/lib/local-day";
 
 /**
@@ -109,14 +110,14 @@ export function DateRangeFilter({
   const [customOpen, setCustomOpen] = useState(isCustom);
   const showDates = isCustom || customOpen;
 
-  // Editing either endpoint keeps the other; falling back to the typed date
-  // covers editing while "All time" is selected and there's no range yet.
-  function setEndpoint(which: "from" | "to", v: string) {
-    if (!isFilterDay(v)) return;
-    const base = value ?? { from: v, to: v };
-    const next = { ...base, [which]: v };
-    // Keep the range ordered if the user picks a start after the end.
-    onChange(next.from > next.to ? { from: next.to, to: next.from } : next);
+  // What is typed is shown as a draft and reaches the filter only once it is a
+  // day it may filter by: a controlled input handed the old value back after
+  // each key would wipe a year being typed (0002, 0020, 0202, 2025).
+  const [drafts, setDrafts] = useState(() => noDrafts(value));
+  function setEndpoint(which: "from" | "to", typed: string) {
+    const step = typeDay(value, drafts, which, typed);
+    setDrafts(step.drafts);
+    if (step.commit) onChange(step.commit);
   }
 
   return (
@@ -132,6 +133,7 @@ export function DateRangeFilter({
               aria-pressed={active}
               onClick={() => {
                 setCustomOpen(false);
+                setDrafts(dropDrafts(value));
                 onChange(presetRange(p.key));
               }}
               className={`min-h-9 rounded-full px-3 py-1.5 font-medium transition sm:min-h-0 ${
@@ -165,8 +167,9 @@ export function DateRangeFilter({
             aria-label="From date"
             min={EARLIEST_DATE}
             max={LATEST_DATE}
-            value={value?.from ?? ""}
+            value={shownDay(value, drafts, "from")}
             onChange={(e) => setEndpoint("from", e.target.value)}
+            onBlur={() => setDrafts(dropDrafts(value))}
             className="h-10 min-w-0 flex-1 rounded-lg border border-border bg-paper px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:h-9 sm:flex-none"
           />
           <span className="shrink-0 text-xs text-muted">to</span>
@@ -175,8 +178,9 @@ export function DateRangeFilter({
             aria-label="To date"
             min={EARLIEST_DATE}
             max={LATEST_DATE}
-            value={value?.to ?? ""}
+            value={shownDay(value, drafts, "to")}
             onChange={(e) => setEndpoint("to", e.target.value)}
+            onBlur={() => setDrafts(dropDrafts(value))}
             className="h-10 min-w-0 flex-1 rounded-lg border border-border bg-paper px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:h-9 sm:flex-none"
           />
         </div>
