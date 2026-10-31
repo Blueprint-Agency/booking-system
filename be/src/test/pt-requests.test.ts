@@ -1613,6 +1613,20 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     assert.equal(await sessionsLeft(packageId), 9)
   })
 
+  test('TEN-53 cancelling a scheduled request that names no session (its id cleared by migration 0139 or by an archive restore) is a 404 pt_session_not_found, not a 500, and the request is left as it was', async () => {
+    const dot = await member(one, 'Dot Orphan')
+    const packageId = await givePt(one, dot, '1on1')
+    const requestId = await requestOk(one, dot, { sessionType: '1on1', clientPackageId: packageId })
+    await scheduled(requestId)
+    await harness.db.execute(sql`UPDATE pt_requests SET scheduled_pt_session_id = NULL WHERE id = ${requestId}`)
+
+    const refused = await expectStatus(await adminCancel(adminAtOne, requestId), 404)
+
+    assert.equal(refused.error, 'pt_session_not_found')
+    assert.equal((await requestRow(requestId)).status, 'scheduled')
+    assert.equal(await sessionsLeft(packageId), 9)
+  })
+
   test('PT-66 a PT booking cancelled on its own, then the request cancelled: the session is returned at most once', async () => {
     const dan = await member(one, 'Dan Double')
     const packageId = await givePt(one, dan, '1on1')

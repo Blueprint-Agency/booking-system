@@ -140,7 +140,22 @@ describe('pt_requests.scheduled_pt_session_id names a session that exists', { sk
     const empty = await request(null)
 
     // The database as it was before the migration: no constraint to stop a dangling id.
+    // The database is shared by the rest of the run, so whatever happens below the key
+    // is put back at the end: the dangling ids cleared by hand if the migration did not.
     await harness.db.execute(sql.raw(`ALTER TABLE "pt_requests" DROP CONSTRAINT IF EXISTS "${CONSTRAINT}"`))
+    try {
+      await tenDanglingAndMigrate(real, realSession, empty)
+    } finally {
+      await harness.db.execute(sql`
+        UPDATE pt_requests SET scheduled_pt_session_id = NULL
+        WHERE client_id = ${clientId} AND scheduled_pt_session_id IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM pt_sessions s WHERE s.id = pt_requests.scheduled_pt_session_id)
+      `)
+      await migrate()
+    }
+  })
+
+  async function tenDanglingAndMigrate(real: string, realSession: string, empty: string) {
     const dangling = await request(randomUUID())
     const alsoDangling = await request(randomUUID())
 
@@ -169,5 +184,5 @@ describe('pt_requests.scheduled_pt_session_id names a session that exists', { sk
 
     await migrate()
     assert.deepEqual(await named(), expected, 'a second run changes nothing')
-  })
+  }
 })
