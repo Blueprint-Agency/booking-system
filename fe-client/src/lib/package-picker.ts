@@ -11,7 +11,7 @@
  * that produces it.
  */
 import { notAcceptedCopy, notCoveredCopy, planRunsOutCopy } from "./booking-copy.ts";
-import { formatExpiryDate } from "./utils.ts";
+import { formatExpiryDate } from "./studio-time.ts";
 
 /**
  * Why a package cannot pay for this class — `SelectionRefusal` in the backend.
@@ -80,13 +80,13 @@ export function reasonText(pkg: MyClassPackage): string | null {
  * A Dormant pick starts its clock with this booking, so the sheet says the end
  * date it would get. Null for a running package, which already has one.
  */
-export function activationLine(pkg: MyClassPackage): string | null {
+export function activationLine(pkg: MyClassPackage, timezone: string): string | null {
   if (pkg.running || !pkg.activation_end_if_picked) return null;
-  return `Starts today, runs until ${formatExpiryDate(pkg.activation_end_if_picked)}`;
+  return `Starts today, runs until ${formatExpiryDate(pkg.activation_end_if_picked, timezone)}`;
 }
 
 /** What a row states about itself: its balance, and where its clock stands. */
-export function packageMeta(pkg: MyClassPackage): string {
+export function packageMeta(pkg: MyClassPackage, timezone: string): string {
   const balance =
     pkg.kind === "unlimited"
       ? pkg.location
@@ -95,7 +95,7 @@ export function packageMeta(pkg: MyClassPackage): string {
       : `${credits(pkg.remaining ?? 0)} left`;
   const clock = pkg.running
     ? pkg.expires_at
-      ? `until ${formatExpiryDate(pkg.expires_at)}`
+      ? `until ${formatExpiryDate(pkg.expires_at, timezone)}`
       : null
     : "not started yet";
   return clock ? `${balance} · ${clock}` : balance;

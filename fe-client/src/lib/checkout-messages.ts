@@ -65,7 +65,7 @@ const MESSAGES: Partial<Record<ErrorCode, string>> = {
 /** Looks like a code rather than a sentence — `workshop_full`, not "It's full." */
 const isCode = (text: string) => /^[a-z0-9_]+$/.test(text);
 
-export function checkoutErrorMessage(body: CheckoutErrorBody, fallback: string): string {
+export function checkoutErrorMessage(body: CheckoutErrorBody, fallback: string, timezone: string): string {
   if (!body) return fallback;
   const sentence = body.message?.trim();
   if (sentence && !isCode(sentence)) return sentence;
@@ -74,7 +74,7 @@ export function checkoutErrorMessage(body: CheckoutErrorBody, fallback: string):
   if (code === ERROR_CODES.time_clash) {
     const clash = clashFromBody(body);
     return clash
-      ? `You're booked into ${clashWhat(clash)}, which overlaps this workshop. You can only be in one place at a time.`
+      ? `You're booked into ${clashWhat(clash, timezone)}, which overlaps this workshop. You can only be in one place at a time.`
       : "You're booked into something else during this workshop. You can only be in one place at a time.";
   }
   return (code && MESSAGES[code as ErrorCode]) || fallback;

@@ -3,12 +3,12 @@
  * what is coming, a month at a time, then anything still without a date. A
  * workshop that has ended is left out, because there is nothing left to book.
  *
- * Months are the studio's calendar months (Singapore time, as every date on
- * the page is shown), so a workshop starting just after midnight on the 1st
- * sits in the month its date says.
+ * Months are the studio's calendar months (its own zone, as every date on the
+ * page is shown), so a workshop starting just after midnight on the 1st sits in
+ * the month its date says.
  */
 
-const STUDIO_TZ = "Asia/Singapore";
+import { zoneFormat } from "./studio-time.ts";
 
 export interface WorkshopTiming {
   starts_at: string | null;
@@ -38,27 +38,24 @@ export function isHappeningNow(w: WorkshopTiming, nowMs: number): boolean {
   return new Date(w.starts_at).getTime() <= nowMs;
 }
 
-function monthParts(ms: number): { year: number; month: number } {
-  const parts = new Intl.DateTimeFormat("en-SG", {
-    year: "numeric",
-    month: "numeric",
-    timeZone: STUDIO_TZ,
-  }).formatToParts(new Date(ms));
+function monthParts(ms: number, timezone: string): { year: number; month: number } {
+  const parts = zoneFormat(timezone, "en-SG", { year: "numeric", month: "numeric" }).formatToParts(new Date(ms));
   const get = (type: string) => Number(parts.find((p) => p.type === type)?.value);
   return { year: get("year"), month: get("month") };
 }
 
-function monthLabel(ms: number, nowMs: number): string {
-  const at = monthParts(ms);
-  const now = monthParts(nowMs);
+function monthLabel(ms: number, nowMs: number, timezone: string): string {
+  const at = monthParts(ms, timezone);
+  const now = monthParts(nowMs, timezone);
   if (at.year === now.year && at.month === now.month) return "This month";
-  const name = new Date(ms).toLocaleDateString("en-SG", { month: "long", timeZone: STUDIO_TZ });
+  const name = zoneFormat(timezone, "en-SG", { month: "long" }).format(new Date(ms));
   return at.year === now.year ? name : `${name} ${at.year}`;
 }
 
 export function groupWorkshops<T extends WorkshopTiming>(
   workshops: readonly T[],
   nowMs: number,
+  timezone: string,
 ): WorkshopGroup<T>[] {
   const byStart = (a: T, b: T) => new Date(a.starts_at!).getTime() - new Date(b.starts_at!).getTime();
 
@@ -77,11 +74,11 @@ export function groupWorkshops<T extends WorkshopTiming>(
 
   for (const w of upcoming.sort(byStart)) {
     const ms = new Date(w.starts_at!).getTime();
-    const { year, month } = monthParts(ms);
+    const { year, month } = monthParts(ms, timezone);
     const key = `${year}-${String(month).padStart(2, "0")}`;
     const last = groups[groups.length - 1];
     if (last?.key === key) last.items.push(w);
-    else groups.push({ key, label: monthLabel(ms, nowMs), items: [w] });
+    else groups.push({ key, label: monthLabel(ms, nowMs, timezone), items: [w] });
   }
 
   if (tba.length) groups.push({ key: "tba", label: "Dates to be announced", items: tba });

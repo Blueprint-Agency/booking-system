@@ -6,23 +6,16 @@
  *   across a month           "Sat, 30 Mar – Mon, 1 Apr 2027"
  *   days with gaps between   "Sat, 15 – Sun, 16 Aug · Sat, 22 – Sun, 23 Aug 2026"
  *
- * Dates are the studio's (Singapore time), so a day starting just after
+ * Dates are the studio's, read on its zone, so a day starting just after
  * midnight there is the date its own calendar says, on any device.
  */
-
-const STUDIO_TZ = "Asia/Singapore";
+import { localDate } from "./studio-time.ts";
 
 type PlainDate = { y: number; m: number; d: number };
 
-/** An instant's calendar day in Singapore. */
-function studioDate(iso: string): PlainDate {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: STUDIO_TZ,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date(iso));
-  const [y, m, d] = parts.split("-").map(Number);
+/** An instant's calendar day at the studio. */
+function studioDate(iso: string, timezone: string): PlainDate {
+  const [y, m, d] = localDate(timezone, iso).split("-").map(Number);
   return { y: y!, m: m!, d: d! };
 }
 
@@ -54,13 +47,14 @@ function formatRun(from: PlainDate, to: PlainDate, withYear: boolean): string {
 export function formatWorkshopDates(
   startsAt: string | null,
   endsAt: string | null,
+  timezone: string,
   dayStarts?: string[],
 ): string {
   if (!startsAt) return "TBA";
 
   let runs: [PlainDate, PlainDate][];
   if (dayStarts && dayStarts.length > 0) {
-    const dates = [...new Map(dayStarts.map((s) => studioDate(s)).map((p) => [dayNumber(p), p])).entries()]
+    const dates = [...new Map(dayStarts.map((s) => studioDate(s, timezone)).map((p) => [dayNumber(p), p])).entries()]
       .sort(([a], [b]) => a - b)
       .map(([, p]) => p);
     runs = [];
@@ -70,8 +64,8 @@ export function formatWorkshopDates(
       else runs.push([p, p]);
     }
   } else {
-    const from = studioDate(startsAt);
-    const to = endsAt ? studioDate(endsAt) : from;
+    const from = studioDate(startsAt, timezone);
+    const to = endsAt ? studioDate(endsAt, timezone) : from;
     runs = [[from, dayNumber(to) < dayNumber(from) ? from : to]];
   }
 

@@ -33,6 +33,15 @@ export function useBrand(): Brand {
 }
 
 /**
+ * The studio's time zone, the clock every date and time on screen is read on
+ * (`lib/studio-time.ts`). Not the device's: a member on holiday reads the class
+ * at the hour the room opens.
+ */
+export function useStudioZone(): string {
+  return useBrand().timezone;
+}
+
+/**
  * One overridable string, by key, falling back to the copy written here.
  *
  * The fallback is an argument rather than a lookup table because the sentence
