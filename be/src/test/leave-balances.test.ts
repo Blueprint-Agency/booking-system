@@ -308,6 +308,24 @@ describe('leave balances and pools over HTTP', { skip: integrationTestsEnabled ?
 
   // ── Instructor: own balances ──────────────────────────────────────────────
 
+  test('LEV-15, TEN-62 the Leave Year rolls over at midnight on 1 January on the studio\'s clock: a Sydney instructor is in the new year hours before a Singapore one', async () => {
+    const sing = await instructor('Rollover Sing')
+    const syd = await instructor('Rollover Syd', two)
+    try {
+      // 00:30 on 1 January 2028 in Sydney (UTC+11): 21:30 on 31 December in Singapore, and in UTC.
+      harness.clock.set(new Date('2027-12-31T13:30:00Z'))
+      assert.equal((await ownLeave(syd)).leave_year, 2028)
+      assert.equal((await ownLeave(sing)).leave_year, 2027)
+
+      // 01:00 on 1 January in Singapore, still 31 December in UTC: both studios are in the new year.
+      harness.clock.set(new Date('2027-12-31T17:00:00Z'))
+      assert.equal((await ownLeave(sing)).leave_year, 2028)
+      assert.equal((await ownLeave(syd)).leave_year, 2028)
+    } finally {
+      harness.clock.reset()
+    }
+  })
+
   test('LEV-13, LEV-03 an instructor reads their own balances: Assigned, Carried, Pool, Taken, pending, Remaining per type, no allowance', async () => {
     const ivy = await instructor('Ivy Fresh')
 
