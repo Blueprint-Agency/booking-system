@@ -19,7 +19,10 @@ import {
   autoOpenKey,
   bellLabel,
   bubbleText,
+  heldSummary,
   needsActionTabLabel,
+  summaryUnchecked,
+  type AttentionSummary,
   locationFromHref,
   locationParam,
   rememberAutoOpenDecided,
@@ -221,6 +224,26 @@ test("ADM-02 a bell whose summary could not be read says so, instead of showing 
   // A summary that did load is unchanged.
   assert.equal(bubbleText(0, false), null);
   assert.equal(bellLabel(3, false), "Notifications, 3 need attention");
+});
+
+test("ADM-02 a summary read for one workspace is never shown for another: a failed read at B does not show A's counts", () => {
+  const a: AttentionSummary = { needs_action: 3, unread_updates: 1, total: 4, by_group: { leave: 3 } };
+  const held = { key: "loc-a", summary: a };
+  assert.equal(heldSummary(held, "loc-a"), a);
+  assert.equal(heldSummary(held, "loc-b"), null);
+  assert.equal(heldSummary(null, "loc-a"), null);
+});
+
+test("ADM-02 the bell is unchecked when the workspace in front has no summary and its last read failed, and only then", () => {
+  const a: AttentionSummary = { needs_action: 3, unread_updates: 1, total: 4, by_group: {} };
+  // B's read failed, with only A's summary held: unchecked, not A's counts.
+  assert.equal(summaryUnchecked({ key: "loc-a", summary: a }, "loc-b", "loc-b"), true);
+  // No summary and no failure yet: still loading, not unchecked.
+  assert.equal(summaryUnchecked(null, "loc-b", null), false);
+  // A failed poll at the workspace that has its summary keeps the last number.
+  assert.equal(summaryUnchecked({ key: "loc-a", summary: a }, "loc-a", "loc-a"), false);
+  // A failure that belongs to the workspace just left says nothing about this one.
+  assert.equal(summaryUnchecked(null, "loc-b", "loc-a"), false);
 });
 
 test("ADM-02 the Needs action tab shows a count only when the summary loaded", () => {

@@ -4,12 +4,11 @@ import { ApiError } from "./api";
 import {
   afterFailedRead,
   answeredElsewhere,
-  combineReads,
-  countOf,
+  failureDetail,
   loadFailureSentence,
-  mayDrawEmpty,
   READ_LOADING,
   readLoaded,
+  reportableFailure,
   rowsOf,
   type ReadState,
 } from "./failed-read";
@@ -24,7 +23,7 @@ test("ADM-01 a read that failed with a 500, a 404 or no answer at all settles as
   assert.deepEqual(afterFailedRead(new DOMException("timed out", "TimeoutError")), FAILED);
 });
 
-test("ADM-01 a 401 and a maintenance answer keep the screen waiting: the sign-in and the maintenance screen answer them", () => {
+test("ADM-01 a 401 and a maintenance answer keep the screen waiting: the session ending and the maintenance screen replace it", () => {
   assert.deepEqual(afterFailedRead(new ApiError(401, { error: "unauthorized" })), READ_LOADING);
   assert.deepEqual(
     afterFailedRead(new ApiError(503, { error: "maintenance", message: "Back at 10pm." })),
@@ -41,32 +40,38 @@ test("ADM-01 a 403 or any other 503 is a failure to show, not one answered elsew
   assert.equal(answeredElsewhere(null), false);
 });
 
-test("ADM-01 a list draws rows only once it loaded, and an empty state only for a loaded, empty answer", () => {
+test("ADM-01 a list draws rows only once it loaded", () => {
   assert.deepEqual(rowsOf(READ_LOADING), []);
   assert.deepEqual(rowsOf(FAILED), []);
   assert.deepEqual(rowsOf(readLoaded([1, 2])), [1, 2]);
-
-  assert.equal(mayDrawEmpty(readLoaded([])), true);
-  assert.equal(mayDrawEmpty(readLoaded([1])), false);
-  assert.equal(mayDrawEmpty(FAILED), false);
-  assert.equal(mayDrawEmpty(READ_LOADING), false);
-});
-
-test("ADM-01 a count is a number only once its read loaded: a failed or pending read is never 0", () => {
-  assert.equal(countOf(readLoaded([])), 0);
-  assert.equal(countOf(readLoaded(["a", "b", "c"])), 3);
-  assert.equal(countOf(FAILED), null);
-  assert.equal(countOf(READ_LOADING), null);
-});
-
-test("ADM-01 a screen drawn from several reads is failed if any failed, else loading if any is on its way", () => {
-  assert.equal(combineReads(readLoaded(1), readLoaded(2)), "loaded");
-  assert.equal(combineReads(readLoaded(1), READ_LOADING), "loading");
-  assert.equal(combineReads(readLoaded(1), FAILED), "failed");
-  assert.equal(combineReads(READ_LOADING, FAILED), "failed");
-  assert.equal(combineReads(), "loaded");
 });
 
 test("ADM-01 a failure says what could not be loaded", () => {
   assert.equal(loadFailureSentence("the studio list"), "Couldn't load the studio list.");
+});
+
+test("ADM-01 a failure carries the backend's reason only when it is a refusal with words, never for a server fault", () => {
+  assert.equal(
+    failureDetail(new ApiError(403, { error: "forbidden_permission", message: "ignored" })),
+    "You do not have permission for this. Ask an admin.",
+  );
+  assert.equal(failureDetail(new ApiError(403, { error: "forbidden", message: "Not yours." })), "Not yours.");
+  assert.equal(failureDetail(new ApiError(500, { error: "internal_error", message: "Boom." })), undefined);
+  assert.equal(failureDetail(new ApiError(404, null)), undefined);
+  assert.equal(failureDetail(new TypeError("Failed to fetch")), undefined);
+});
+
+test("ADM-01 a failed read is reported once: a 5xx or a network failure was already reported by the request, and a 401 or maintenance is not a fault", () => {
+  assert.equal(reportableFailure(new ApiError(500, null)), false);
+  assert.equal(reportableFailure(new ApiError(502, null)), false);
+  assert.equal(reportableFailure(new TypeError("Failed to fetch")), false);
+  assert.equal(reportableFailure(new DOMException("timed out", "TimeoutError")), false);
+  assert.equal(reportableFailure(new ApiError(401, null)), false);
+  assert.equal(reportableFailure(new ApiError(503, { error: "maintenance" })), false);
+});
+
+test("ADM-01 a 4xx the request does not report, and an error the screen itself threw, are reported", () => {
+  assert.equal(reportableFailure(new ApiError(404, { error: "not_found" })), true);
+  assert.equal(reportableFailure(new ApiError(403, { error: "forbidden_permission" })), true);
+  assert.equal(reportableFailure(new Error("cannot read properties of undefined")), true);
 });
