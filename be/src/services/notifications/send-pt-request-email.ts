@@ -3,7 +3,7 @@
  * received (`pt_request_submitted`), staff scheduled it, which is the approval
  * (`pt_session_approved`), or it lapsed unanswered (`pt_request_expired`). Its
  * cancellation is `./send-booking-email.ts` (NTF-11), and a request is never
- * declined in the app, so `pt_session_declined` has no sender.
+ * declined in the app, so there is no declined email.
  *
  * Like every send beside it, **nothing here can throw**: each runs AFTER the
  * write it announces has committed, so a failed read or send is reported
@@ -21,7 +21,7 @@ import { clients, staffUsers } from '../../db/schema/identity'
 import { ptRequests, ptRequestSlots, ptSessions } from '../../db/schema/schedule'
 import { NotFoundError } from '../../shared/errors'
 import { reportError } from '../../shared/logger'
-import { proposedTimesLine } from './booking-email'
+import { proposedTimesLine, sessionsRefundLine } from './booking-email'
 import { clientUrl, sessionTimeFormat } from './send-booking-email'
 import { sendTemplatedEmail } from './send'
 
@@ -108,19 +108,32 @@ export async function sendPtSessionApprovedEmail(tenantId: string, ptSessionId: 
   }
 }
 
+/** A pending request that lapsed, and the sessions its package took back. */
+export interface PtRequestExpiredNotice {
+  ptRequestId: string
+  /** Zero where no package took any back: a Voided one, or a request that debited none. */
+  sessionsReturned: number
+}
+
 /**
  * Pending requests lapsed unanswered: each requester is told, with the times they
- * had proposed. One request's failure does not stop the rest.
+ * had proposed and, only when its package took them back, the sessions returned.
+ * One request's failure does not stop the rest.
  */
-export async function sendPtRequestExpiredEmails(tenantId: string, ptRequestIds: readonly string[]): Promise<void> {
-  for (const ptRequestId of new Set(ptRequestIds)) {
+export async function sendPtRequestExpiredEmails(tenantId: string, notices: readonly PtRequestExpiredNotice[]): Promise<void> {
+  for (const { ptRequestId, sessionsReturned } of notices) {
     try {
       const req = await readRequest(tenantId, ptRequestId)
       await sendTemplatedEmail({
         tenantId,
         slug: 'pt_request_expired',
         recipient: { email: req.clientEmail, userId: req.clientId, userKind: 'client' },
-        variables: { client_name: req.clientName, instructor_name: THE_STUDIO, starts_at: req.proposed },
+        variables: {
+          client_name: req.clientName,
+          instructor_name: THE_STUDIO,
+          starts_at: req.proposed,
+          refund_line: sessionsRefundLine(sessionsReturned),
+        },
       })
     } catch (err) {
       reportError(err, 'private session request email failed', { scope: 'pt-request-email', tenantId, ptRequestId })

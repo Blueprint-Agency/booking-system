@@ -404,7 +404,7 @@ tx commit
     One that spent nothing (an Unlimited Plan) has nothing to keep and sends neither.
 ```
 
-`POST /pt-sessions/:id/cancel` emails `pt_request_cancelled` to the requester (and to a 2-on-1 partner whose seat went with it) after commit — the same email before and after scheduling, its `refund_line` present only when sessions came back (NTF-11). Leaving a manual session in time sends `pt_cancelled_session_returned`, or `pt_cancelled_forfeited` when the cap kept the session (NTF-53). A scheduled member request cancelled past the cap still sends `pt_request_cancelled`, whose wording carries no reason.
+`POST /pt-sessions/:id/cancel` emails `pt_request_cancelled` to the requester (and to a 2-on-1 partner whose seat went with it) after commit — the same email before and after scheduling, its `refund_line` present only when sessions came back (NTF-11). Leaving a manual session in time sends `pt_cancelled_session_returned`, or `pt_cancelled_forfeited` when the cap kept the session (NTF-53). A scheduled member request cancelled by its own member past the cap sends the requester `pt_cancelled_forfeited` instead, naming the cap, and not also `pt_request_cancelled`; a 2-on-1 partner, who kept nothing, still gets `pt_request_cancelled` (NTF-60).
 
 Every cancel of a class booking goes through this service — admin single-cancel, and the Refund and complimentary-removal unwinds (`packageVoided`) — so each promotes the same way. Those two unwinds lock every PT request, session, class and booking they will cancel, each kind in id order, before the package (be-portal §3b), so a member's cancel of one of those bookings at the same moment waits at its class or request, or the unwind waits for it (RFD-24, PKG-42).
 

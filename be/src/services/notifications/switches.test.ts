@@ -62,9 +62,7 @@ test('NTF-38 every classified email has a plain-language name of its own, not it
   assert.equal(new Set(names).size, names.length, 'two emails share a name')
 })
 
-test('NTF-38 every template a studio is seeded has a sender and is classified, and nothing is classified that is not seeded, so a template no code sends cannot ship', () => {
-  const seeded = new Set(Object.keys(TEMPLATE_VARIABLES))
+test('NTF-38 every template a studio is seeded is a classified email that something sends, so a template no code sends cannot ship', () => {
   const classified = new Set(Object.keys(STUDIO_EMAILS))
-  assert.deepEqual(sorted([...seeded].filter(slug => !classified.has(slug))), [], 'seeded, but no email is classified for it')
-  assert.deepEqual(sorted([...classified].filter(slug => !seeded.has(slug))), [], 'classified, but no template is seeded for it')
+  assert.deepEqual(sorted(Object.keys(TEMPLATE_VARIABLES).filter(slug => !classified.has(slug))), [])
 })

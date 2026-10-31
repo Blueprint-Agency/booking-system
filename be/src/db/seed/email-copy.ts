@@ -333,7 +333,7 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
   const PT_REQUEST_SUBMITTED_BODY = body('Your private session request was received', [
     'Hi {{client_name}},',
     'You asked <strong>{{instructor_name}}</strong> for a private session on <strong>{{starts_at}}</strong>.',
-    'Nothing is confirmed and no session has been deducted yet. Your account shows the request and its outcome once the instructor has answered.',
+    'Nothing is confirmed yet. The session for this request is held from your package until it is answered. Your account shows the request and its outcome once the instructor has answered.',
     link(ACCOUNT_URL, 'View your requests'),
   ])
 
@@ -351,17 +351,13 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
     { note: 'Please arrive a few minutes early so you can settle before the session starts.' },
   )
 
-  const PT_SESSION_DECLINED_BODY = body('Your private session request was declined', [
-    'Hi {{client_name}},',
-    '<strong>{{instructor_name}}</strong> is not able to take your private session request.',
-    'Reason given: {{decline_note}}',
-    `Your session is untouched — you can request another time or another instructor. ${link(ACCOUNT_URL, 'Request another session')}`,
-  ])
-
+  // `refund_line` is a whole sentence, empty when no session went back: the
+  // debit comes back on expiry, but a package a Refund has Voided takes nothing
+  // (services/pt-sessions/cancel.ts), and the copy must not say either for it.
   const PT_REQUEST_EXPIRED_BODY = body('Your private session request expired', [
     'Hi {{client_name}},',
     'Your request to <strong>{{instructor_name}}</strong> for <strong>{{starts_at}}</strong> was not answered in time, so it has expired.',
-    `Nothing was deducted. ${link(ACCOUNT_URL, 'Request another time')}`,
+    `{{refund_line}} ${link(ACCOUNT_URL, 'Request another time')}`,
   ])
 
   // NTF-11 (§9e): the same email before and after scheduling. `refund_line` is
@@ -408,19 +404,6 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
     'Your check-in code is <strong>{{code}}</strong>.',
     `${link('{{qr_url}}', 'Show your QR code')}<br />${emailLink('{{receipt_url}}', 'View your purchase')}`,
   ])
-
-  // Workshop waitlist promotion is deferred (backend-architecture.md §jobs), so
-  // nothing sends this row yet. The claim is time-bound and paid — both
-  // facts belong in the copy, or the member reads it as a place already theirs.
-  const WORKSHOP_WAITLIST_PROMOTED_BODY = body(
-    'A place has opened in {{workshop_name}}',
-    [
-      'Hi {{client_name}},',
-      'A place has come free in <strong>{{workshop_name}}</strong>, starting <strong>{{date}}</strong>, and it is offered to you first.',
-      'Confirm and pay by <strong>{{claim_deadline}}</strong> to take it. After that the place is offered to the next person on the waitlist.',
-    ],
-    { cta: { href: '{{claim_url}}', label: 'Confirm and pay' } },
-  )
 
   // Automated refunds do not exist for a cancelled workshop — `services/
   // workshops/cancel.ts` marks affected bookings `refund_outcome='n_a'`. So the
@@ -646,11 +629,6 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
       bodyHtml: PT_SESSION_APPROVED_BODY,
     },
     {
-      slug: 'pt_session_declined',
-      subject: 'Your private session request was declined',
-      bodyHtml: PT_SESSION_DECLINED_BODY,
-    },
-    {
       slug: 'pt_request_expired',
       subject: 'Your private session request expired',
       bodyHtml: PT_REQUEST_EXPIRED_BODY,
@@ -659,11 +637,6 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
       slug: 'workshop_purchase_confirmed',
       subject: 'Your place at {{workshop_name}} is confirmed',
       bodyHtml: WORKSHOP_PURCHASE_BODY,
-    },
-    {
-      slug: 'workshop_waitlist_promoted',
-      subject: "You're off the waitlist — {{workshop_name}}",
-      bodyHtml: WORKSHOP_WAITLIST_PROMOTED_BODY,
     },
     {
       slug: 'class_cancelled_credit_returned',

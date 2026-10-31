@@ -28,6 +28,7 @@ import { WAITLIST_CANCEL_LINE, bookingCreditsLine, classRefundLine, privateSessi
 import { sendTemplatedEmail } from './send'
 import { forfeitLine, type EvaluateResult } from '../policy/evaluate-cancellation'
 import type { PurchasedKind } from './purchase-email'
+import type { PtRequestExpiredNotice } from './send-pt-request-email'
 
 /**
  * "Thu, 8 Oct 2026, 9:00 am" in the studio's own zone — how a session's time
@@ -409,6 +410,12 @@ export interface PtCancelMail {
   memberForfeited: ForfeitNotice[]
   /** NTF-11: a PT Request was cancelled — each member it booked, and what they got back. */
   request: PtRequestCancelNotice[]
+  /**
+   * A pending request lapsed (the expiry job's own end of one). Sent by
+   * `sendPtRequestExpiredEmails`, not `sendPtCancelMail`: it is not a cancel
+   * anyone made, and tells the member its own way.
+   */
+  expired: PtRequestExpiredNotice[]
 }
 
 export interface PtRequestCancelNotice {
@@ -418,7 +425,7 @@ export interface PtRequestCancelNotice {
   ptSessionId: string | null
 }
 
-export const emptyPtCancelMail = (): PtCancelMail => ({ studio: [], memberReturned: [], memberForfeited: [], request: [] })
+export const emptyPtCancelMail = (): PtCancelMail => ({ studio: [], memberReturned: [], memberForfeited: [], request: [], expired: [] })
 
 /** Send what a private-session cancel gathered. Never throws. */
 export async function sendPtCancelMail(tenantId: string, mail: PtCancelMail): Promise<void> {
