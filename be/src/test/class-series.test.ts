@@ -134,7 +134,6 @@ describe('class series', { skip: integrationTestsEnabled ? false : SKIP_REASON }
     await harness.db.execute(sql`DELETE FROM bookings WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM client_packages WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM class_packages WHERE name LIKE ${`${TAG}%`}`)
-    await harness.db.execute(sql`DELETE FROM inbox_items WHERE payload->>'classId' IN (SELECT id::text FROM classes WHERE class_type_id = ${classTypeId})`)
     await harness.db.execute(sql`DELETE FROM class_supporting_instructors WHERE class_id IN (${ourClasses})`)
     await harness.db.execute(sql`DELETE FROM classes WHERE class_type_id = ${classTypeId}`)
     await harness.db.execute(sql`DELETE FROM class_series WHERE class_type_id = ${classTypeId}`)
