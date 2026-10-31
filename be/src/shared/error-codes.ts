@@ -21,6 +21,7 @@ export const ERROR_CODES = {
   already_waitlisted: 'already_waitlisted',
   amount_off_sgd_required: 'amount_off_sgd_required',
   archive_required: 'archive_required',
+  archive_timezone_mismatch: 'archive_timezone_mismatch',
   bad_request: 'bad_request',
   bad_time_range: 'bad_time_range',
   balance_cannot_go_negative: 'balance_cannot_go_negative',

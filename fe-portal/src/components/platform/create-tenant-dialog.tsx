@@ -22,7 +22,9 @@ import {
   type SlugVerdict,
   type TermMonths,
 } from "@/lib/platform";
-import { browserTimeZone, studioZoneChoices } from "@/lib/studio-time-zones";
+import { canCreateStudio } from "@/lib/create-tenant-form";
+import { browserTimeZone, studioZoneChoices, zoneRefusalMessage } from "@/lib/studio-time-zones";
+import { StudioZoneField } from "./studio-zone-field";
 
 /**
  * Onboarding a studio, as one form.
@@ -129,8 +131,14 @@ export function CreateTenantDialog({ api, open, onOpenChange, onCreated }: Creat
   // must be left with no staff rows at all — the archive brings its own, and
   // the import refuses to merge into rows that are already there.
   const prefixError = receiptPrefixProblem(receipt.prefix);
-  const canSubmit =
-    !submitting && name.trim() && slug && timezone && verdict?.available === true && !prefixError;
+  const canSubmit = canCreateStudio({
+    submitting,
+    name,
+    slug,
+    timezone,
+    slugAvailable: verdict?.available === true,
+    prefixError,
+  });
   const receiptField = (key: keyof ReceiptDetailsDraft) => ({
     value: receipt[key],
     onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
@@ -146,7 +154,7 @@ export function CreateTenantDialog({ api, open, onOpenChange, onCreated }: Creat
       const created = await createTenant(api, {
         slug,
         name: name.trim(),
-        timezone,
+        timezone: timezone.trim(),
         ...(termMonths ? { term_months: Number(termMonths) as TermMonths } : {}),
         ...(adminEmail.trim() ? { admin_email: adminEmail.trim() } : {}),
         ...(adminName.trim() ? { admin_name: adminName.trim() } : {}),
@@ -169,13 +177,14 @@ export function CreateTenantDialog({ api, open, onOpenChange, onCreated }: Creat
         err instanceof ApiError && err.body && typeof err.body === "object"
           ? (err.body as { message?: string }).message
           : undefined;
+      const zoneMessage = zoneRefusalMessage(code, timezone.trim(), zoneChoices.freeText);
       toast.error(
         code && SLUG_REASONS[code]
           ? SLUG_REASONS[code]
           : code === "admin_email_invalid"
             ? "That admin email doesn’t look like an address."
-            : code === "timezone_required" || code === "timezone_invalid"
-              ? "Choose the studio’s time zone from the list."
+            : zoneMessage
+              ? zoneMessage
               : code === "invalid_request" && message
                 ? message
                 : "Could not create the studio. Nothing was left half-created — try again.",
@@ -264,26 +273,7 @@ export function CreateTenantDialog({ api, open, onOpenChange, onCreated }: Creat
           </p>
         </div>
 
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="tenant-timezone">Time zone</Label>
-          <Select
-            id="tenant-timezone"
-            value={timezone}
-            onChange={e => setPickedZone(e.target.value)}
-            required
-          >
-            {!timezone && <option value="">Choose a time zone</option>}
-            {zoneChoices.zones.map(zone => (
-              <option key={zone} value={zone}>
-                {zone}
-              </option>
-            ))}
-          </Select>
-          <p className="text-xs text-muted">
-            Starts on your browser’s zone. It is the studio’s clock for every class, leave day and
-            scheduled job, and it cannot be changed once the studio is created.
-          </p>
-        </div>
+        <StudioZoneField zone={timezone} onChange={setPickedZone} choices={zoneChoices} />
 
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="tenant-term">Term</Label>

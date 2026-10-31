@@ -14,6 +14,7 @@ import { upgradeArchiveRows } from './transfer-upgrade'
 import { ARCHIVE_VERSION, type ArchivedPasswords, type TenantArchive, type TenantManifest } from './transfer-shape'
 import { forgetCachedMailIdentity } from './mail-identity'
 import { loadTenantById } from './tenants'
+import { currentZoneName } from './time-zone'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 import { DEFAULT_RECEIPT_PREFIX } from '../receipts/snapshot'
 import { newAddressToken } from '../classpass/settings'
@@ -436,6 +437,24 @@ export async function importTenant(
     throw new Error(
       `this archive was built for ${archive.manifest.tenant.slug}, not ${target.slug} — rebuild it with the target's slug`,
     )
+  }
+  // A studio's zone is fixed when it is created and no route changes it, while
+  // the archive's classes, leave days and Term dates were all written on the
+  // clock of the zone it names. Restored into a studio on another clock, they
+  // would read hours off for good, so the import is refused rather than the
+  // studio moved. An archive that names no zone (one built before the manifest
+  // carried it) has nothing to compare.
+  const archiveZone = archive.manifest.tenant.timezone
+  if (
+    typeof archiveZone === 'string' &&
+    archiveZone &&
+    currentZoneName(archiveZone) !== currentZoneName(target.timezone)
+  ) {
+    throw new ConflictError('archive_timezone_mismatch', {
+      message: `this archive was taken on ${archiveZone} time, but ${target.slug} is on ${target.timezone}; a studio's time zone cannot be changed, so create the studio to restore into on ${archiveZone}`,
+      archive_timezone: archiveZone,
+      studio_timezone: target.timezone,
+    })
   }
   // An export names each person's login on their row, and has since the user
   // import. A row that names none is from an archive older than that, and
