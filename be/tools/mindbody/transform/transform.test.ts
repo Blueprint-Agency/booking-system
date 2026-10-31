@@ -8,6 +8,7 @@ import { mapStudio, renderPreflight } from './mapper'
 import { readAutopayDetail, type OptionSaleRow } from './readers'
 import { registerMatcher } from './register'
 import { constraintViolations } from './constraints'
+import { buildEmailTemplates } from '../../../src/db/seed/email-copy'
 import { REPORTS as REPORT_FILES, REPORT_RULES, readReports, transformMindbody, verifyImport } from './transform'
 
 /**
@@ -20,6 +21,8 @@ const FIXTURES = path.join(__dirname, 'fixtures')
 const REPORTS = path.join(FIXTURES, 'reports')
 const fixtureConfig = () => JSON.parse(readFileSync(path.join(FIXTURES, 'config.json'), 'utf8')) as Record<string, any>
 const TENANT = '0b8e4a52-6d0f-4c1e-9a57-3f2d1c0b9e8a'
+/** How many email templates a studio is seeded, read from the seed so it moves with it. */
+const SEEDED_TEMPLATE_COUNT = buildEmailTemplates({ clientUrl: 'https://app.test', portalUrl: 'https://portal.test', studio: { name: 'Test Studio' } }).length
 
 const run = (config: unknown = fixtureConfig(), tenantId = TENANT) =>
   transformMindbody({ reportsDir: REPORTS, config, tenantId })
@@ -35,11 +38,8 @@ test('the archive is for the Tenant it was built for, and asks for accounts to b
   const archive = await unpackArchive(zip)
   assert.equal(archive.manifest.tenant.id, TENANT)
   assert.equal(archive.manifest.ensureAccounts, true)
-  // Every template a provisioned studio gets, class_waitlist_promoted,
-  // class_rule_cancelled, pt_request_cancelled and
-  // corporate_purchase_confirmed, purchase_receipt and
-  // classpass_overbooked included.
-  assert.equal(archive.rows.email_templates!.length, 39)
+  // Every template a provisioned studio gets: exactly the ones the seed builds.
+  assert.equal(archive.rows.email_templates!.length, SEEDED_TEMPLATE_COUNT)
   assert.equal(archive.rows.global_policy!.length, 1)
   assert.equal(archive.rows.pt_booking_config!.length, 1)
   assert.ok(archive.rows.clients!.every(r => r.auth_user_id === null), 'accounts are the importer s to make')
