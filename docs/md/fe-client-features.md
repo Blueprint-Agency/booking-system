@@ -326,7 +326,7 @@ A waitlist is never offered while a seat is free — the member books it. Refuse
 - Workshops are **paid directly** — credits cannot be used. The card carries a clarification note: *"Direct payment only — credits cannot be used."*
 - Status: upcoming / fully enrolled / ended.
 - Free workshops (price 0) use **"Register"** copy and skip checkout entirely — go directly to a confirmation success page.
-- Optional **waitlist** per `WorkshopDay` (capacity now decomposed into `waitlist + online_booking + buffer` — see admin spec).
+- A **waitlist** per `WorkshopDay` is **not built**: workshops have no waitlist to join, queue or promote from (`spec-waitlist.md` §12), and a full workshop reads "Fully Enrolled". The capacity columns exist (`waitlist + online_booking + buffer`, see admin spec) and nothing reads the waitlist one.
 - Promotions on workshops follow the same best-price-wins resolution as packages (§6.1).
 
 **List layout**
@@ -344,15 +344,10 @@ A waitlist is never offered while a seat is free — the member books it. Refuse
 |---|---|
 | Available, paid | "Purchase" |
 | Available, free | "Register" |
-| Full + waitlist enabled | "Join waitlist" |
-| Full, no waitlist | "Fully Enrolled" (disabled) |
+| Full | "Fully Enrolled" (disabled) |
 | Past | "Workshop Ended" (disabled) |
 
-**Waitlist enrollment UX**
-1. User taps "Join waitlist" on a full workshop.
-2. Confirmation toast: *"You're on the waitlist. We'll notify you if a seat opens."*
-3. Studio cancellation frees a seat → user receives notification (email/in-app) with a time-bound CTA to confirm and pay.
-4. If user doesn't claim within window, next person on waitlist is offered.
+**Waitlist enrollment UX** — _not built._ A workshop has no "Join waitlist" button, no waitlist toast, and no email or in-app offer when a seat frees (`spec-waitlist.md` §12); a full workshop is "Fully Enrolled".
 
 ### 4.2 Workshop detail `/workshops/[id]`
 

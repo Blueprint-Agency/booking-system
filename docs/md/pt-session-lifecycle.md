@@ -19,7 +19,7 @@ are referenced where they share policy but are not the subject here. Companion t
 | Client cancel ownership assertion | ✅ done | `cancel.ts`, `routes/client/pt-sessions.ts` |
 | P7 — fe-portal pt-requests list/schedule/cancel wired to BE | ⛔ deferred | blocked on a portal-wide live-data pattern (no admin page calls `makeApi` yet; sibling corporate dialog is also seed-based) |
 | P8 — 2-on-1 new-partner "create account" loop | ⛔ deferred | needs P7 + admin client-create surface |
-| email notifications (`pt_session_approved`, `pt_cancelled_*`) | ⛔ deferred | inbox-only in v1, matching the class cancel path |
+| email notifications | ✅ done | `pt_request_submitted`, `pt_session_approved`, `pt_request_expired`, `pt_request_cancelled` and `pt_cancelled_session_returned` / `pt_cancelled_forfeited`, after commit (`services/notifications/send-pt-request-email.ts`, `send-booking-email.ts`); a request is never declined, so there is no declined email |
 
 Verified with `npx tsc --noEmit` in `be/` (EXIT=0; no test infra per project convention).
 **D1 resolved**: client scheduled-cancels are gated by the PT window + shared cap
@@ -161,7 +161,7 @@ Single entry point for client (`/me/pt-sessions/:id/cancel`, `source='client'`) 
 
 - **`pending`** (already built — fix P3): `status='cancelled_before_scheduled'`; refund
   **1 for 1on1 / 2 for 2on1** to `debited_client_package_id`; recompute `active`;
-  email `pt_cancelled_session_returned`.
+  email `pt_request_cancelled` (the one email before and after scheduling, NTF-11).
 - **`scheduled`** (build — P2/P4): load the linked `pt_sessions.starts_at`. If
   `now >= starts_at` → `422 session_already_started` (mirror class path). Built for staff
   (admin and instructor, member-origin and manual sessions alike, #241): a session that has
@@ -182,7 +182,12 @@ Single entry point for client (`/me/pt-sessions/:id/cancel`, `source='client'`) 
     `cancelled_*`; every booking `state='cancelled'`, `refund_outcome` per outcome.
   - Insert `cancellations` rows (`kind='pt'`, `source`, `was_within_window`, `was_within_cap`,
     `refund_fired`) — **admin rows excluded from cap**, consistent with the class path.
-  - Email `pt_cancelled_session_returned` or `pt_cancelled_forfeited`.
+  - Email `pt_request_cancelled` to the requester and a 2on1 partner (NTF-11). A member who
+    cancels one booking on its own (`bookings/cancel.ts`), or leaves a manual session, gets
+    `pt_cancelled_session_returned` when the session came back and `pt_cancelled_forfeited` when
+    the cap kept it (NTF-09, NTF-53). A member cancelling their own request past the cap gets
+    `pt_cancelled_forfeited` instead of `pt_request_cancelled` (one email; the partner still gets
+    `pt_request_cancelled`) (NTF-60).
 - **terminal** → idempotent no-op.
 
 This makes "client cancels before the window → refunded; admin cancels → always refunded" true,
@@ -191,9 +196,8 @@ and unifies PT with the class cancellation policy (shared cap, `ptWindowHours` w
 ### 3.3 Auto-expiry cron — `expireStaleSessions` (P6)
 
 `SELECT pt_requests WHERE status='pending' AND expires_at < now()`; route each through the
-`pending` cancel branch with `source='system'` (refund, `resolved_by_staff_id=NULL`), email
-`pt_cancelled_session_returned` (auto-expiry subject). Settle the interval (recommend matching
-`be-client.md §4d`: every 5 min) and register in the cron table.
+`pending` cancel branch with `source='system'` (refund, `resolved_by_staff_id=NULL`), and after
+commit email the requester `pt_request_expired` (NTF-59). Every 5 min, as `be-client.md §4d`.
 
 ### 3.4 2-on-1 credit correctness (P3)
 

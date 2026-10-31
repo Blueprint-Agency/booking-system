@@ -129,11 +129,11 @@ describe('migration 0117: provisioned templates follow the Business name', { ski
     // as the isolation fixtures do.
     const FOOTER = `1 Example Street & Lane ${run}.`
     const old = { [unedited.id]: await writtenBefore400(unedited, FOOTER), [edited.id]: await writtenBefore400(edited) }
-    assert.ok(old[unedited.id]!.welcome!.subject.includes(unedited.name), 'the old subject names the studio raw')
-    assert.ok(old[unedited.id]!.welcome!.bodyHtml.includes('Northwind ' + run + ' &amp; &quot;Partners&quot;'), 'the old body names it escaped')
+    assert.ok(old[unedited.id]!.trial_pass_purchase_confirmed!.subject.includes(unedited.name), 'the old subject names the studio raw')
+    assert.ok(old[unedited.id]!.trial_pass_purchase_confirmed!.bodyHtml.includes('Northwind ' + run + ' &amp; &quot;Partners&quot;'), 'the old body names it escaped')
 
-    // The second studio's own wording, in two of the ten templates that name it.
-    await write(edited.id, 'welcome', `Hello from ${edited.name}`, old[edited.id]!.welcome!.bodyHtml)
+    // The second studio's own wording, in two of the templates that name it.
+    await write(edited.id, 'trial_pass_purchase_confirmed', `Hello from ${edited.name}`, old[edited.id]!.trial_pass_purchase_confirmed!.bodyHtml)
     await write(edited.id, 'sign_in_code', old[edited.id]!.sign_in_code!.subject, `${old[edited.id]!.sign_in_code!.bodyHtml}\n<p>See you at ${edited.name}.</p>`)
     const editedBefore = await templatesOf(edited.id)
 
@@ -146,11 +146,11 @@ describe('migration 0117: provisioned templates follow the Business name', { ski
     }
 
     const second = await templatesOf(edited.id)
-    for (const slug of ['welcome', 'sign_in_code']) {
+    for (const slug of ['trial_pass_purchase_confirmed', 'sign_in_code']) {
       assert.deepEqual(second[slug], editedBefore[slug], `${slug}: the studio's own wording is exactly as it was`)
     }
     for (const [slug, expected] of Object.entries(today[edited.id]!)) {
-      if (slug === 'welcome' || slug === 'sign_in_code') continue
+      if (slug === 'trial_pass_purchase_confirmed' || slug === 'sign_in_code') continue
       assert.deepEqual({ subject: second[slug]!.subject, bodyHtml: second[slug]!.bodyHtml }, expected, `${slug}: the default it was given now names it by the placeholder`)
     }
 

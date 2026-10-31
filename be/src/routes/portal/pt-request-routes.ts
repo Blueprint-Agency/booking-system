@@ -297,7 +297,7 @@ const surfaces: Record<Surface, Hono> = {
       staffing: (_b, self) => ({ instructorId: self }), // forced to the acting Instructor; no pay field
     },
     // The session's instructor is always self, and a member bound to another coach is refused, not warned.
-    // The body still carries `instructor_pay_sgd`: an Instructor can price their own manual session.
+    // The body has no `instructor_pay_sgd`: an Instructor's manual session is left unpriced.
     manual: { body: instructorManualSessionSchema, instructorId: (_b, self) => self },
     // The instructor is always self, so a package bound to another coach reads as refused, not warned.
     seatCandidates: { query: instructorSeatCandidatesQuery, instructorId: (_q, self) => self },
