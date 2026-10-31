@@ -1494,6 +1494,14 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     const packageId = await givePt(one, bo, '1on1')
     const [policy] = await harness.db.select().from(schema.globalPolicy).where(eq(schema.globalPolicy.tenantId, one.id))
     assert.ok(policy)
+    // The classes go in the Location's own room rather than the suite's, so the
+    // private sessions later tests schedule there days out never land on one.
+    const [classRoom] = await harness.db
+      .select({ id: schema.rooms.id })
+      .from(schema.rooms)
+      .where(and(eq(schema.rooms.locationId, one.places[0]!.locationId), sql`${schema.rooms.name} <> ${ROOM_NAME}`))
+      .limit(1)
+    assert.ok(classRoom, 'expected a seeded room beside the suite’s')
 
     for (let i = 0; i < policy.cancelCapCount; i++) {
       const startsAt = new Date(Date.now() + (20 + i) * DAY)
@@ -1504,7 +1512,7 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
           classTypeId: one.classTypeId,
           mainInstructorId: coachB.staffId,
           locationId: one.places[0]!.locationId,
-          roomId: one.places[0]!.roomId,
+          roomId: classRoom.id,
           startsAt,
           endsAt: new Date(startsAt.getTime() + HOUR),
           capacityOnline: 10,
