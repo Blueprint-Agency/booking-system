@@ -236,6 +236,11 @@ export function formatExpiryDate(iso: Instant, timezone: string): string {
   return inZone(iso, timezone, { weekday: "short", month: "short", day: "numeric", year: "numeric" });
 }
 
+/** "24 Nov" — the day and month an instant falls on at the studio. */
+export function formatDayMonth(iso: Instant, timezone: string): string {
+  return inZone(iso, timezone, { day: "numeric", month: "short" });
+}
+
 /** "4:00 pm" — the time of day an instant falls on at the studio. */
 export function formatClassTime(iso: Instant, timezone: string): string {
   return inZone(iso, timezone, { hour: "numeric", minute: "2-digit", hour12: true });

@@ -1,11 +1,11 @@
 "use client";
 
 import { Loader2 } from "lucide-react";
-import { formatDate } from "@/lib/utils";
-import { formatClassTime } from "@/lib/classes";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import { Portal } from "@/components/ui/portal";
+import { formatClassTime, formatDate } from "@/lib/studio-time";
+import { useStudioZone } from "@/components/brand/brand-provider";
 
 /**
  * "Leave this waitlist?" — asked from the class row and from My Bookings alike.
@@ -30,6 +30,7 @@ export function LeaveWaitlistDialog({
 }) {
   const trapRef = useFocusTrap<HTMLDivElement>(true);
   useBodyScrollLock(true);
+  const tz = useStudioZone();
   return (
     <Portal>
     <div
@@ -48,7 +49,7 @@ export function LeaveWaitlistDialog({
       >
         <h3 className="font-serif text-xl text-ink leading-snug">Leave this waitlist?</h3>
         <p className="mt-1 text-sm text-muted">
-          {classTitle} · {formatDate(startsAt)} · {formatClassTime(startsAt)}
+          {classTitle} · {formatDate(startsAt, tz)} · {formatClassTime(startsAt, tz)}
         </p>
         <p className="mt-4 rounded-xl border border-ink/10 bg-warm p-3 text-sm text-ink">
           You&apos;re #{position} in line. If you join again later, you&apos;ll go to the end of the line.

@@ -2,10 +2,9 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { addMonths, differenceInDays } from "date-fns";
 import { AlertCircle } from "lucide-react";
 import { getMemberToken } from "@/lib/member-auth";
-import { formatCurrency, formatExpiryDate } from "@/lib/utils";
+import { formatCurrency } from "@/lib/utils";
 import { CheckoutFrame, checkoutCardClass } from "./checkout-frame";
 import { fetchApi } from "@/lib/api-url";
 import { ERROR_CODES } from "@/lib/error-codes";
@@ -18,6 +17,8 @@ import { CrossLocationBlock, type AddOnDisabledReason } from "./cross-location-b
 import { PayButton, StripeFootnote } from "./pay-button";
 import { BillingDetailsPicker } from "./billing-details-picker";
 import { billToPayLabel, type BillToStatus } from "@/lib/bill-to-status";
+import { formatExpiryDate, plusCalendarMonths, wholeDaysBetween } from "@/lib/studio-time";
+import { useStudioZone } from "@/components/brand/brand-provider";
 
 /**
  * The part-months sentence, shown before the arithmetic so the surprising part
@@ -25,18 +26,18 @@ import { billToPayLabel, type BillToStatus } from "@/lib/bill-to-status";
  * mirror of `crossLocationMonths` in `be/src/services/packages/validity.ts`: the
  * server's `months` is what is charged, and this only explains where it came from.
  */
-function remainderSentence(expiresAt: string, months: number, now: Date = new Date()): string {
-  const end = new Date(expiresAt);
-  const runsTo = `Your plan runs to ${formatExpiryDate(expiresAt)}`;
+function remainderSentence(expiresAt: string, months: number, tz: string, now: number = Date.now()): string {
+  const end = Date.parse(expiresAt);
+  const runsTo = `Your plan runs to ${formatExpiryDate(expiresAt, tz)}`;
   // Anchored on the server's `months` rather than on a second month count of
   // this app's own, so the breakdown can never contradict the number charged:
   // the server rounded up, so all but the last month is whole and the days are
   // what is left over on top of them.
-  if (!roundsUpAPartMonth(end, months, now)) {
+  if (!roundsUpAPartMonth(end, months, tz, now)) {
     return `${runsTo} — ${months} month${months === 1 ? "" : "s"} left.`;
   }
   const whole = months - 1;
-  const days = Math.max(1, differenceInDays(end, addMonths(now, whole)));
+  const days = Math.max(1, wholeDaysBetween(tz, plusCalendarMonths(tz, now, whole), end));
   const left = [
     whole > 0 ? `${whole} month${whole === 1 ? "" : "s"}` : null,
     `${days} day${days === 1 ? "" : "s"}`,
@@ -59,6 +60,7 @@ interface AddOnQuote {
  * page carries the block, the arithmetic the server quoted, and Pay.
  */
 export function AddOnCheckout({ planId }: { planId: string | null }) {
+  const tz = useStudioZone();
   const getToken = getMemberToken;
   const { packages, crossLocation, loading: packagesLoading } = useClientPackages();
   const { data: locations } = useLocations();
@@ -96,7 +98,7 @@ export function AddOnCheckout({ planId }: { planId: string | null }) {
             data.error === ERROR_CODES.cross_location_requires_unlimited
           )
             setReason("no_plan");
-          else setError(checkoutErrorMessage(data, "We couldn't price the add-on. Please try again."));
+          else setError(checkoutErrorMessage(data, "We couldn't price the add-on. Please try again.", tz));
           return;
         }
         setQuote(data as AddOnQuote);
@@ -123,7 +125,7 @@ export function AddOnCheckout({ planId }: { planId: string | null }) {
       });
       const data = await res.json();
       if (!res.ok || !data.url) {
-        setError(checkoutErrorMessage(res.ok ? null : data, "Could not start checkout. Please try again."));
+        setError(checkoutErrorMessage(res.ok ? null : data, "Could not start checkout. Please try again.", tz));
         setRedirecting(false);
         return;
       }
@@ -142,7 +144,7 @@ export function AddOnCheckout({ planId }: { planId: string | null }) {
   // A Dormant plan has no end date to count back from: it prices at its full
   // stored Duration, so there is nothing to explain and no sentence to show.
   const remainder =
-    quote && plan?.expiresAt ? remainderSentence(plan.expiresAt, quote.months) : null;
+    quote && plan?.expiresAt ? remainderSentence(plan.expiresAt, quote.months, tz) : null;
 
   if (packagesLoading || loadingQuote) {
     return (

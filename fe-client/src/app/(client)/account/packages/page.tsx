@@ -3,7 +3,9 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, Plus, Ticket } from "lucide-react";
-import { cn, formatExpiryDate, formatSgd } from "@/lib/utils";
+import { cn, formatSgd } from "@/lib/utils";
+import { formatExpiryDate } from "@/lib/studio-time";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import { coversAllLocations } from "@/lib/package-coverage";
 import { AllLocationsRow, CoversRow, LocationChip } from "@/components/ui/location-chip";
 import { useLocations } from "@/lib/classes";
@@ -152,6 +154,7 @@ function PackageCard({
   otherLocationName?: string | null;
   rateSgd?: string;
 }) {
+  const tz = useStudioZone();
   const isUnlimited = pkg.kind === "unlimited";
   const isPt = pkg.kind === "pt";
   const unitLabel = isPt ? "sessions" : "credits";
@@ -182,11 +185,11 @@ function PackageCard({
           <p className="mt-1 text-xs text-muted">
             {pkg.ended
               ? expired
-                ? `Expired ${formatExpiryDate(pkg.expiresAt!)}`
+                ? `Expired ${formatExpiryDate(pkg.expiresAt!, tz)}`
                 : `Every ${isPt ? "session" : "credit"} used`
               : pkg.dormant
                 ? dormantLine(pkg)
-                : `Expires ${formatExpiryDate(pkg.expiresAt!)}`}
+                : `Expires ${formatExpiryDate(pkg.expiresAt!, tz)}`}
           </p>
           {/* Shown only when the backend says it is bound — an open package
               says nothing rather than promising "any instructor". */}
@@ -201,7 +204,7 @@ function PackageCard({
               {pkg.crossLocationPaidSgd !== null && (
                 <LocationChip
                   name={otherLocationName ?? "Both studios"}
-                  until={pkg.expiresAt ? formatExpiryDate(pkg.expiresAt) : null}
+                  until={pkg.expiresAt ? formatExpiryDate(pkg.expiresAt, tz) : null}
                 />
               )}
             </CoversRow>

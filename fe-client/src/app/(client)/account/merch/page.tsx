@@ -11,7 +11,9 @@ import { AccountPageHeader } from "@/components/account/account-page-header";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ContentLoading } from "@/components/ui/content-loading";
 import { useApi } from "@/lib/api";
-import { formatDate, formatSgd } from "@/lib/utils";
+import { formatSgd } from "@/lib/utils";
+import { formatDate } from "@/lib/studio-time";
+import { useStudioZone } from "@/components/brand/brand-provider";
 
 interface ApiMerchOrder {
   id: string;
@@ -22,6 +24,7 @@ interface ApiMerchOrder {
 }
 
 export default function AccountMerchPage() {
+  const tz = useStudioZone();
   const api = useApi();
   const [rows, setRows] = useState<ApiMerchOrder[] | null>(null);
   const [error, setError] = useState(false);
@@ -87,7 +90,7 @@ export default function AccountMerchPage() {
               </span>
               <div className="min-w-0 flex-1">
                 <p className="truncate font-semibold text-ink">{order.title}</p>
-                <p className="text-xs text-muted">Bought {formatDate(order.purchased_at)}</p>
+                <p className="text-xs text-muted">Bought {formatDate(order.purchased_at, tz)}</p>
               </div>
               <span className="whitespace-nowrap text-sm font-bold text-ink tabular-nums">
                 {formatSgd(order.amount_sgd)}

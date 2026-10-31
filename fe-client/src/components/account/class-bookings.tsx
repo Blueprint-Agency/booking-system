@@ -6,11 +6,12 @@
  * spec-waitlist.md §9). The list itself is "Your bookings" (`/account`).
  */
 import { Hourglass, MapPin, UserRound, X } from "lucide-react";
-import { formatDate, cn } from "@/lib/utils";
-import { formatClassTime } from "@/lib/classes";
+import { cn } from "@/lib/utils";
 import { BTN_CANCEL } from "@/components/ui/styles";
 import type { ApiWaitlistEntry } from "@/lib/waitlist";
 import type { CancelledBy } from "@/lib/cancellation-copy";
+import { formatClassTime, formatDate } from "@/lib/studio-time";
+import { useStudioZone } from "@/components/brand/brand-provider";
 
 export interface ApiBooking {
   booking_id: string;
@@ -51,13 +52,14 @@ export function WaitlistCard({
   entry: ApiWaitlistEntry;
   onLeave: (e: ApiWaitlistEntry) => void;
 }) {
+  const tz = useStudioZone();
   return (
     <div className="rounded-2xl border border-warning/40 bg-warning/[0.06] p-4">
       <div className="flex items-start justify-between gap-3 sm:gap-4">
         <div className="min-w-0 flex-1">
           <p className="font-semibold text-ink break-words">{entry.name}</p>
           <p className="mt-0.5 text-sm font-medium text-ink/80">
-            {formatDate(entry.starts_at)} · {formatClassTime(entry.starts_at)}
+            {formatDate(entry.starts_at, tz)} · {formatClassTime(entry.starts_at, tz)}
           </p>
           <ul className="mt-2 flex flex-wrap gap-1.5">
             {[

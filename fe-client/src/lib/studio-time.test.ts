@@ -7,6 +7,8 @@ import {
   datePlus,
   formatClassTime,
   formatDate,
+  formatDayAndTime,
+  formatDayMonth,
   formatExpiryDate,
   formatPlainDate,
   instantAt,
@@ -128,6 +130,10 @@ test("TEN-87 every date and time a member reads is formatted on the studio's clo
   assert.equal(formatDate(at, SYDNEY), "Wed, 1 Jul");
   assert.equal(formatDate(at, SINGAPORE), "Tue, 30 Jun");
   assert.equal(formatExpiryDate(at, SYDNEY), "Wed, 1 Jul 2026");
+  assert.equal(formatDayMonth(at, SYDNEY), "1 Jul");
+  assert.equal(formatDayMonth(at, SINGAPORE), "30 Jun");
+  assert.equal(formatDayAndTime(at, SYDNEY), "Wed, 1 Jul, 12:30 am");
+  assert.equal(formatDayAndTime(at, SINGAPORE), "Tue, 30 Jun, 10:30 pm");
   assert.equal(formatClassTime(at, SYDNEY), "12:30 am");
   assert.equal(formatClassTime(at, SINGAPORE), "10:30 pm");
   // A plain date has no clock to convert: it reads as the day it names, whatever the zone.

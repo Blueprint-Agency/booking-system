@@ -17,10 +17,10 @@ import {
   SHEET_TEXT,
   SHEET_TITLE,
 } from "@/components/ui/styles";
-import { cn, formatDate, formatSgd } from "@/lib/utils";
+import { cn, formatSgd } from "@/lib/utils";
 import { apiErrorCode, useApi } from "@/lib/api";
 import { ERROR_CODES } from "@/lib/error-codes";
-import { fetchMemberClass, formatClassTime, type ApiClassCard } from "@/lib/classes";
+import { fetchMemberClass, type ApiClassCard } from "@/lib/classes";
 import {
   activationLine,
   costLine,
@@ -35,6 +35,8 @@ import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useCancellationPolicy } from "@/lib/cancellation-policy";
 import { classBookingPolicy } from "@/lib/cancellation-copy";
+import { formatClassTime, formatDate } from "@/lib/studio-time";
+import { useStudioZone } from "@/components/brand/brand-provider";
 
 type Load =
   | { state: "loading" }
@@ -65,6 +67,7 @@ export function ConfirmBookingSheet({
   onConfirm: (clientPackageId: string, choices: number) => void;
   onClose: () => void;
 }) {
+  const tz = useStudioZone();
   const trapRef = useFocusTrap<HTMLDivElement>(true);
   useBodyScrollLock(true);
   const policy = useCancellationPolicy();
@@ -131,7 +134,7 @@ export function ConfirmBookingSheet({
             Book {cls.class_type.name}?
           </h3>
           <p className="mt-1 text-sm font-medium text-ink/80 tabular-nums">
-            {formatDate(cls.starts_at)} · {formatClassTime(cls.starts_at)} – {formatClassTime(cls.ends_at)}
+            {formatDate(cls.starts_at, tz)} · {formatClassTime(cls.starts_at, tz)} – {formatClassTime(cls.ends_at, tz)}
           </p>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
             {cls.location && (
@@ -174,7 +177,7 @@ export function ConfirmBookingSheet({
                     {packages.map((p) => {
                       const checked = pickedPkg?.id === p.id;
                       const reason = reasonText(p);
-                      const starts = checked ? activationLine(p) : null;
+                      const starts = checked ? activationLine(p, tz) : null;
                       return (
                         <div key={p.id}>
                           <label
@@ -198,7 +201,7 @@ export function ConfirmBookingSheet({
                             />
                             <span className="min-w-0">
                               <span className="block text-sm font-medium text-ink break-words">{p.name}</span>
-                              <span className="block text-xs text-muted">{packageMeta(p)}</span>
+                              <span className="block text-xs text-muted">{packageMeta(p, tz)}</span>
                               {starts && (
                                 <span className="mt-0.5 block text-xs font-medium text-accent-deep">{starts}</span>
                               )}

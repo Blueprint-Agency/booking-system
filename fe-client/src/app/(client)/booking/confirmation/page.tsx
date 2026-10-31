@@ -10,6 +10,8 @@ import { useClientPackages } from "@/lib/use-client-packages";
 import { OpenPurchases } from "@/components/account/open-purchases";
 import { usePartPaymentOptions, type OpenPurchase } from "@/lib/open-purchases";
 import { reportError } from "@/lib/report-error";
+import { formatDayAndTime } from "@/lib/studio-time";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import { CheckoutFrame } from "@/components/checkout/checkout-frame";
 import { ContentLoading } from "@/components/ui/content-loading";
 import {
@@ -200,6 +202,7 @@ function WorkshopSuccess({
   stripeSessionId: string | null;
 }) {
   const { outcome } = useCheckoutSync(stripeSessionId);
+  const tz = useStudioZone();
   const [workshop, setWorkshop] = useState<{
     name: string;
     starts_at: string | null;
@@ -217,13 +220,7 @@ function WorkshopSuccess({
     return () => { cancelled = true; };
   }, [workshopId]);
 
-  const dateLine = workshop?.starts_at
-    ? new Date(workshop.starts_at).toLocaleString("en-SG", {
-        weekday: "short", day: "numeric", month: "short",
-        hour: "numeric", minute: "2-digit",
-        timeZone: "Asia/Singapore",
-      })
-    : null;
+  const dateLine = workshop?.starts_at ? formatDayAndTime(workshop.starts_at, tz) : null;
 
   return (
     <div id="summary">

@@ -4,7 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { classToBook } from "@/lib/book-return";
 import { useMemberSession } from "@/lib/member-auth";
-import { useClasses, useLocations, useCanBookClass, toLocalDateStr, type ApiClassCard } from "@/lib/classes";
+import { useClasses, useLocations, useCanBookClass, type ApiClassCard } from "@/lib/classes";
+import { addDays, datePlus, dayWindow, instantAt, localDate, zoneFormat } from "@/lib/studio-time";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import { BookingSurface } from "@/components/booking/booking-surface";
 import { PageHeader } from "@/components/booking/page-header";
 import { ClassRow, FilterSelect } from "@/components/booking/class-row";
@@ -26,27 +28,23 @@ import { classPolicyPoints } from "@/lib/cancellation-copy";
 const WINDOW_DAYS = 10;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-function startOfTodayISO(): string {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d.toISOString();
+/** The start of the studio's today: the schedule opens at its midnight, not the device's. */
+function startOfTodayISO(timezone: string): string {
+  return new Date(dayWindow(timezone, localDate(timezone, Date.now())).startsAt).toISOString();
 }
-function windowEndISO(days: number): string {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  d.setDate(d.getDate() + days);
-  return d.toISOString();
+/** The start of the studio's day `days` on from today (the window's half-open end). */
+function windowEndISO(days: number, timezone: string): string {
+  return new Date(instantAt(timezone, datePlus(timezone, days), "00:00")).toISOString();
 }
-function dayHeaderLabel(dateStr: string): string {
-  const todayStr = toLocalDateStr(new Date().toISOString());
-  const t = new Date();
-  t.setDate(t.getDate() + 1);
-  const tomorrowStr = toLocalDateStr(t.toISOString());
-  const d = new Date(dateStr + "T00:00:00");
-  const md = `${MONTHS[d.getMonth()]} ${d.getDate()}`;
+function dayHeaderLabel(dateStr: string, timezone: string): string {
+  const todayStr = localDate(timezone, Date.now());
+  const tomorrowStr = addDays(todayStr, 1);
+  const md = `${MONTHS[Number(dateStr.slice(5, 7)) - 1]} ${Number(dateStr.slice(8, 10))}`;
   if (dateStr === todayStr) return `Today · ${md}`;
   if (dateStr === tomorrowStr) return `Tomorrow · ${md}`;
-  return `${d.toLocaleDateString("en-SG", { weekday: "short" })} · ${md}`;
+  // A plain date has no clock: its weekday is read at UTC midnight, whatever the zone.
+  const weekday = zoneFormat("UTC", "en-SG", { weekday: "short" }).format(new Date(`${dateStr}T00:00:00Z`));
+  return `${weekday} · ${md}`;
 }
 
 export function ClassFeed() {
@@ -66,8 +64,9 @@ export function ClassFeed() {
     router.replace("/", { scroll: false });
   }, [router]);
 
-  const from = useMemo(() => startOfTodayISO(), []);
-  const to = useMemo(() => windowEndISO(WINDOW_DAYS), []);
+  const tz = useStudioZone();
+  const from = useMemo(() => startOfTodayISO(tz), [tz]);
+  const to = useMemo(() => windowEndISO(WINDOW_DAYS, tz), [tz]);
   const nowMs = useMemo(() => Date.now(), []);
 
   // `?? []` and not a default argument: the hook returns null while loading,
@@ -119,23 +118,23 @@ export function ClassFeed() {
       .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
     const byDay = new Map<string, ApiClassCard[]>();
     for (const c of upcoming) {
-      const k = toLocalDateStr(c.starts_at);
+      const k = localDate(tz, c.starts_at);
       const arr = byDay.get(k);
       if (arr) arr.push(c);
       else byDay.set(k, [c]);
     }
     return Array.from(byDay, ([date, items]) => ({ date, items }));
-  }, [all, nowMs]);
+  }, [all, nowMs, tz]);
 
   // One day open at a time, the soonest day with classes first.
   const sections = useMemo(
     () =>
       groups.map(({ date, items }) => ({
         key: date,
-        label: dayHeaderLabel(date),
+        label: dayHeaderLabel(date, tz),
         summary: `${items.length} ${items.length === 1 ? "class" : "classes"}`,
       })),
-    [groups],
+    [groups, tz],
   );
   const itemsByDate = useMemo(() => new Map(groups.map((g) => [g.date, g.items])), [groups]);
   const bookDay = toBook ? (groups.find((g) => g.items.some((c) => c.id === toBook))?.date ?? null) : null;

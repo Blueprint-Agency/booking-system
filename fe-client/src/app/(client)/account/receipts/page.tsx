@@ -13,7 +13,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ContentLoading } from "@/components/ui/content-loading";
 import { CARD } from "@/components/ui/styles";
 import { useApi } from "@/lib/api";
-import { formatDate } from "@/lib/utils";
+import { formatDate } from "@/lib/studio-time";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import {
   dateRangeProblem,
   receiptAmount,
@@ -30,6 +31,7 @@ const dateInput =
 
 export default function AccountReceiptsPage() {
   const api = useApi();
+  const tz = useStudioZone();
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [page, setPage] = useState(1);
@@ -145,7 +147,7 @@ export default function AccountReceiptsPage() {
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-semibold text-ink">{r.item}</p>
                     <p className="text-xs text-muted">
-                      <span className="tabular-nums">{r.number}</span> · {formatDate(r.issued_at)} ·{" "}
+                      <span className="tabular-nums">{r.number}</span> · {formatDate(r.issued_at, tz)} ·{" "}
                       <span className={r.status === "refunded" ? "font-semibold text-error" : undefined}>
                         {receiptStatusLabel(r.status)}
                       </span>

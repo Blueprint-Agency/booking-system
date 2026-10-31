@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CalendarX, Check, MapPin, Loader2, Lock, Ticket, X } from "lucide-react";
-import { cn, formatDate, formatSgd } from "@/lib/utils";
+import { cn, formatSgd } from "@/lib/utils";
 import { Avatar } from "@/components/ui/avatar";
 import { Select } from "@/components/ui/select";
 import { Portal } from "@/components/ui/portal";
@@ -15,7 +15,7 @@ import { bookSignInPath } from "@/lib/book-return";
 import { ERROR_CODES } from "@/lib/error-codes";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
-import { formatClassTime, type ApiClassCard, type ClassEntitlements } from "@/lib/classes";
+import { type ApiClassCard, type ClassEntitlements } from "@/lib/classes";
 import { clashButton, clashFromBody, clashNote, clashRefusal, type ApiClash } from "@/lib/clash";
 import { credits, planCoverage } from "@/lib/package-picker";
 import {
@@ -46,6 +46,8 @@ import { CancelBookingDialog, type CancelOutcome } from "@/components/account/ca
 import type { ApiBooking } from "@/components/account/class-bookings";
 import { canCancelClass } from "@/lib/cancellation-copy";
 import { useCancellationPolicy } from "@/lib/cancellation-policy";
+import { formatClassTime, formatDate } from "@/lib/studio-time";
+import { useStudioZone } from "@/components/brand/brand-provider";
 
 /** `POST /me/bookings/class`: the booking, and the package that paid for it. */
 interface BookClassResponse {
@@ -82,6 +84,7 @@ export function ClassRow({
   /** The automatic Book Now has been taken. */
   onAutoBooked?: () => void;
 }) {
+  const tz = useStudioZone();
   const router = useRouter();
   const api = useApi();
   const [showNoPackage, setShowNoPackage] = useState(false);
@@ -225,7 +228,7 @@ export function ClassRow({
         // Booked into something else at this time since the schedule was read.
         const found = clashFromBody(err instanceof ApiError ? err.body : null);
         if (found) setClash(found);
-        setBookError({ title: "Time clash", msg: clashRefusal(found) });
+        setBookError({ title: "Time clash", msg: clashRefusal(found, tz) });
       } else if (code === ERROR_CODES.class_already_started) {
         setBookError({ msg: "This class has already started." });
       } else if (code === ERROR_CODES.location_not_covered) {
@@ -262,7 +265,7 @@ export function ClassRow({
     if (errCode(err) === ERROR_CODES.time_clash) {
       const found = clashFromBody(body);
       if (found) setClash(found);
-      setBookError({ title: "Time clash", msg: clashRefusal(found) });
+      setBookError({ title: "Time clash", msg: clashRefusal(found, tz) });
       return;
     }
     const out = waitlistRefusal(errCode(err), body, planLocationName);
@@ -456,7 +459,7 @@ export function ClassRow({
         className={cn(shape, "bg-ink/5 text-muted hover:bg-ink/10 transition-colors")}
       >
         <CalendarX className="h-3.5 w-3.5" aria-hidden />
-        {clashButton(clash)}
+        {clashButton(clash, tz)}
       </button>
     ) : action === "full" ? (
       <span className={cn(shape, "bg-ink/5 text-muted")}>Full</span>
@@ -480,7 +483,7 @@ export function ClassRow({
         {booking ? "Booking…" : "Book Now"}
       </button>
     );
-  const timeRange = `${formatClassTime(cls.starts_at)} – ${formatClassTime(cls.ends_at)}`;
+  const timeRange = `${formatClassTime(cls.starts_at, tz)} – ${formatClassTime(cls.ends_at, tz)}`;
 
   return (
     <div className="relative px-4 py-3.5 first:rounded-t-2xl last:rounded-b-2xl md:px-5 md:py-4">
@@ -491,7 +494,7 @@ export function ClassRow({
       <button
         type="button"
         onClick={() => setShowDetail(true)}
-        aria-label={`Details: ${cls.class_type.name}, ${formatDate(cls.starts_at)} ${timeRange}`}
+        aria-label={`Details: ${cls.class_type.name}, ${formatDate(cls.starts_at, tz)} ${timeRange}`}
         className="absolute inset-0 h-full w-full cursor-pointer rounded-[inherit] hover:bg-ink/[0.025] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent transition-colors"
       />
       {/* Dim the row only — not the plan nudge below, which is the way
@@ -501,9 +504,9 @@ export function ClassRow({
         {/* Time — its own column once there is room */}
         <div className="hidden sm:block w-[76px] shrink-0 tabular-nums">
           <div className="text-[15px] font-bold tracking-tight text-ink">
-            {formatClassTime(cls.starts_at)}
+            {formatClassTime(cls.starts_at, tz)}
           </div>
-          <div className="text-xs text-muted">{formatClassTime(cls.ends_at)}</div>
+          <div className="text-xs text-muted">{formatClassTime(cls.ends_at, tz)}</div>
           {/* Until the cost has a column of its own. */}
           <div className="md:hidden mt-0.5 text-xs text-muted">{credits(cls.credit_cost)}</div>
         </div>
@@ -590,7 +593,7 @@ export function ClassRow({
       {/* What the clash is with, and the way through: the other booking. */}
       {action === "clash" && clash && (
         <div className="relative mt-2.5 rounded-lg bg-ink/[0.03] px-3 py-2 text-xs text-muted">
-          {clashNote(clash)}{" "}
+          {clashNote(clash, tz)}{" "}
           <Link href="/account/bookings?type=class" className="underline underline-offset-2 hover:text-ink transition-colors">
             My bookings
           </Link>

@@ -22,8 +22,9 @@ import {
   ptWindowDates,
   ptWindowNotice,
   ptWindowRefusal,
-  sgDatePlus,
 } from "@/lib/pt-booking-window";
+import { datePlus, localClock } from "@/lib/studio-time";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import { usePtBookingWindow } from "@/lib/use-pt-booking-window";
 import { ERROR_CODES } from "@/lib/error-codes";
 import { cn } from "@/lib/utils";
@@ -56,30 +57,29 @@ function serverSentence(err: unknown): string | null {
 }
 
 // The next hour as `HH:00`, so a new slot starts on a time the picker offers.
-// In studio time, as the slot's date is (`sgDatePlus`): the runtime's own zone
+// In studio time, as the slot's date is (`datePlus`): the runtime's own zone
 // is UTC on the server and the member's wherever they are.
-function nextHourTime() {
-  const hour = Number(
-    new Date().toLocaleString("en-GB", { hour: "2-digit", hourCycle: "h23", timeZone: "Asia/Singapore" }),
-  );
+function nextHourTime(timezone: string) {
+  const hour = Number(localClock(timezone, Date.now()).slice(0, 2));
   return `${String((hour + 1) % 24).padStart(2, "0")}:00`;
 }
 
-function emptySlot(): Slot {
-  return { proposedDate: "", startTime: nextHourTime() };
+function emptySlot(timezone: string): Slot {
+  return { proposedDate: "", startTime: nextHourTime(timezone) };
 }
 
 export default function PrivateSessionsPage() {
+  const tz = useStudioZone();
   const router = useRouter();
   const { pt1on1, pt2on1, packages, loading: pkgLoading } = useClientPackages();
   const { data: locations } = useLocations();
   const { data: classTypes } = useClassTypes();
   const ptApi = usePtSessionsApi();
-  // The studio's Book in advance window, on its Singapore calendar whatever the
-  // device's zone. Until it has loaded the picker only rules out today and
+  // The studio's Book in advance window, on the studio's own calendar whatever
+  // the device's zone. Until it has loaded the picker only rules out today and
   // earlier, which no window allows; the server stays the enforcement.
   const bookingWindow = usePtBookingWindow();
-  const dateBounds = bookingWindow ? ptWindowDates(bookingWindow) : { earliest: sgDatePlus(1), latest: undefined };
+  const dateBounds = bookingWindow ? ptWindowDates(bookingWindow, tz) : { earliest: datePlus(tz, 1), latest: undefined };
 
   const ptPackages = useMemo(() => packages.filter((p) => p.kind === "pt"), [packages]);
 
@@ -87,7 +87,7 @@ export default function PrivateSessionsPage() {
   // Null is "Any" — the default; the member may narrow it to one class type.
   const [classTypeId, setClassTypeId] = useState<string | null>(null);
   const [locationId, setLocationId] = useState<string>("");
-  const [slots, setSlots] = useState<Slot[]>(() => [emptySlot()]);
+  const [slots, setSlots] = useState<Slot[]>(() => [emptySlot(tz)]);
   const [message, setMessage] = useState<string>("");
   // The confirm sheet, where the member picks which package pays: it decides
   // the instructor too, so it is theirs to choose and not ours to guess.
@@ -126,7 +126,7 @@ export default function PrivateSessionsPage() {
     setSlots((prev) => prev.map((s, j) => (i === j ? { ...s, ...patch } : s)));
   }
   function addSlot() {
-    setSlots((prev) => [...prev, emptySlot()]);
+    setSlots((prev) => [...prev, emptySlot(tz)]);
   }
   function removeSlot(i: number) {
     setSlots((prev) => prev.filter((_, j) => j !== i));
@@ -166,11 +166,11 @@ export default function PrivateSessionsPage() {
         return;
       }
       const problem = bookingWindow
-        ? ptSlotDateProblem(s.proposedDate, i + 1, bookingWindow)
+        ? ptSlotDateProblem(s.proposedDate, i + 1, bookingWindow, tz)
         : s.proposedDate < dateBounds.earliest
           ? `Time ${i + 1}: pick a date from tomorrow on.`
           : null;
-      const ends = problem ?? ptSlotEndProblem(s, i + 1, latestEnd);
+      const ends = problem ?? ptSlotEndProblem(s, i + 1, latestEnd, tz);
       if (ends) errs.push(ends);
     });
     if (sessionType === "2on1") {
@@ -266,21 +266,21 @@ export default function PrivateSessionsPage() {
   const balanceForType = (t: "1on1" | "2on1") => (t === "2on1" ? pt2on1 : pt1on1);
   const requestCost = computedSessionType === "2on1" ? 2 : 1;
   const latestStart = useMemo(() => {
-    const starts = slots.filter((s) => s.proposedDate && s.startTime).map(ptSlotStart);
+    const starts = slots.filter((s) => s.proposedDate && s.startTime).map((s) => ptSlotStart(s, tz));
     return starts.length ? Math.max(...starts) : null;
-  }, [slots]);
+  }, [slots, tz]);
   // Every PT package of this session type, each able to pay or greyed with the
   // reason — the confirm sheet's list. Any number of PT packages may run at
   // once (be/docs/adr/0010), so a Dormant pick simply starts.
   const pickRows = useMemo(
-    () => ptPickRows(ptPackages, computedSessionType, requestCost, latestStart),
-    [ptPackages, computedSessionType, requestCost, latestStart],
+    () => ptPickRows(ptPackages, computedSessionType, requestCost, tz, latestStart),
+    [ptPackages, computedSessionType, requestCost, tz, latestStart],
   );
   const latestEnd = useMemo(
-    () => ptLatestEnd(ptPackages.filter((p) => p.sessionType === computedSessionType)),
-    [ptPackages, computedSessionType],
+    () => ptLatestEnd(ptPackages.filter((p) => p.sessionType === computedSessionType), tz),
+    [ptPackages, computedSessionType, tz],
   );
-  const latestDate = ptLatestDate(dateBounds.latest, latestEnd);
+  const latestDate = ptLatestDate(dateBounds.latest, latestEnd, tz);
   const hasPackageForType = pickRows.length > 0;
   const locationName = locations?.find((l) => l.id === locationId)?.name ?? null;
   const classTypeName = classTypeId ? (classTypes?.find((t) => t.id === classTypeId)?.name ?? null) : null;
@@ -369,7 +369,7 @@ export default function PrivateSessionsPage() {
             {bookingWindow && (
               <p className="mb-3 inline-flex items-start gap-1.5 rounded-xl border border-cyan/40 bg-cyan/10 px-3 py-1.5 text-xs font-medium text-cyan-deep">
                 <CalendarRange className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
-                {ptWindowNotice(bookingWindow)}
+                {ptWindowNotice(bookingWindow, tz)}
               </p>
             )}
             <div className="space-y-3">

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
-import { useBrand } from "@/components/brand/brand-provider";
+import { useBrand, useStudioZone } from "@/components/brand/brand-provider";
 import {
   CelebrationDetails,
   CelebrationSheet,
@@ -12,9 +12,8 @@ import {
 } from "@/components/celebration/celebration-sheet";
 import { useApi } from "@/lib/api";
 import { useMemberSession } from "@/lib/member-auth";
-import { formatDate } from "@/lib/utils";
-import { formatClassTime } from "@/lib/classes";
 import { approvalAccountPath, approvalEvent, approvalName, type ApiApproval } from "@/lib/approvals";
+import { formatClassTime, formatDate } from "@/lib/studio-time";
 
 /** How often the app looks again while the member has it open and in view. */
 const POLL_MS = 60_000;
@@ -102,6 +101,7 @@ export function ApprovalWatcher() {
 }
 
 function ApprovalCelebration({ approval, onClose }: { approval: ApiApproval; onClose: () => void }) {
+  const tz = useStudioZone();
   const brand = useBrand();
   const line = usePickedLine(LINES[approval.kind]);
   const event = useMemo(
@@ -123,7 +123,7 @@ function ApprovalCelebration({ approval, onClose }: { approval: ApiApproval; onC
     >
       <CelebrationDetails
         name={approvalName(approval)}
-        when={`${formatDate(approval.starts_at)} · ${formatClassTime(approval.starts_at)} – ${formatClassTime(approval.ends_at)}`}
+        when={`${formatDate(approval.starts_at, tz)} · ${formatClassTime(approval.starts_at, tz)} – ${formatClassTime(approval.ends_at, tz)}`}
         place={approval.location_name}
         person={approval.instructor_name}
       />

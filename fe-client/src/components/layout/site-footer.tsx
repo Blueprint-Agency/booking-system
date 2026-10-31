@@ -6,6 +6,7 @@ import { useBrand } from "@/components/brand/brand-provider";
 import { publicApi } from "@/lib/api";
 import { useLocations } from "@/lib/classes";
 import { useCachedResource } from "@/lib/resource-cache";
+import { localDate } from "@/lib/studio-time";
 import { footerLinks, type FooterLink } from "@/lib/site-footer";
 import { ROOT_DOMAIN, tenantSlugFromHost } from "@/lib/tenant-host";
 
@@ -40,7 +41,7 @@ function StudioFooter() {
   const { data: marketing } = useCachedResource("public:marketing", getMarketing, { optional: true });
   const { legal, social } = footerLinks(brand.copy);
   const footerText = marketing?.footer_text?.trim() || null;
-  const year = new Date().getFullYear();
+  const year = localDate(brand.timezone, Date.now()).slice(0, 4);
 
   return (
     <footer className="border-t border-border bg-paper">
