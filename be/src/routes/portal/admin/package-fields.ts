@@ -3,6 +3,7 @@ import type { PromotionWriteInput } from '../../../services/packages/promotions'
 import { MAX_VALIDITY_DAYS } from '../../../services/packages/validity'
 import { BadRequestError } from '../../../shared/errors'
 import { dateTime } from '../../../shared/date-time'
+import { endsAfterStart } from '../parse'
 
 /**
  * The fields a class package and a PT package share, each with the sentence
@@ -39,19 +40,24 @@ const PROMOTION_DATE_MESSAGE = 'A promotion starts and ends on a date and time, 
 const promotionDate = dateTime('A promotion date', PROMOTION_DATE_MESSAGE)
 const PERCENT_MESSAGE = 'A promotion takes 1 to 99 percent off.'
 
+const PROMOTION_ORDER_MESSAGE = 'A promotion has to end after it starts.'
+
 // Promotion wire shape — mirrors serializePromotion's snake_case output so write/read are symmetric.
-export const promotionInputSchema = z.object({
-  id: z.string().uuid().nullish(),
-  label: z
-    .string({ message: 'A promotion label must be text.' })
-    .min(1, 'A promotion needs a label.')
-    .max(160, 'A promotion label can be at most 160 characters.'),
-  kind: z.enum(['percent', 'special_price'], { message: 'A promotion is a percent off or a special price.' }),
-  percent_off: z.number({ message: PERCENT_MESSAGE }).int(PERCENT_MESSAGE).min(1, PERCENT_MESSAGE).max(99, PERCENT_MESSAGE).nullish(),
-  special_price_sgd: priceField.nullish(),
-  starts_at: promotionDate,
-  ends_at: promotionDate,
-})
+export const promotionInputSchema = z
+  .object({
+    id: z.string().uuid().nullish(),
+    label: z
+      .string({ message: 'A promotion label must be text.' })
+      .min(1, 'A promotion needs a label.')
+      .max(160, 'A promotion label can be at most 160 characters.'),
+    kind: z.enum(['percent', 'special_price'], { message: 'A promotion is a percent off or a special price.' }),
+    percent_off: z.number({ message: PERCENT_MESSAGE }).int(PERCENT_MESSAGE).min(1, PERCENT_MESSAGE).max(99, PERCENT_MESSAGE).nullish(),
+    special_price_sgd: priceField.nullish(),
+    starts_at: promotionDate,
+    ends_at: promotionDate,
+  })
+  // The database refuses an end that is not after the start; the form is told which end, in a sentence, instead.
+  .refine(endsAfterStart, { message: PROMOTION_ORDER_MESSAGE, path: ['ends_at'] })
 
 export const promotionsField = z.array(promotionInputSchema, { message: 'Promotions are a list.' })
 

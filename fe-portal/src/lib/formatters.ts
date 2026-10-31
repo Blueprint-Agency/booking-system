@@ -31,6 +31,23 @@ export function formatRelative(iso: string): string {
  */
 export const LATEST_DATE = "9999-12-31";
 
+/**
+ * The `min` of a date input that filters or records something that happened:
+ * a browser accepts year 0001, and the API refuses a day whose start falls
+ * before year 1 once the studio's offset is applied.
+ */
+export const EARLIEST_DATE = "1900-01-01";
+
+/**
+ * Whether a date input's value may become a filter's period. `min` and `max`
+ * stop only the picker: a browser still fires `input` with 0001-01-01, or with
+ * 0002-… and 0020-… on the way to typing a year, and with a six-digit year.
+ * A four-digit `yyyy-MM-dd` compares as text, so the bounds are string compares.
+ */
+export function isFilterDay(v: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(v) && v >= EARLIEST_DATE && v <= LATEST_DATE;
+}
+
 /** Today's local date as `yyyy-MM-dd`, for use as the `min` of a date input. */
 export function todayIso(): string {
   return localDay();

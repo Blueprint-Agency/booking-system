@@ -126,7 +126,7 @@ Same CRUD shape as locations. Archive is blocked if any non-archived `instructor
 |---|---|---|
 | GET | `/class-packages` | List with `?status`, `?kind=credit_bundle\|unlimited\|trial`. Default sort: trial first, then credit_bundle, then unlimited (matches fe-client `/packages` ordering). |
 | POST | `/class-packages` | Insert `class_packages` row. CHECK constraint enforces kind-specific column requirements (credits + validity_days for `credit_bundle`; duration_months for `unlimited`; credits + validity_days for `trial`). |
-| PATCH | `/class-packages/:id` | Edit name, description, status. Price changes apply to **future** purchases only — existing `client_packages` rows are immutable. |
+| PATCH | `/class-packages/:id` | Edit name, description, status. Price changes apply to **future** purchases only — existing `client_packages` rows are immutable. An edit may carry the full `promotions` list; the package's fields and its Promotions save together or not at all (one savepoint, as `POST` does), and a Promotion that ends at or before its start is `400 invalid_request` with a sentence, on `POST` and `PATCH` of both package kinds. |
 | POST | `/class-packages/:id/archive` | Soft delete; existing client_packages remain valid until `expires_at`. |
 
 **Trial Pass semantics.** `kind='trial'` is just another row — there is no separate route. The one-per-client gate lives at purchase time (`be-client.md` §4e), enforced by the `client_packages(client_id) WHERE kind='trial'` unique partial index. Admin **may** publish multiple active Trial Pass definitions (e.g. for A/B testing), but a single client can hold at most one across all of them.

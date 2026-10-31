@@ -5,7 +5,6 @@ import * as svc from '../../../services/packages/pt-packages'
 import {
   bestPrice,
   listManagedPromotionsFor,
-  replacePromotionsForParent,
   serializePromotion,
 } from '../../../services/packages/promotions'
 import { tenantId } from '../../../middleware/tenant'
@@ -127,25 +126,22 @@ const app = new Hono()
     const { id } = c.req.valid('param')
     const body = c.req.valid('json')
     const actor = c.get('staffUserId')
-    const row = await svc.updatePtPackage(tenantId(c), id, {
-      ...(body.name !== undefined ? { name: body.name } : {}),
-      ...(body.num_sessions !== undefined ? { numSessions: body.num_sessions } : {}),
-      ...(body.validity_days !== undefined ? { validityDays: body.validity_days } : {}),
-      ...(body.instructor_bound !== undefined
-        ? { instructorBound: body.instructor_bound }
-        : {}),
-      ...(body.price_sgd !== undefined ? { priceSgd: body.price_sgd } : {}),
-      ...(body.status !== undefined ? { status: body.status } : {}),
-    })
-    if (body.promotions !== undefined) {
-      await replacePromotionsForParent(
-        tenantId(c),
-        'pt_package',
-        id,
-        body.promotions.map(toPromotionWriteInput),
-        actor,
-      )
-    }
+    const row = await svc.updatePtPackageWithPromotions(
+      tenantId(c),
+      id,
+      {
+        ...(body.name !== undefined ? { name: body.name } : {}),
+        ...(body.num_sessions !== undefined ? { numSessions: body.num_sessions } : {}),
+        ...(body.validity_days !== undefined ? { validityDays: body.validity_days } : {}),
+        ...(body.instructor_bound !== undefined
+          ? { instructorBound: body.instructor_bound }
+          : {}),
+        ...(body.price_sgd !== undefined ? { priceSgd: body.price_sgd } : {}),
+        ...(body.status !== undefined ? { status: body.status } : {}),
+      },
+      body.promotions?.map(toPromotionWriteInput),
+      actor,
+    )
     c.set('auditTarget', { table: 'pt_packages', id })
     return c.json(await serializeWithPromos(tenantId(c), row))
   })

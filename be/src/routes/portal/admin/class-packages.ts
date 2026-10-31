@@ -5,7 +5,6 @@ import * as svc from '../../../services/packages/class-packages'
 import {
   bestPrice,
   listManagedPromotionsFor,
-  replacePromotionsForParent,
   serializePromotion,
 } from '../../../services/packages/promotions'
 import { MAX_DURATION_MONTHS } from '../../../services/packages/validity'
@@ -130,24 +129,21 @@ const app = new Hono()
     const { id } = c.req.valid('param')
     const body = c.req.valid('json')
     const actor = c.get('staffUserId')
-    const row = await svc.updateClassPackage(tenantId(c), id, {
-      ...(body.name !== undefined ? { name: body.name } : {}),
-      ...(body.description !== undefined ? { description: body.description ?? null } : {}),
-      ...(body.credits !== undefined ? { credits: body.credits ?? null } : {}),
-      ...(body.validity_days !== undefined ? { validityDays: body.validity_days ?? null } : {}),
-      ...(body.duration_months !== undefined ? { durationMonths: body.duration_months ?? null } : {}),
-      ...(body.price_sgd !== undefined ? { priceSgd: body.price_sgd } : {}),
-      ...(body.status !== undefined ? { status: body.status } : {}),
-    })
-    if (body.promotions !== undefined) {
-      await replacePromotionsForParent(
-        tenantId(c),
-        'class_package',
-        id,
-        body.promotions.map(toPromotionWriteInput),
-        actor,
-      )
-    }
+    const row = await svc.updateClassPackageWithPromotions(
+      tenantId(c),
+      id,
+      {
+        ...(body.name !== undefined ? { name: body.name } : {}),
+        ...(body.description !== undefined ? { description: body.description ?? null } : {}),
+        ...(body.credits !== undefined ? { credits: body.credits ?? null } : {}),
+        ...(body.validity_days !== undefined ? { validityDays: body.validity_days ?? null } : {}),
+        ...(body.duration_months !== undefined ? { durationMonths: body.duration_months ?? null } : {}),
+        ...(body.price_sgd !== undefined ? { priceSgd: body.price_sgd } : {}),
+        ...(body.status !== undefined ? { status: body.status } : {}),
+      },
+      body.promotions?.map(toPromotionWriteInput),
+      actor,
+    )
     c.set('auditTarget', { table: 'class_packages', id })
     return c.json(await serializeWithPromos(tenantId(c), row))
   })

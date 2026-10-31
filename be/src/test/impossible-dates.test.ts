@@ -934,7 +934,7 @@ describe('impossible dates and times are refused', { skip: integrationTestsEnabl
   })
 
   test('PKG-53 a package whose Promotions cannot be saved is not saved either, however the Promotions fail', async () => {
-    // A Promotion that ends before it starts passes the request's checks and is refused by the database after the package row is in.
+    // A Promotion the database refuses after the package row is in, however it comes to be refused.
     const endsBeforeStart = {
       label: `${TAG} backwards promotion`,
       kind: 'percent',
@@ -942,19 +942,38 @@ describe('impossible dates and times are refused', { skip: integrationTestsEnabl
       starts_at: new Date(Date.now() + 10 * DAY).toISOString(),
       ends_at: new Date(Date.now() + 5 * DAY).toISOString(),
     }
+    // A percent Promotion with no percent is a second way the database refuses one, once the request has taken it.
+    const noPercent = {
+      label: `${TAG} percent with no percent`,
+      kind: 'percent',
+      starts_at: new Date(Date.now() + 5 * DAY).toISOString(),
+      ends_at: new Date(Date.now() + 10 * DAY).toISOString(),
+    }
     const wrong: string[] = []
-    for (const [path, body] of [
+    for (const [path, body, promotion] of [
       [
         '/admin/class-packages',
         { name: `${TAG} half-saved pass`, kind: 'credit_bundle', credits: 5, validity_days: 60, price_sgd: '100.00' },
+        endsBeforeStart,
       ],
       [
         '/admin/pt-packages',
         { name: `${TAG} half-saved sessions`, session_type: '1on1', num_sessions: 5, validity_days: 90, price_sgd: '400.00' },
+        endsBeforeStart,
+      ],
+      [
+        '/admin/class-packages',
+        { name: `${TAG} half-saved pass`, kind: 'credit_bundle', credits: 5, validity_days: 60, price_sgd: '100.00' },
+        noPercent,
+      ],
+      [
+        '/admin/pt-packages',
+        { name: `${TAG} half-saved sessions`, session_type: '1on1', num_sessions: 5, validity_days: 90, price_sgd: '400.00' },
+        noPercent,
       ],
     ] as const) {
       const before = await fingerprint()
-      const res = await send('admin', { method: 'POST', path: portal(path), body: { ...body, promotions: [endsBeforeStart] } })
+      const res = await send('admin', { method: 'POST', path: portal(path), body: { ...body, promotions: [promotion] } })
       if (res.status < 400) wrong.push(`${path}: answered ${res.status} ${JSON.stringify(res.body).slice(0, 160)}`)
       if ((await fingerprint()) !== before) wrong.push(`${path}: a refused request wrote`)
       const saved = await harness.db.execute<{ n: number }>(
@@ -963,6 +982,120 @@ describe('impossible dates and times are refused', { skip: integrationTestsEnabl
       if (saved[0]!.n !== 0) wrong.push(`${path}: the package was saved without its Promotion`)
     }
     assert.deepEqual(wrong, [])
+  })
+
+  test('PKG-54 an edit whose Promotions cannot be saved changes neither the package nor its Promotions', async () => {
+    // A percent Promotion with no percent passes the request's checks and is refused by the database.
+    const noPercent = {
+      label: `${TAG} percent with no percent`,
+      kind: 'percent',
+      starts_at: new Date(Date.now() + 5 * DAY).toISOString(),
+      ends_at: new Date(Date.now() + 10 * DAY).toISOString(),
+    }
+    const original = {
+      label: `${TAG} original promotion`,
+      kind: 'percent',
+      percent_off: 20,
+      starts_at: new Date(Date.now() + 5 * DAY).toISOString(),
+      ends_at: new Date(Date.now() + 10 * DAY).toISOString(),
+    }
+    const wrong: string[] = []
+    for (const [path, table, body] of [
+      [
+        '/admin/class-packages',
+        'class_packages',
+        { name: `${TAG} edited pass`, kind: 'credit_bundle', credits: 5, validity_days: 60, price_sgd: '100.00' },
+      ],
+      [
+        '/admin/pt-packages',
+        'pt_packages',
+        { name: `${TAG} edited sessions`, session_type: '1on1', num_sessions: 5, validity_days: 90, price_sgd: '400.00' },
+      ],
+    ] as const) {
+      const made = await ok('admin', { method: 'POST', path: portal(path), body: { ...body, promotions: [original] } }, 201)
+      const id = made.id as string
+      const state = async () => {
+        const rows = await harness.db.execute<{ state: string }>(
+          sql`SELECT (SELECT row_to_json(p)::text FROM ${sql.identifier(table)} p WHERE p.id = ${id})
+              || (SELECT coalesce(string_agg(row_to_json(r)::text, '|' ORDER BY r.sort_id), '') FROM promotions r WHERE r.parent_id = ${id}) AS state`,
+        )
+        return rows[0]!.state
+      }
+      const before = await state()
+      const res = await send('admin', {
+        method: 'PATCH',
+        path: portal(`${path}/${id}`),
+        body: { name: `${body.name} renamed`, price_sgd: '55.00', promotions: [original, noPercent] },
+      })
+      if (res.status < 400) wrong.push(`${path}: answered ${res.status} ${JSON.stringify(res.body).slice(0, 160)}`)
+      if ((await state()) !== before) wrong.push(`${path}: a refused edit changed the package or its Promotions`)
+
+      // The same edit with Promotions the database takes goes through whole.
+      const control = await send('admin', {
+        method: 'PATCH',
+        path: portal(`${path}/${id}`),
+        body: { name: `${body.name} renamed`, price_sgd: '55.00', promotions: [{ ...original, id: made.promotions[0].id, percent_off: 30 }] },
+      })
+      if (control.status !== 200 || control.body.name !== `${body.name} renamed` || control.body.promotions[0]?.percent_off !== 30) {
+        wrong.push(`${path}: the control answered ${control.status} ${JSON.stringify(control.body).slice(0, 160)}`)
+      }
+    }
+    assert.deepEqual(wrong, [])
+  })
+
+  test('PKG-55 a Promotion that ends before it starts, or as it starts, is refused 400 invalid_request naming its end, on create and on edit of both package kinds, and nothing is saved', async () => {
+    const starts = new Date(Date.now() + 8 * DAY)
+    const after = new Date(starts.getTime() + DAY).toISOString()
+    const backwards = [new Date(starts.getTime() - DAY).toISOString(), starts.toISOString()]
+    const promotion = (endsAt: string) => ({
+      label: `${TAG} backwards promotion`,
+      kind: 'percent',
+      percent_off: 25,
+      starts_at: starts.toISOString(),
+      ends_at: endsAt,
+    })
+    let made = 0
+    await check(
+      [
+        {
+          label: 'POST /portal/admin/class-packages promotions ends_at',
+          as: 'admin',
+          send: v => ({
+            method: 'POST',
+            path: portal('/admin/class-packages'),
+            body: { name: `${TAG} ordered pass ${made++}`, kind: 'credit_bundle', credits: 5, validity_days: 60, price_sgd: '100.00', promotions: [promotion(v)] },
+          }),
+          valid: after,
+          says: /end after it starts/i,
+        },
+        {
+          label: 'PATCH /portal/admin/class-packages/:id promotions ends_at',
+          as: 'admin',
+          send: v => ({ method: 'PATCH', path: portal(`/admin/class-packages/${classPackageId}`), body: { name: `${TAG} pass`, promotions: [promotion(v)] } }),
+          valid: after,
+          says: /end after it starts/i,
+        },
+        {
+          label: 'POST /portal/admin/pt-packages promotions ends_at',
+          as: 'admin',
+          send: v => ({
+            method: 'POST',
+            path: portal('/admin/pt-packages'),
+            body: { name: `${TAG} ordered sessions ${made++}`, session_type: '1on1', num_sessions: 5, validity_days: 90, price_sgd: '400.00', promotions: [promotion(v)] },
+          }),
+          valid: after,
+          says: /end after it starts/i,
+        },
+        {
+          label: 'PATCH /portal/admin/pt-packages/:id promotions ends_at',
+          as: 'admin',
+          send: v => ({ method: 'PATCH', path: portal(`/admin/pt-packages/${ptPackageId}`), body: { name: `${TAG} sessions`, promotions: [promotion(v)] } }),
+          valid: after,
+          says: /end after it starts/i,
+        },
+      ],
+      backwards,
+    )
   })
 
   test('ATN-204 the Updates tab refuses a cursor whose time does not exist, 400, instead of a 500', async () => {
