@@ -15,11 +15,11 @@ workshops are referenced where they share policy but are not the subject here.
 | Attendee roster (G4) | ✅ done | `services/schedule/detail.ts` (`attendees`), exposed in `admin/schedule.ts` |
 | Booking-time expiry validation (G1) | ✅ done | `services/bookings/book.ts` |
 | Credit-movement ledger on refund (G8) | ✅ done | writes `manual_adjustments` rows in cancel paths |
-| Inbox notifications (§13) | ✖ not being built (#237) | class and booking cancels write no inbox rows; the admin Inbox routes and `services/inbox.ts` are gone, and so is the `inbox_items` table (#508) |
+| Inbox notifications (§13) | ✖ not being built (#237) | class and booking cancels no longer write `inbox_items`; the admin Inbox routes and `services/inbox.ts` are gone |
 | Waitlist seat-free hook / promotion (G7) | ✅ done | `services/waitlist/promote.ts`, called from `services/bookings/cancel.ts` (`spec-waitlist.md` §5) |
 | Admin bookings list/detail (G9 partial) | ✖ not being built | the Admin has no bookings list: a member's bookings are on Customer detail and a class's roster on its session page; `admin/bookings.ts` holds the cancel and no-show routes only |
 
-No DB migration was required — `cancellations`, `manual_adjustments`,
+No DB migration was required — `cancellations`, `manual_adjustments`, `inbox_items`,
 `classes.cancelled_*`, and the `refund_outcome`/`checkin_state` enum values already existed.
 
 Locked decisions (see §5): **D1** refund returns to the original package (safe given G1 —

@@ -288,6 +288,7 @@ describe('package rules on a class and a series', { skip: integrationTestsEnable
     const clients = sql`SELECT id FROM clients WHERE email LIKE ${ours}`
     const staff = sql`SELECT id FROM staff_users WHERE email LIKE ${ours}`
     const classes = sql`SELECT id FROM classes WHERE created_by_staff_id IN (${staff})`
+    await harness.db.execute(sql`DELETE FROM inbox_items WHERE payload->>'clientId' IN (SELECT id::text FROM (${clients}) c)`)
     await harness.db.execute(sql`DELETE FROM audit_log WHERE actor_staff_id IN (${staff})`)
     await harness.db.execute(sql`DELETE FROM feature_flags WHERE key = ${FLAG} AND updated_by_staff_id IN (${staff})`)
     await harness.db.execute(sql`DELETE FROM waitlist_entries WHERE client_id IN (${clients})`)

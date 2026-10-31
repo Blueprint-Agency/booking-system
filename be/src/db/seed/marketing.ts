@@ -4,9 +4,8 @@ import { TENANT_ONE_ID } from '../schema/tenancy'
 import type { SeededTenant } from './tenants'
 
 /**
- * Tenant #1's row predates tenancy and carries this fixed id, kept so a
- * database seeded before migration 0031 and one seeded after it hold the same
- * row. Every other tenant's is generated.
+ * Tenant #1's row predates tenancy and carries this fixed id — see the note in
+ * `./waiver.ts`.
  */
 const MARKETING_SINGLETON_ID = '00000000-0000-0000-0000-000000000004'
 

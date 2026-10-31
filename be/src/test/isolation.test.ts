@@ -323,6 +323,13 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
     await harness.db.execute(
       sql`DELETE FROM workshop_instructors WHERE workshop_id IN (${isolationWorkshops})`,
     )
+    // Before the workshops themselves — a cancellation files an inbox item that
+    // names the workshop it cancelled, and that is how it is found again.
+    await harness.db.execute(sql`
+      DELETE FROM inbox_items
+      WHERE payload ? 'isolation'
+         OR payload->>'workshopId' IN (SELECT id::text FROM (${isolationWorkshops}) w)
+    `)
     await harness.db.execute(sql`DELETE FROM workshops WHERE name LIKE '% Retreat' AND ${own}`)
     await harness.db.execute(sql`
       DELETE FROM leave_requests WHERE staff_user_id IN (
@@ -1466,8 +1473,8 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
 
   // ── content and the switchboard ─────────────────────────────────────
 
-  test('every tenant owns its own email templates and home page', async () => {
-    for (const table of [schema.emailTemplates, schema.marketingContent]) {
+  test('every tenant owns its own email templates, waiver and home page', async () => {
+    for (const table of [schema.emailTemplates, schema.waiver, schema.marketingContent]) {
       const rows = await harness.db.select().from(table as any)
       const tenants = new Set(rows.map((r: any) => r.tenantId))
       assert.ok(tenants.has(one.tenantId))

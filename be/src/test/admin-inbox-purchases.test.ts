@@ -43,6 +43,7 @@ describe('admin inbox and purchases over HTTP', { skip: integrationTestsEnabled 
   type Staff = { staffId: string; headers: Record<string, string> }
   type Member = { clientId: string; headers: Record<string, string> }
   type Reply = { status: number; body: any }
+  type InboxRow = { type: string; payload: any; tenantId: string }
 
   let one!: Studio
   let two!: Studio
@@ -169,6 +170,14 @@ describe('admin inbox and purchases over HTTP', { skip: integrationTestsEnabled 
     return { ...who, bookingId: body.booking_id as string }
   }
 
+  /** Inbox items, at any studio, whose payload names `key` = `value`. */
+  async function inboxNaming(key: string, value: string): Promise<InboxRow[]> {
+    return harness.db
+      .select({ type: schema.inboxItems.type, payload: schema.inboxItems.payload, tenantId: schema.inboxItems.tenantId })
+      .from(schema.inboxItems)
+      .where(sql`${schema.inboxItems.payload}->>${key} = ${value}`)
+  }
+
   // ── Part-paid Purchases ──────────────────────────────────────────────────
 
   /**
@@ -285,6 +294,8 @@ describe('admin inbox and purchases over HTTP', { skip: integrationTestsEnabled 
     const staffIds = sql`SELECT id FROM staff_users WHERE email LIKE ${ours}`
     const ourClasses = sql`SELECT id FROM classes WHERE created_by_staff_id IN (${staffIds})`
     const q = (query: ReturnType<typeof sql>) => harness.db.execute(query)
+    await q(sql`DELETE FROM inbox_items WHERE payload->>'clientId' IN (SELECT id::text FROM (${clients}) c)`)
+    await q(sql`DELETE FROM inbox_items WHERE payload->>'classId' IN (SELECT id::text FROM (${ourClasses}) c)`)
     await q(sql`DELETE FROM audit_log WHERE actor_staff_id IN (${staffIds})`)
     await q(sql`DELETE FROM cancellations WHERE client_id IN (${clients})`)
     await q(sql`DELETE FROM manual_adjustments WHERE client_id IN (${clients})`)

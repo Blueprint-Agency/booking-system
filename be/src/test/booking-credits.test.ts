@@ -410,6 +410,8 @@ describe('class booking and the credit ledger over HTTP', { skip: integrationTes
     const clients = sql`SELECT id FROM clients WHERE email LIKE ${ours}`
     const staff = sql`SELECT id FROM staff_users WHERE email LIKE ${ours}`
     const workshops = sql`SELECT id FROM workshops WHERE name = ${WORKSHOP_NAME}`
+    await harness.db.execute(sql`DELETE FROM inbox_items WHERE payload->>'clientId' IN (SELECT id::text FROM (${clients}) c)`)
+    await harness.db.execute(sql`DELETE FROM inbox_items WHERE payload->>'cancelledByStaffId' IN (SELECT id::text FROM (${staff}) s)`)
     await harness.db.execute(sql`DELETE FROM audit_log WHERE actor_staff_id IN (${staff})`)
     await harness.db.execute(sql`DELETE FROM cancellations WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM manual_adjustments WHERE client_id IN (${clients})`)

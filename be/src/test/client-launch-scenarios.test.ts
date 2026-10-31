@@ -243,6 +243,7 @@ describe('client launch scenarios over HTTP', { skip: integrationTestsEnabled ? 
       const clients = sql`SELECT id FROM clients WHERE email LIKE ${ours}`
       const staff = sql`SELECT id FROM staff_users WHERE email LIKE ${ours}`
       const requests = sql`SELECT id FROM pt_requests WHERE client_id IN (${clients})`
+      await harness.db.execute(sql`DELETE FROM inbox_items WHERE payload->>'clientId' IN (SELECT id::text FROM (${clients}) c)`)
       await harness.db.execute(sql`DELETE FROM audit_log WHERE actor_staff_id IN (${staff})`)
       await harness.db.execute(sql`DELETE FROM check_ins WHERE booking_id IN (SELECT id FROM bookings WHERE client_id IN (${clients}))`)
       await harness.db.execute(sql`DELETE FROM cancellations WHERE client_id IN (${clients})`)

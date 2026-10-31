@@ -273,6 +273,7 @@ describe('importing a ClassPass cancellation email', { skip: integrationTestsEna
     await harness.db.execute(sql`UPDATE classpass_settings SET enabled = false WHERE tenant_id IN (${one.id}, ${two.id})`)
     await harness.db.execute(sql`DELETE FROM email_log WHERE recipient_email LIKE ${ours}`)
     await harness.db.execute(sql`DELETE FROM audit_log WHERE actor_staff_id IN (${staff})`)
+    await harness.db.execute(sql`DELETE FROM inbox_items WHERE payload->>'clientId' IN (SELECT id::text FROM (${clients}) c)`)
     await harness.db.execute(sql`DELETE FROM waitlist_entries WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM cancellations WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM credit_movements WHERE client_id IN (${clients})`)

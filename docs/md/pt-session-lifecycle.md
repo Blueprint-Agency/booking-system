@@ -94,7 +94,7 @@ reasoning behind the design.
 
 - **P2 — Scheduled-session cancellation does not exist.** `cancel.ts:47` throws
   `cannot_cancel_non_pending`. The entire `scheduled → cancelled_after_scheduled` cascade
-  (cancel `pt_sessions`, forfeit/refund `bookings`, write `cancellations`, email)
+  (cancel `pt_sessions`, forfeit/refund `bookings`, write `cancellations` + `inbox_items`, email)
   is unbuilt. This is the surface the user's "client cancels before the window to get refunded /
   admin cancels to refund" requirement lives on.
 

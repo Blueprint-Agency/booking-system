@@ -277,6 +277,7 @@ describe('PT jobs on the app clock', { skip: integrationTestsEnabled ? false : S
       const requests = sql`SELECT id FROM pt_requests WHERE client_id IN (${clients})`
       const sessions = sql`SELECT id FROM pt_sessions WHERE pt_request_id IN (${requests})`
       const exec = (q: ReturnType<typeof sql>) => harness.db.execute(q)
+      await exec(sql`DELETE FROM inbox_items WHERE payload->>'clientId' IN (SELECT id::text FROM (${clients}) c)`)
       await exec(sql`DELETE FROM audit_log WHERE actor_staff_id IN (${staffIds})`)
       await exec(sql`DELETE FROM credit_movements WHERE client_id IN (${clients})`)
       await exec(sql`DELETE FROM manual_adjustments WHERE client_id IN (${clients})`)

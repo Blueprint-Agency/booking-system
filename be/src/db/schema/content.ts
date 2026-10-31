@@ -1,7 +1,7 @@
 import { pgTable, uuid, text, timestamp, jsonb, boolean, index, uniqueIndex } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import { tenantIdColumn } from './tenancy'
-import { staffUsers } from './identity'
+import { clients, staffUsers } from './identity'
 import { emailRecipientKindEnum, emailLogStatusEnum } from '../enums'
 
 /**
@@ -88,11 +88,54 @@ export const emailLog = pgTable(
 )
 
 /**
- * The public site's copy — hero, pricing blurb, testimonials, footer. One row
- * **per tenant**, not one row: it carried a `CHECK (id = '<fixed uuid>')`, the
- * right constraint for one studio and the wrong one for two, because a platform
- * singleton means a second tenant's home page advertises the first tenant's
- * studio. The check is gone and the id is generated.
+ * Unused: waivers are not being built. No route reads or writes `waiver`
+ * or `waiver_signatures`, and both tables wait for the drop that needs both
+ * backend devs.
+ *
+ * It is one row **per tenant**, not one row. It carried a
+ * `CHECK (id = '<fixed uuid>')`, the right constraint for one studio and the
+ * wrong one for two, so the check is gone, the id is generated, and the unique
+ * index on `tenant_id` is what holds the table to one row each.
+ */
+export const waiver = pgTable(
+  'waiver',
+  {
+    tenantId: tenantIdColumn(),
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    bodyHtml: text('body_html').notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedByStaffId: uuid('updated_by_staff_id').references(() => staffUsers.id, {
+      onDelete: 'restrict',
+    }),
+  },
+  table => ({
+    updatedByStaffIdFkIdx: index('waiver_updated_by_staff_id_fk_idx').on(table.updatedByStaffId),
+    oneRowPerTenant: uniqueIndex('waiver_tenant_uniq').on(table.tenantId),
+  }),
+)
+
+/** Unused, like `waiver` above: waivers are not being built, and the table waits for the same drop. */
+export const waiverSignatures = pgTable(
+  'waiver_signatures',
+  {
+    tenantId: tenantIdColumn(),
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    clientId: uuid('client_id')
+      .notNull()
+      .references(() => clients.id, { onDelete: 'restrict' }),
+    signedAt: timestamp('signed_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  table => ({
+    tenantIdFkIdx: index('waiver_signatures_tenant_id_fk_idx').on(table.tenantId),
+    clientUnique: uniqueIndex('waiver_signatures_client_unique').on(table.clientId),
+  }),
+)
+
+/**
+ * The public site's copy — hero, pricing blurb, testimonials, footer. Same
+ * story as `waiver` above: a platform singleton means a second tenant's home
+ * page advertises the first tenant's studio, so the check is gone and the row
+ * is one per tenant.
  */
 export const marketingContent = pgTable(
   'marketing_content',

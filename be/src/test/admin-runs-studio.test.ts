@@ -90,6 +90,8 @@ describe('admins run the studio', { skip: integrationTestsEnabled ? false : SKIP
       .from(schema.staffAuthUsers)
       .where(like(schema.staffAuthUsers.email, `%@${DOMAIN}`))
     const pattern = `${TAG}%`
+    await harness.db.execute(sql`
+      DELETE FROM inbox_items WHERE payload->>'workshopId' IN (SELECT id::text FROM workshops WHERE name LIKE ${pattern})`)
     await harness.db.execute(sql`DELETE FROM workshop_instructors WHERE workshop_id IN (SELECT id FROM workshops WHERE name LIKE ${pattern})`)
     await harness.db.execute(sql`DELETE FROM workshops WHERE name LIKE ${pattern}`)
     // Sessions before rooms: a corporate session may sit in this run's room,

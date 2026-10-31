@@ -293,6 +293,16 @@ export const emailLogStatusEnum = pgEnum('email_log_status', [
   'skipped',
 ])
 
+// Inbox — there is no `pt_request` value (§4l). PT triage is on `/admin/pt-requests`.
+export const inboxItemTypeEnum = pgEnum('inbox_item_type', [
+  'client_cancellation',
+  'admin_cancel_class_pt',
+  'admin_cancel_workshop',
+  'instructor_cancel_class',
+])
+// There is no `inbox_action` enum: inbox_items carries no
+// action_taken/action_at/action_by_staff_id columns (§4l).
+
 // ClassPass import. What a forwarded email turned out to be, and what
 // became of it. `gmail_confirmation` is Gmail's own email asking the studio to
 // confirm the forwarding address; `other` is anything that is neither.

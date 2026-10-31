@@ -195,7 +195,7 @@ This is the load-bearing decision, and it reuses machinery that already exists.
 - The cancellation reuses the existing class-cancellation service in full: the class lifecycle flips, every confirmed booking is cancelled, and credits are refunded to every booker exactly as an admin cancellation does. The behaviour clients experience is unchanged.
 - The service gains an actor-source parameter so it can record who really acted:
   - the cancellation source enum, currently client and admin, gains **instructor**;
-  - no Inbox item is written: the admin Inbox is not being built (#237), and its table and enum are gone (#508);
+  - no Inbox item is written: the admin Inbox is not being built (#237), so the inbox item type enum's **instructor class cancellation** value is never used;
   - the ledger refund reason is free text, so it simply takes a distinct instructor-cancellation string — no enum change needed there.
 - Every instructor cancellation emails all admins, and writes to the audit log. Visibility, not a time lock, is the control on this action.
 

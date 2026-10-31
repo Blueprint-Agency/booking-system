@@ -511,6 +511,7 @@ async function seedAll(db: PostgresJsDatabase<typeof schema>): Promise<void> {
   const { seedRooms } = await import('../db/seed/rooms')
   const { seedPolicy } = await import('../db/seed/policy')
   const { seedEmailTemplates } = await import('../db/seed/email-templates')
+  const { seedWaiver } = await import('../db/seed/waiver')
   const { seedMarketing } = await import('../db/seed/marketing')
   for (const tenant of seededTenants()) {
     await seedLocations(db, tenant)
@@ -521,6 +522,7 @@ async function seedAll(db: PostgresJsDatabase<typeof schema>): Promise<void> {
     // tenant #2, and a leave decision that cannot render is a test failure
     // about the wrong thing.
     await seedEmailTemplates(db, tenant)
+    await seedWaiver(db, tenant)
     await seedMarketing(db, tenant)
   }
 }

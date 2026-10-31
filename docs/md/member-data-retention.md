@@ -20,9 +20,10 @@ The tables and what deletion does to each are one list, `MEMBER_TABLES` in `be/s
 | The ClassPass emails about them — by member id, or by address for one the importer could not place — with their content; and every ClassPass Daily Roster whose text or HTML holds their full name, ignoring case (a roster names members by name only, so it goes whole, with the other members it lists) | `classpass_inbound_emails` |
 | Manual credit adjustments (credit movements with a staff member's free-text reason — no money, and the reason may name the member) | `manual_adjustments` |
 | Credit history (which of their bookings spent or returned which credits — no money) | `credit_movements` |
+| Waiver signatures | `waiver_signatures` |
 | Their PT requests and proposed slots, and their place on PT sessions | `pt_requests`, `pt_request_slots`, `pt_session_clients` |
 | Corporate enquiries | `corporate_requests` |
-| Mail sent to them — by member id, or by address for mail sent before one existed, such as a sign-in code | `email_log` |
+| Mail sent to them — by member id, or by address for mail sent before one existed, such as a sign-in code — and notifications about them | `email_log`, `inbox_items` |
 | Staff Updates that name them (the bell's Updates tab). These name a member and are stored with their id: a private session cancelled by the member or by an instructor, a private session an admin moved, handed over or cancelled, and a corporate session scheduled from their request. A row holds one id, so a 2-on-1 private session's Updates name neither member ("the 2-on-1 private session") and carry none. Updates about classes, workshops, leave and permissions name no member | `staff_updates`, by `subject_client_id` |
 | Their sign-ins and staff acts on their account, at this studio | `auth_events` |
 | Their sessions at this studio | `client_auth_sessions` with this studio's claim |
