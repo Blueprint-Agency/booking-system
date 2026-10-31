@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import { expect, test } from '@playwright/test'
-import { signInStaff, studio } from '../src/studio'
+import { signInStaff, studio, studioTimezone } from '../src/studio'
 
 /**
  * Journey: the bell tells an admin what is waiting, and the click lands on it.
@@ -45,16 +45,34 @@ test('ATN-16 a member requests a private session, the admin sees the bell and th
     '/public/pt-booking-config',
   )
   const { locations } = await read<{ locations: Array<{ id: string }> }>('/public/locations')
-  // A day past the minimum, so the studio's own date (it may be ahead of UTC) still clears it.
+  // The slot is half a day off the hour the studio was set up at: its classes,
+  // its workshop day and the holder's session all sit within a few hours after
+  // that hour, in the room the admin schedules into, so a fixed 09:00 lands on
+  // the workshop when the setup ran late in the UTC day. Twelve hours back from
+  // `aheadDays` on, it falls on the studio's day `aheadDays` or the one before,
+  // both inside the Book in advance window.
   const aheadDays = Math.min(Math.max(window.min_book_in_advance_days + 1, 7), window.book_in_advance_days)
-  const proposedDate = new Date(Date.now() + aheadDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  const slotAt = new Date(Date.now() + aheadDays * 24 * 60 * 60 * 1000 - 12 * 60 * 60 * 1000)
+  const onStudioClock = Object.fromEntries(
+    new Intl.DateTimeFormat('en-CA', {
+      timeZone: await studioTimezone(request),
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      hourCycle: 'h23',
+    })
+      .formatToParts(slotAt)
+      .map(part => [part.type, part.value]),
+  )
+  const proposedDate = `${onStudioClock.year}-${onStudioClock.month}-${onStudioClock.day}`
   const requested = await request.post(`${urls.api}/me/pt-sessions/request`, {
     headers: asMember,
     data: {
       locationId: locations[0]!.id,
       sessionType: '1on1',
       clientPackageId: pt!.id,
-      slots: [{ proposedDate, startTime: '09:00' }],
+      slots: [{ proposedDate, startTime: `${onStudioClock.hour}:00` }],
     },
   })
   expect(requested.status(), await requested.text()).toBe(201)
