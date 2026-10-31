@@ -525,8 +525,10 @@ export const workshopTierDays = pgTable(
 // ----------------------------------------------------------------------------
 // Circular-FK note: pt_requests.scheduled_pt_session_id → pt_sessions.id, while
 // pt_sessions.pt_request_id → pt_requests.id. Each side is nullable, which is
-// what lets a studio be written back (`transfer-order.ts` defers both columns)
-// and lets a member's request go while the instructor's session stays. The
+// what lets a studio be written back — `transfer-order.ts` breaks the cycle on
+// one of them, `pt_requests.scheduled_pt_session_id`, written NULL and filled
+// in afterwards, and cleared first by a delete — and lets a member's request go
+// while the instructor's session stays. The
 // pt_sessions side is declared on pt_sessions below; this one names its
 // column through `AnyPgColumn`, which is how drizzle declares a reference to a
 // table not yet defined.

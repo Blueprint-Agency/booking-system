@@ -213,6 +213,15 @@ async function cancelPtRequestInTx(
   // ---- scheduled → cancelled_after_scheduled (cascade) ------------------
   if (req.status !== 'scheduled') throw new ConflictError('cannot_cancel')
 
+  // A scheduled request whose session id was cleared (migration 0139 clears one
+  // that named no session; an older archive's restore does the same) has no
+  // session to cancel.
+  if (!req.scheduledPtSessionId) throw new NotFoundError('pt_session_not_found')
+
+  // A scheduled request whose session id was cleared (migration 0139 clears one
+  // that named no session; an older archive's restore does the same) has no
+  // session to cancel.
+
   const [session] = await tx
     .select({
       id: ptSessions.id,
@@ -224,7 +233,7 @@ async function cancelPtRequestInTx(
     .where(
       and(
         eq(ptSessions.tenantId, tenantId),
-        eq(ptSessions.id, req.scheduledPtSessionId ?? ''),
+        eq(ptSessions.id, req.scheduledPtSessionId),
       ),
     )
     .for('update')
