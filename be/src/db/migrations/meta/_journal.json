@@ -988,6 +988,13 @@
       "when": 1793432357390,
       "tag": "0140_pt_requests_scheduled_session_fk",
       "breakpoints": true
+    },
+    {
+      "idx": 141,
+      "version": "7",
+      "when": 1793434006111,
+      "tag": "0141_drop_unused_tables",
+      "breakpoints": true
     }
   ]
 }

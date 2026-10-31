@@ -373,7 +373,6 @@ describe('leave on the schedule', { skip: integrationTestsEnabled ? false : SKIP
     }
     const cleanup = (q: ReturnType<typeof sql>) => attempt(() => db.execute(q))
     if (classTypeIds.length) {
-      await cleanup(sql`DELETE FROM inbox_items WHERE payload->>'classId' IN (SELECT id::text FROM (${ourClasses}) c)`)
       await cleanup(sql`DELETE FROM email_log WHERE template_slug = 'instructor_cancel_class' AND body_rendered LIKE ${`%${TAG}%`}`)
     }
     await cleanup(sql`DELETE FROM email_log WHERE recipient_email LIKE ${`%@${DOMAIN}`}`)

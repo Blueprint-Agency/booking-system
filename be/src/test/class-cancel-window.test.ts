@@ -246,7 +246,6 @@ describe('class Cancellation Window', { skip: integrationTestsEnabled ? false : 
     const ourClasses = sql`SELECT id FROM classes WHERE class_type_id = ${classTypeId}`
     await harness.db.execute(sql`DELETE FROM feature_flags WHERE key = ${FLAG} AND updated_by_staff_id IN (${staff})`)
     await harness.db.execute(sql`DELETE FROM audit_log WHERE actor_staff_id IN (${staff})`)
-    await harness.db.execute(sql`DELETE FROM inbox_items WHERE payload->>'clientId' IN (SELECT id::text FROM clients WHERE email LIKE ${ours})`)
     await harness.db.execute(sql`DELETE FROM waitlist_entries WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM cancellations WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM manual_adjustments WHERE client_id IN (${clients})`)

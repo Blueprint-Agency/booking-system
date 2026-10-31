@@ -367,7 +367,6 @@ describe('member account over HTTP', { skip: integrationTestsEnabled ? false : S
     const sessions = sql`SELECT id FROM pt_sessions WHERE pt_request_id IN (${requests})`
     const corporate = sql`SELECT id FROM corporate_requests WHERE client_id IN (${clients})`
     const q = (query: ReturnType<typeof sql>) => harness.db.execute(query)
-    await q(sql`DELETE FROM inbox_items WHERE payload->>'clientId' IN (SELECT id::text FROM (${clients}) c)`)
     await q(sql`DELETE FROM audit_log WHERE actor_staff_id IN (${staffIds})`)
     await q(sql`DELETE FROM cancellations WHERE client_id IN (${clients})`)
     await q(sql`DELETE FROM manual_adjustments WHERE client_id IN (${clients})`)

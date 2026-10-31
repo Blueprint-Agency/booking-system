@@ -47,7 +47,7 @@ member who did the act. Updates older than 90 days are deleted. (Added with the 
 Updates. An aggregated line ("12 completed sessions have no instructor pay") counts once.
 
 **`inbox_items` is not reused.** Its read flag is shared, and its four types are the cancellation
-feed this decision does not revive. Dropping the table stays its own migration.
+feed this decision does not revive. The table has since been dropped (#508).
 
 **One service, one seam.** The copy is composed in the backend, in the studio's timezone, so the
 rules and the words live in one tested place. A new kind is one provider added to the registry

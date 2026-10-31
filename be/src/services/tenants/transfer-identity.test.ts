@@ -79,7 +79,7 @@ test('an empty map returns the row unchanged, and never the same object', () => 
 test('a self-reference is rewritten to the row s own new id', () => {
   // The three self-referencing tables `transfer-order.ts` defers: the row points
   // at itself, so both ends have to land on the same new id.
-  const map = buildIdentityMap(['inbox_items'], { inbox_items: [{ id: A, parent_id: A }] }, counter())
+  const map = buildIdentityMap(['class_types'], { class_types: [{ id: A, parent_id: A }] }, counter())
   assert.deepEqual(remapRow({ id: A, parent_id: A }, map), {
     id: nth(1),
     parent_id: nth(1),

@@ -509,7 +509,6 @@ describe('impossible dates and times are refused', { skip: integrationTestsEnabl
     const ourClasses = sql`SELECT id FROM classes WHERE room_id = ${roomId}`
     const workshops = sql`SELECT id FROM workshops WHERE name LIKE ${`${TAG}%`}`
     const bookings = sql`SELECT id FROM bookings WHERE client_id IN (${clients})`
-    await exec(sql`DELETE FROM inbox_items WHERE true AND tenant_id = ${one.id} AND payload::text LIKE ${`%${TAG}%`}`).catch(() => {})
     await exec(sql`DELETE FROM audit_log WHERE actor_staff_id IN (${staffIds})`)
     await exec(sql`DELETE FROM cancellations WHERE client_id IN (${clients})`)
     await exec(sql`DELETE FROM manual_adjustments WHERE client_id IN (${clients})`)

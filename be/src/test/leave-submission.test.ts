@@ -301,7 +301,6 @@ describe('instructor leave submission over HTTP', { skip: integrationTestsEnable
       await harness.db.execute(
         sql`DELETE FROM leave_conflicts WHERE instructor_a_id IN (${staffIds}) OR instructor_b_id IN (${staffIds})`,
       )
-      await harness.db.execute(sql`DELETE FROM inbox_items WHERE payload->>'classId' IN (SELECT id::text FROM (${classIds}) c)`)
       await harness.db.execute(sql`DELETE FROM audit_log WHERE actor_staff_id IN (${staffIds})`)
       await harness.db.execute(sql`DELETE FROM check_ins WHERE booking_id IN (SELECT id FROM bookings WHERE client_id IN (${clients}))`)
       await harness.db.execute(sql`DELETE FROM cancellations WHERE client_id IN (${clients})`)
