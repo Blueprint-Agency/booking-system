@@ -206,6 +206,23 @@ export interface MemberMatch {
   email: string;
 }
 
+/**
+ * The one line a member search draws under its box when it has no rows: that it
+ * is searching, that the search failed, or that no members match. A failed
+ * search is never "No members match." — the member may well exist.
+ */
+export function memberSearchNotice(s: {
+  searchable: boolean;
+  searching: boolean;
+  failed: boolean;
+  shown: number;
+}): "searching" | "failed" | "none" | null {
+  if (!s.searchable) return null;
+  if (s.failed && !s.searching) return "failed";
+  if (s.shown > 0) return null;
+  return s.searching ? "searching" : "none";
+}
+
 /** Members matching `q`, for Add member. Each role searches through its own surface. */
 export async function searchMembers(api: Api, role: StaffRole, q: string): Promise<MemberMatch[]> {
   if (role === "admin") {

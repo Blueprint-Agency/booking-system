@@ -1,8 +1,9 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Loader2 } from "lucide-react";
-import { Button, Dialog, Pagination, usePaged } from "@/components/ui";
-import { useWorkspace } from "@/lib/workspace-context";
+import { Button, Dialog, LoadFailure, Pagination, usePaged } from "@/components/ui";
+import { rowsOf } from "@/lib/failed-read";
+import { useRead } from "@/lib/use-read";
 import { ScheduleFromCorporateRequestDialog } from "@/components/corporate-requests/schedule-from-corporate-request-dialog";
 import type { CorporateRequest, CorporateRequestStatus } from "@/types";
 import type { Slot } from "@/lib/schedule";
@@ -43,32 +44,22 @@ export function CorporateRequestPickerDialog({
   onClose: () => void;
   onScheduled: () => void;
 }) {
-  const { api } = useWorkspace();
-  const [pending, setPending] = useState<CorporateRequest[]>([]);
-  const [loading, setLoading] = useState(true);
   const [picked, setPicked] = useState<CorporateRequest | null>(null);
 
-  useEffect(() => {
-    if (!api) return;
-    let cancelled = false;
-    void (async () => {
-      try {
-        const res = await api.get<{
-          corporate_requests: ApiCorporateRequest[];
-        }>("/portal/admin/corporate-requests", { status: "pending" });
-        if (cancelled) return;
-        setPending(res.corporate_requests.map(fromApi));
-      } catch {
-        if (cancelled) return;
-        setPending([]);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [api]);
+  // A failed read is "Couldn't load", never "No pending corporate requests".
+  const { read, retry } = useRead(
+    "pending",
+    async (api) => {
+      const res = await api.get<{
+        corporate_requests: ApiCorporateRequest[];
+      }>("/portal/admin/corporate-requests", { status: "pending" });
+      return res.corporate_requests.map(fromApi);
+    },
+    { scope: "corporate-request-picker" },
+  );
+  const pending = rowsOf(read);
+  const loading = read.status === "loading";
+  const failed = read.status === "failed";
 
   const { visible, pagination } = usePaged(pending);
 
@@ -92,6 +83,15 @@ export function CorporateRequestPickerDialog({
       {loading ? (
         <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted">
           <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+        </div>
+      ) : failed ? (
+        <div className="space-y-3">
+          <LoadFailure what="the pending corporate requests" onRetry={retry} className="py-4" />
+          <div className="flex justify-end">
+            <Button variant="ghost" onClick={onClose}>
+              Close
+            </Button>
+          </div>
         </div>
       ) : pending.length === 0 ? (
         <div className="space-y-3">

@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import { usePathname } from "next/navigation";
+import { answeredElsewhere } from "@/lib/failed-read";
 import { getPortalToken } from "@/lib/portal-auth";
 import { reportError } from "@/lib/report-error";
 import { useWorkspace } from "@/lib/workspace-context";
@@ -30,6 +31,11 @@ interface AttentionValue {
   total: number;
   /** The sidebar badge counts, scoped to the active workspace. */
   byGroup: AttentionSummary["by_group"];
+  /**
+   * The counts could not be read and there is no earlier answer to keep up. The
+   * number is then unknown, not 0: the bell says so and no count is drawn.
+   */
+  unchecked: boolean;
   /** Re-read the counts now (after the panel is used, or an item is resolved). */
   refresh: () => void;
   panelOpen: boolean;
@@ -40,6 +46,7 @@ const EMPTY: AttentionValue = {
   summary: null,
   total: 0,
   byGroup: {},
+  unchecked: false,
   refresh: () => {},
   panelOpen: false,
   setPanelOpen: () => {},
@@ -61,6 +68,8 @@ export function AttentionProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [summary, setSummary] = useState<AttentionSummary | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
+  // The last read failed. Only matters while there is no summary to keep up.
+  const [failed, setFailed] = useState(false);
   const decided = useRef(false);
   // The latest request wins: a slow answer for the workspace just left must not overwrite this one.
   const latest = useRef(0);
@@ -77,6 +86,7 @@ export function AttentionProvider({ children }: { children: ReactNode }) {
       );
       if (mine !== latest.current) return;
       setSummary(res);
+      setFailed(false);
       if (!decided.current) {
         decided.current = true;
         const token = await getPortalToken();
@@ -90,8 +100,10 @@ export function AttentionProvider({ children }: { children: ReactNode }) {
         if (decision.open) setPanelOpen(true);
       }
     } catch (err) {
-      // A missed poll leaves the last number up; the next one tries again.
+      // A missed poll leaves the last number up; the next one tries again. With
+      // no number yet, the bell says it could not check rather than showing none.
       reportError(err, { scope: "attention-summary" });
+      if (mine === latest.current && !answeredElsewhere(err)) setFailed(true);
     }
   }, [api, currentStaff, activeLocationId]);
 
@@ -121,11 +133,12 @@ export function AttentionProvider({ children }: { children: ReactNode }) {
       summary,
       total: summary?.total ?? 0,
       byGroup: summary?.by_group ?? {},
+      unchecked: summary === null && failed,
       refresh: () => void read(),
       panelOpen,
       setPanelOpen,
     }),
-    [summary, read, panelOpen],
+    [summary, failed, read, panelOpen],
   );
 
   return <AttentionContext.Provider value={value}>{children}</AttentionContext.Provider>;
