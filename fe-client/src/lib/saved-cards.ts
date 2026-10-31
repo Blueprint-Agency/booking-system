@@ -16,20 +16,25 @@ export interface SavedCard {
   exp_year: number;
 }
 
+/** The networks the provider names, as a member says them. `unknown` is the provider's word for a card it cannot place. */
+const CARD_BRANDS: Record<string, string> = {
+  visa: "Visa",
+  mastercard: "Mastercard",
+  amex: "American Express",
+  unionpay: "UnionPay",
+  jcb: "JCB",
+  discover: "Discover",
+  diners: "Diners Club",
+  eftpos_au: "EFTPOS",
+  unknown: "Card",
+};
+
 /** `visa` as the provider writes it, `Visa` as a member reads it. */
 export function cardBrandLabel(brand: string): string {
-  const known: Record<string, string> = {
-    visa: "Visa",
-    mastercard: "Mastercard",
-    amex: "American Express",
-    unionpay: "UnionPay",
-    jcb: "JCB",
-    discover: "Discover",
-    diners: "Diners Club",
-  };
-  // A network nobody wrote down is still named, so a member never faces a card
-  // with no name on it.
-  return known[brand] ?? brand.charAt(0).toUpperCase() + brand.slice(1);
+  // A network nobody wrote down is still named, in words rather than the
+  // provider's snake_case, so a member never faces a card with no name on it.
+  const spoken = brand.replaceAll("_", " ").trim();
+  return CARD_BRANDS[brand] ?? (spoken === "" ? "Card" : spoken.charAt(0).toUpperCase() + spoken.slice(1));
 }
 
 /**
@@ -67,7 +72,29 @@ export function cardsAfterRemoval(read: CardsRead, cardId: string): CardsRead {
   return { status: "loaded", cards: read.cards.filter((card) => card.id !== cardId) };
 }
 
-/** Said when a remove failed: the card stays, and the member is told it does. */
-export function removeCardMessage(card: Pick<SavedCard, "brand" | "last4">): string {
-  return `Couldn't remove ${cardBrandLabel(card.brand)} ending ${card.last4}. It's still saved. Please try again.`;
+/**
+ * Whether a card is still on the list a fresh read returned: `null` when that
+ * read failed too, so the member is not told something nobody checked.
+ */
+export function cardStillSaved(cards: SavedCard[] | null, cardId: string): boolean | null {
+  return cards === null ? null : cards.some((card) => card.id === cardId);
+}
+
+/**
+ * Said when a remove failed. "It's still saved" is said only once a fresh read
+ * has shown the card there (`stillSaved: true`); without that read the request
+ * may have gone through, so the card "may still be saved". `reason` is the
+ * server's own sentence, shown in place of the generic one.
+ */
+export function removeCardMessage(
+  card: Pick<SavedCard, "brand" | "last4">,
+  failure: { stillSaved: boolean | null; reason?: string },
+): string {
+  const state = failure.stillSaved === true ? "It's still saved." : "It may still be saved.";
+  return `Couldn't remove ${cardBrandLabel(card.brand)} ending ${card.last4}. ${state} ${failure.reason ?? "Please try again."}`;
+}
+
+/** Said, politely, once a card has been removed. */
+export function removedCardAnnouncement(card: Pick<SavedCard, "brand" | "last4">): string {
+  return `${cardBrandLabel(card.brand)} ending ${card.last4} removed.`;
 }

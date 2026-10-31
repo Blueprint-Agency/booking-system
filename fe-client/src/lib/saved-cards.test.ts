@@ -7,6 +7,7 @@ import {
   cardsAfterRemoval,
   cardsView,
   removeCardMessage,
+  removedCardAnnouncement,
   type CardsRead,
   type SavedCard,
 } from "./saved-cards.ts";
@@ -65,6 +66,11 @@ test("PAY-78 a failed remove shows the server's own sentence in place of Please 
   const text = removeCardMessage(visa, { stillSaved: true, reason: "This studio isn't taking card payments." });
   assert.match(text, /This studio isn't taking card payments\./);
   assert.doesNotMatch(text, /Please try again/);
+});
+
+test("PAY-78 a removed card is announced by its brand and last four", () => {
+  assert.equal(removedCardAnnouncement(visa), "Visa ending 4242 removed.");
+  assert.equal(removedCardAnnouncement({ brand: "unknown", last4: "0001" }), "Card ending 0001 removed.");
 });
 
 test("PAY-78 after a failed remove, a fresh read says whether the card is still listed, and nothing when the read failed too", () => {
