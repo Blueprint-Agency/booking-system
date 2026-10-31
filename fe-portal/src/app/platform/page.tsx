@@ -19,7 +19,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
-import { Button, EmptyState, PageHeader, StatusBadge } from "@/components/ui";
+import { Button, EmptyState, LoadFailure, PageHeader, StatusBadge } from "@/components/ui";
 import { CreateTenantDialog } from "@/components/platform/create-tenant-dialog";
 import { DeleteTenantDialog } from "@/components/platform/delete-tenant-dialog";
 import { ExportTenantDialog } from "@/components/platform/export-tenant-dialog";
@@ -31,6 +31,7 @@ import { TenantTermDialog } from "@/components/platform/tenant-term-dialog";
 import { BusinessDetailsDialog } from "@/components/platform/business-details-dialog";
 import { ImportProgress } from "@/components/platform/import-progress";
 import { ApiError, makeApi } from "@/lib/api";
+import { answeredElsewhere } from "@/lib/failed-read";
 import {
   TENANT_REFUSALS,
   dismissImport,
@@ -82,6 +83,11 @@ export default function PlatformPage() {
   /** Set when the backend says this account may not be here — a 404, because the
    *  super portal does not confirm its own existence to people who cannot use it. */
   const [refused, setRefused] = useState(false);
+  /** The studio list could not be read: say so, never "No studios yet". */
+  const [listFailed, setListFailed] = useState(false);
+  /** The open-imports read failed, so a running import may not be on screen. */
+  const [importsUnchecked, setImportsUnchecked] = useState(false);
+  const [importsAttempt, setImportsAttempt] = useState(0);
   const [creating, setCreating] = useState(false);
   /** The studio the invite dialog is open for, or null. */
   const [inviting, setInviting] = useState<PlatformTenant | null>(null);
@@ -112,14 +118,19 @@ export default function PlatformPage() {
       const { tenants: rows } = await listTenants(api);
       setTenants(rows);
       setRefused(false);
+      setListFailed(false);
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) {
         setRefused(true);
         setTenants([]);
         return;
       }
+      // A `401` is the session ending, answered by the sign-in. Anything else
+      // keeps the rows already read, or, with none, says the list could not be
+      // loaded.
+      if (answeredElsewhere(err)) return;
+      setListFailed(true);
       toast.error("Could not load the studio list.");
-      setTenants([]);
     }
   }, [api]);
 
@@ -297,14 +308,17 @@ export default function PlatformPage() {
       .then(({ imports: jobs }) => {
         if (cancelled) return;
         setImports(Object.fromEntries(jobs.map(job => [job.tenant_id, job])));
+        setImportsUnchecked(false);
       })
-      .catch(() => {
-        /* the list still works without it; the next action will say */
+      .catch(err => {
+        // The list still works without it, but a studio mid-import would show
+        // no bar, so the page says it could not check.
+        if (!cancelled && !answeredElsewhere(err)) setImportsUnchecked(true);
       });
     return () => {
       cancelled = true;
     };
-  }, [api, isLoaded, isSignedIn, refused]);
+  }, [api, isLoaded, isSignedIn, refused, importsAttempt]);
 
   // While anything is running, follow it. Only the running studios are asked,
   // so an idle page makes no requests at all.
@@ -351,6 +365,15 @@ export default function PlatformPage() {
     return () => window.removeEventListener("beforeunload", warn);
   }, [uploadingNow]);
 
+  if (isLoaded && tenants === null && listFailed) {
+    return (
+      <>
+        <PageHeader title="Studios" description="Every tenant on the platform." />
+        <LoadFailure what="the studio list" onRetry={() => load()} />
+      </>
+    );
+  }
+
   if (!isLoaded || tenants === null) {
     return (
       <div className="flex items-center gap-2 py-16 text-sm text-muted">
@@ -381,6 +404,19 @@ export default function PlatformPage() {
           </Button>
         }
       />
+
+      {importsUnchecked && (
+        <p role="status" className="mb-3 rounded-lg border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-ink">
+          Couldn&apos;t check for running imports, so one may be under way without showing here.{" "}
+          <button
+            type="button"
+            onClick={() => setImportsAttempt(n => n + 1)}
+            className="font-semibold underline underline-offset-2"
+          >
+            Try again
+          </button>
+        </p>
+      )}
 
       {tenants.length === 0 ? (
         <EmptyState

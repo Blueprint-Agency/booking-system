@@ -12,10 +12,12 @@ import Link from "next/link";
 import { Check, ChevronRight, Loader2, Plus, Search, X } from "lucide-react";
 import { Avatar, Badge, Button, Input } from "@/components/ui";
 import { CancelBookingDialog, type StaffCancelTarget } from "@/components/bookings/cancel-booking-dialog";
+import { answeredElsewhere } from "@/lib/failed-read";
 import { useWorkspace } from "@/lib/workspace-context";
 import {
   addedMemberLine,
   memberPackagesForClass,
+  memberSearchNotice,
   packagePick,
   searchMembers,
   seatTag,
@@ -376,6 +378,9 @@ function AddMember({
   const [q, setQ] = useState("");
   const [matches, setMatches] = useState<MemberMatch[]>([]);
   const [searching, setSearching] = useState(false);
+  const [searchFailed, setSearchFailed] = useState(false);
+  // Bumped by Try again, to search the same term once more.
+  const [searchAttempt, setSearchAttempt] = useState(0);
   const [busyId, setBusyId] = useState<string | null>(null);
   /**
    * The member a refusal is about, what it said, and the package staff picked —
@@ -397,11 +402,15 @@ function AddMember({
     let live = true;
     const t = setTimeout(async () => {
       setSearching(true);
+      setSearchFailed(false);
       try {
         const rows = await searchMembers(api, role, term);
         if (live) setMatches(rows);
-      } catch {
-        if (live) setMatches([]);
+      } catch (e) {
+        if (live) {
+          setMatches([]);
+          setSearchFailed(!answeredElsewhere(e));
+        }
       } finally {
         if (live) setSearching(false);
       }
@@ -410,11 +419,12 @@ function AddMember({
       live = false;
       clearTimeout(t);
     };
-  }, [api, open, q, role]);
+  }, [api, open, q, role, searchAttempt]);
 
   function close() {
     setOpen(false);
     setQ("");
+    setSearchFailed(false);
     setMatches([]);
     setRefusal(null);
     setChoosing(null);
@@ -483,6 +493,7 @@ function AddMember({
   // A term too short to search shows nothing, whatever the last search found.
   const searchable = q.trim().length >= 2;
   const shown = searchable ? matches : [];
+  const notice = memberSearchNotice({ searchable, searching, failed: searchFailed, shown: shown.length });
 
   if (!open) {
     return (
@@ -576,11 +587,19 @@ function AddMember({
       )}
 
       <ul className="mt-2 divide-y divide-border">
-        {searching && shown.length === 0 && (
-          <li className="py-2 text-xs text-muted">Searching…</li>
-        )}
-        {!searching && searchable && shown.length === 0 && (
-          <li className="py-2 text-xs text-muted">No members match.</li>
+        {notice === "searching" && <li className="py-2 text-xs text-muted">Searching…</li>}
+        {notice === "none" && <li className="py-2 text-xs text-muted">No members match.</li>}
+        {notice === "failed" && (
+          <li className="py-2 text-xs text-ink" role="alert">
+            Couldn&apos;t search members.{" "}
+            <button
+              type="button"
+              onClick={() => setSearchAttempt((n) => n + 1)}
+              className="font-semibold underline underline-offset-2"
+            >
+              Try again
+            </button>
+          </li>
         )}
         {shown.map((m) => (
           <li key={m.id} className="py-2 text-sm">

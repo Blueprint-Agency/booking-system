@@ -98,15 +98,26 @@ export function appendOlder(
   return [...shown, ...older.filter((u) => !have.has(u.id))];
 }
 
-/** The red bubble's text: nothing at 0, the number to 99, then "99+". */
-export function bubbleText(total: number): string | null {
+/**
+ * The red bubble's text: nothing at 0, the number to 99, then "99+". When the
+ * summary could not be read (`unchecked`) it is "!", never nothing: no bubble
+ * would say that nothing needs attention.
+ */
+export function bubbleText(total: number, unchecked = false): string | null {
+  if (unchecked) return "!";
   if (!(total > 0)) return null;
   return total > 99 ? "99+" : String(total);
 }
 
 /** What a screen reader hears for the bell: the real count, not the capped one. */
-export function bellLabel(total: number): string {
+export function bellLabel(total: number, unchecked = false): string {
+  if (unchecked) return "Notifications, couldn't check what needs attention";
   return total > 0 ? `Notifications, ${total} need attention` : "Notifications";
+}
+
+/** The Needs action tab: a count only once the summary has been read. */
+export function needsActionTabLabel(count: number | null): string {
+  return count === null ? "Needs action" : `Needs action (${count})`;
 }
 
 // ── Auto-open: once per sign-in ─────────────────────────────────────────────
