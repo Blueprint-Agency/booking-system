@@ -4109,12 +4109,13 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
   async function atSydneyPastMidnight(
     window: { min_book_in_advance_days: number; book_in_advance_days: number },
     body: () => Promise<void>,
+    at = new Date('2031-08-11T14:30:00Z'),
   ) {
     const [before] = await harness.db
       .select()
       .from(schema.ptBookingConfig)
       .where(eq(schema.ptBookingConfig.tenantId, two.id))
-    harness.clock.set(new Date('2031-08-11T14:30:00Z'))
+    harness.clock.set(at)
     try {
       await expectStatus(
         await harness.app.request('/api/v1/portal/admin/policy/pt', {
@@ -4165,6 +4166,60 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
         assert.equal((await requestRow(id)).expiresAt?.toISOString(), '2031-08-18T14:30:00.000Z')
       }
     })
+  })
+
+  test('TEN-67 a request waits as many calendar days as the window reaches ahead, so across a daylight-saving change it waits 167 or 169 hours, not 168', async () => {
+    const lapse = async (at: Date, name: string, slot: string) => {
+      let hours = 0
+      await atSydneyPastMidnight(
+        { min_book_in_advance_days: 1, book_in_advance_days: 7 },
+        async () => {
+          const who = await member(two, name)
+          const solo = await givePt(two, who, '1on1')
+          const id = await requestOk(two, who, {
+            sessionType: '1on1',
+            clientPackageId: solo,
+            slots: [{ proposedDate: slot, startTime: '09:00', endTime: '10:00' }],
+          })
+          hours = ((await requestRow(id)).expiresAt!.getTime() - at.getTime()) / HOUR
+        },
+        at,
+      )
+      return hours
+    }
+    // 10:00 on Thursday 3 October 2030 in Sydney (UTC+10); daylight saving starts on the 6th (UTC+11).
+    assert.equal(await lapse(new Date('2030-10-03T00:00:00Z'), 'Spring Sydney', '2030-10-05'), 167)
+    // 11:00 on Wednesday 2 April 2031 (UTC+11); daylight saving ends on the 6th (UTC+10).
+    assert.equal(await lapse(new Date('2031-04-02T00:00:00Z'), 'Autumn Sydney', '2031-04-05'), 169)
+  })
+
+  test('TEN-68 a staff member scheduling a private session after the package ends is refused in the studio\'s time: a Sydney admin reads 9:00 am on the day, not Singapore\'s hour', async () => {
+    const coach = await staff(two, 'coach-two', 'instructor')
+    const mia = await member(two, 'Mia Staff Sydney')
+    const packageId = await givePt(two, mia, '1on1')
+    // Ends at 09:00 on 20 August 2031 in Sydney, which is 23:00 UTC on the 19th.
+    await setExpiry(packageId, new Date('2031-08-20T09:00:00+10:00'))
+    const startsAt = new Date('2031-08-20T09:30:00+10:00')
+    const place = two.places[0]!
+    const refused = await expectStatus(
+      await harness.app.request('/api/v1/portal/admin/pt-sessions/manual', {
+        method: 'POST',
+        headers: { ...adminAtTwo.headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          location_id: place.locationId,
+          room_id: place.roomId,
+          starts_at: startsAt.toISOString(),
+          ends_at: new Date(startsAt.getTime() + HOUR).toISOString(),
+          session_type: '1on1',
+          instructor_pay_sgd: 60,
+          instructor_id: coach.staffId,
+          members: [{ client_id: mia.clientId, client_package_id: packageId }],
+        }),
+      }),
+      409,
+    )
+    assert.equal(refused.error, 'package_expires_before_session')
+    assert.match(refused.message, /ends at 9:00 am on \w{3},? 20 Aug 2031\./)
   })
 
   test('TEN-68 a proposed slot is a wall-clock time at the studio and the package expiry is judged on that clock: at Sydney a slot at 08:30 on the expiry day is covered, one at 09:30 is refused naming 9:00 am', async () => {

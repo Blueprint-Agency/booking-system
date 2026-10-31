@@ -79,7 +79,14 @@ describe('Staff attention: leave requests', { skip: integrationTestsEnabled ? fa
   const requestLeave = async (
     studio: Studio,
     who: Staff,
-    over: { type?: 'annual' | 'medical' | 'study'; start?: string; end?: string; days?: string; halfDay?: 'none' | 'morning' | 'afternoon' } = {},
+    over: {
+      type?: 'annual' | 'medical' | 'study'
+      start?: string
+      end?: string
+      days?: string
+      halfDay?: 'none' | 'morning' | 'afternoon'
+      createdAt?: Date
+    } = {},
   ) => {
     const start = over.start ?? dayOffset(10)
     const [row] = await harness.db
@@ -95,6 +102,7 @@ describe('Staff attention: leave requests', { skip: integrationTestsEnabled ? fa
         leaveYear: Number(start.slice(0, 4)),
         status: 'pending',
         reason: 'attention test',
+        ...(over.createdAt ? { createdAt: over.createdAt } : {}),
       })
       .returning({ id: schema.leaveRequests.id })
     return row!.id
@@ -200,6 +208,14 @@ describe('Staff attention: leave requests', { skip: integrationTestsEnabled ? fa
         const item = (await leaveItems(bruno)).find(i => i.id === `leave_request_pending:${id}`)!
         assert.equal(item.detail, expected, timezone)
         assert.match(item.title, /annual leave, 16 Oct$/, 'the date is the plain date the request names')
+
+        // Two requests filed at the same moment are ordered by the start of their first day: the
+        // later-starting one is inserted first, so only the deadline can put the earlier one ahead.
+        const filedAt = new Date('2026-10-01T00:00:00Z')
+        const later = await requestLeave(studio, anna, { start: '2026-11-20', createdAt: filedAt })
+        const sooner = await requestLeave(studio, anna, { start: '2026-11-19', createdAt: filedAt })
+        const order = (await leaveItems(bruno)).map(i => i.id).filter(i => i.endsWith(later) || i.endsWith(sooner))
+        assert.deepEqual(order, [`leave_request_pending:${sooner}`, `leave_request_pending:${later}`], timezone)
       }
     } finally {
       harness.clock.reset()

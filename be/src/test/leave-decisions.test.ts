@@ -465,6 +465,61 @@ describe('leave decisions over HTTP', { skip: integrationTestsEnabled ? false : 
     assert.ok(!html(dee.email).includes(stated('Asia/Singapore', sydneyAt)), 'and not the time it was in Singapore')
   })
 
+  test('TEN-78 a decision is stamped and worded at the app\'s instant: held at 00:30 in Sydney, the approval is stamped then and the revoke email says so', async () => {
+    const at = new Date('2031-08-11T14:30:00Z')
+    harness.clock.set(at)
+    try {
+      const req = await file(dee, 'annual', { start: '2031-09-15' })
+      assert.equal((await approve(adminTwo, req.id)).status, 200)
+      assert.equal((await row(req.id)).decidedAt?.getTime(), at.getTime(), 'stamped at the app clock')
+      assert.equal((await revoke(adminTwo, req.id)).status, 200)
+      const stated = new Intl.DateTimeFormat('en-GB', { dateStyle: 'long', timeStyle: 'short', timeZone: 'Australia/Sydney' }).format(at)
+      assert.ok(mailTo(dee.email, 'leave_revoked').at(-1)!.html.includes(stated), `says ${stated}`)
+    } finally {
+      harness.clock.reset()
+    }
+  })
+
+  test('TEN-64 "has it started" is a question about the studio\'s day: at 00:30 in Sydney leave starting that day can no longer be cancelled by the instructor or revoked by an admin, where Singapore is still the day before', async () => {
+    // 00:30 on 12 August 2031 in Sydney (UTC+10); 22:30 on the 11th in Singapore.
+    harness.clock.set(new Date('2031-08-11T14:30:00Z'))
+    try {
+      const approvedOn = async (who: Staff, tenantId: string) => {
+        const [made] = await harness.db
+          .insert(schema.leaveRequests)
+          .values({
+            tenantId,
+            staffUserId: who.staffId,
+            type: 'annual',
+            startDate: '2031-08-12',
+            endDate: '2031-08-12',
+            halfDay: 'none',
+            days: '1.0',
+            leaveYear: 2031,
+            status: 'approved',
+            reason: `today test ${run}`,
+          })
+          .returning({ id: schema.leaveRequests.id })
+        return made!.id
+      }
+      const { one, two } = harness.tenants
+
+      const sydneyCancel = await approvedOn(dee, two.id)
+      refused(await cancel(dee, sydneyCancel), 409, 'leave_already_started', 'Sydney: cancel')
+      const sydneyRevoke = await approvedOn(dee, two.id)
+      refused(await revoke(adminTwo, sydneyRevoke), 409, 'leave_already_started', 'Sydney: revoke')
+      assert.equal((await row(sydneyRevoke)).status, 'approved')
+
+      // The control: the same date has not started in Singapore.
+      const singaporeCancel = await approvedOn(cal, one.id)
+      assert.equal((await cancel(cal, singaporeCancel)).status, 200)
+      const singaporeRevoke = await approvedOn(cal, one.id)
+      assert.equal((await revoke(adminOne, singaporeRevoke)).status, 200)
+    } finally {
+      harness.clock.reset()
+    }
+  })
+
   test('LEV-84 a second admin revoking leave keeps the original approver, approval time and decision reason on the row', async () => {
     const req = await file(ada, 'annual')
     assert.equal((await approve(adminOne, req.id)).status, 200)

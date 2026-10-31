@@ -31,6 +31,11 @@ test('TEN-54 a studio\'s calendar day is read on its own zone, not Singapore\'s,
   // the last minute of a Sydney day is still that day
   assert.strictEqual(localDate(SYDNEY, new Date('2026-08-12T13:59:59.000Z')), '2026-08-12')
   assert.strictEqual(localDate(SYDNEY, new Date('2026-08-12T14:00:00.000Z')), '2026-08-13')
+  // the last instant `Date` can hold before year 10000 in UTC is already year 10000 in Singapore:
+  // the year is padded, never written with a sign and six digits
+  assert.strictEqual(localDate(SINGAPORE, new Date('9999-12-31T23:59:59.999Z')), '10000-01-01')
+  assert.strictEqual(localDate('UTC', new Date('9999-12-31T23:59:59.999Z')), '9999-12-31')
+  assert.strictEqual(localDate('UTC', new Date('0001-01-01T00:00:00.000Z')), '0001-01-01')
 })
 
 test('TEN-55 a wall-clock time on a date is the studio\'s own, through the zone\'s rules on that date', () => {

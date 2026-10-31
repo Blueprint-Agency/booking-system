@@ -65,9 +65,14 @@ describe('Staff attention: waitlist and series', { skip: integrationTestsEnabled
     'X-Forwarded-For': harnessAddress(),
   })
 
-  const freshStudio = async (): Promise<Studio> => {
+  const freshStudio = async (timezone?: string): Promise<Studio> => {
     const slug = `wls-${run}-${++studios}`
-    const { tenant } = await provision.provisionTenant({ slug, name: 'Waitlist Studio', adminEmail: `owner@${slug}.test` })
+    const { tenant } = await provision.provisionTenant({
+      slug,
+      name: 'Waitlist Studio',
+      adminEmail: `owner@${slug}.test`,
+      ...(timezone ? { timezone } : {}),
+    })
     await connectPayments(tenant.id)
     const [location] = await harness.db
       .insert(schema.locations)
@@ -346,6 +351,19 @@ describe('Staff attention: waitlist and series', { skip: integrationTestsEnabled
       'classes_sessions',
     )
     assert.deepEqual(await itemsOf(tara, 'series_ending'), [])
+  })
+
+  test('TEN-75 a series running out is dated from midnight on the studio\'s own clock: the item is dated from the start of the day 14 days before the last date', async () => {
+    harness.clock.set(T0)
+    const studio = await freshStudio('Australia/Sydney')
+    const admin = await adminAt(studio)
+    const tara = await instructorAt(studio, admin, 'tara')
+    await seriesOver(studio, admin, tara, '2031-06-17', '2031-07-01')
+
+    // Midnight on 17 June in Sydney (UTC+10) is 14:00 UTC on the 16th.
+    harness.clock.set(new Date('2031-06-16T14:00:00Z'))
+    const [item] = await itemsOf(admin, 'series_ending')
+    assert.equal(item.occurred_at, '2031-06-16T14:00:00.000Z')
   })
 
   test('ATN-75 it appears when the last date is 14 days away on the studio’s calendar and goes after the last date has passed', async () => {

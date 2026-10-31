@@ -223,6 +223,26 @@ test('TEN-66 a leave day and its Half Day boundary are Sydney\'s own: 14:00 UTC 
   assert.strictEqual(run.endsAt.toISOString(), '2026-10-05T13:00:00.000Z')
 })
 
+test('TEN-66 a cap or conflict refusal and the admins\' warning name the day on the studio\'s clock: Sydney\'s midnight is still the evening before in Singapore', () => {
+  // Bob is away on 18 August; the applicant asks for the same day. The peak is the window's start:
+  // midnight on the 18th in Sydney, which is 14:00 UTC on the 17th.
+  const day = (timezone: string) => leaveWindowIn(timezone, '2026-08-18', '2026-08-18')
+  const input = (timezone: string, type: LeaveType) => ({
+    type,
+    conflictPartnerIds: ['Bob'],
+    window: day(timezone),
+    timezone,
+    peers: [{ instructorId: 'Bob', instructorName: 'Bob', type: 'annual' as const, ...day(timezone) }],
+    studyCap: 1,
+  })
+  const refusal = checkLeaveCaps(input(SYDNEY, 'annual'))
+  assert.ok(!refusal.ok && refusal.message.includes('already on leave on 18 Aug 2026.'), JSON.stringify(refusal))
+  assert.ok(leaveCapWarning(input(SYDNEY, 'medical')).includes('also away on 18 Aug 2026.'))
+  // The same instant read on Singapore's clock is the 17th: the zone passed in decides.
+  const sydneyWindow = { ...input(SYDNEY, 'medical'), timezone: SINGAPORE }
+  assert.ok(leaveCapWarning(sydneyWindow).includes('also away on 17 Aug 2026.'))
+})
+
 // -- what the sums count, and what a Pool is worth against them ---------------
 const rows: LeaveDaysRow[] = [
   { type: 'annual', leaveYear: 2026, status: 'approved', days: 3 },

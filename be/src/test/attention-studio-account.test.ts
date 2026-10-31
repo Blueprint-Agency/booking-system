@@ -38,15 +38,15 @@ describe('Staff attention: studio account', { skip: integrationTestsEnabled ? fa
     return (text ? JSON.parse(text) : {}) as Record<string, any>
   }
 
-  const freshStudio = async (): Promise<Studio> => {
+  const freshStudio = async (timezone = 'Asia/Singapore'): Promise<Studio> => {
     const slug = `atsa-${run}-${++studios}`
     const { tenant } = await provision.provisionTenant({
       slug,
       name: 'Attention Account Studio',
       adminEmail: `owner@${slug}.test`,
     })
-    // The studio's own clock is Singapore's, whatever the column defaults to.
-    await harness.db.update(schema.tenants).set({ timezone: 'Asia/Singapore' }).where(eq(schema.tenants.id, tenant.id))
+    // The studio's own clock is the one named, whatever the column defaults to.
+    await harness.db.update(schema.tenants).set({ timezone }).where(eq(schema.tenants.id, tenant.id))
     tenantsService.forgetCachedTenants()
     return { id: tenant.id, slug }
   }
@@ -126,6 +126,20 @@ describe('Staff attention: studio account', { skip: integrationTestsEnabled ? fa
 
     await endTermOn(studio, '2031-06-12')
     assert.equal((await accountItems(admin, 'studio_term_ending')).length, 1, 'tomorrow: still showing')
+  })
+
+  test('TEN-75 the Term warning began at midnight on the studio\'s own clock, fourteen days before the end date: Sydney\'s in daylight saving, Singapore\'s eight hours ahead of UTC', async () => {
+    harness.clock.set(new Date('2026-11-10T00:00:00Z'))
+    for (const [timezone, began] of [
+      ['Australia/Sydney', '2026-11-04T13:00:00.000Z'],
+      ['Asia/Singapore', '2026-11-04T16:00:00.000Z'],
+    ] as const) {
+      const studio = await freshStudio(timezone)
+      const admin = await staffAt(studio, 'anna', 'admin')
+      await endTermOn(studio, '2026-11-19')
+      const item = (await accountItems(admin, 'studio_term_ending'))[0]!
+      assert.equal(item.occurred_at, began, timezone)
+    }
   })
 
   test('ATN-131 an open-ended Term never shows, and extending a Term through the service makes the item disappear', async () => {

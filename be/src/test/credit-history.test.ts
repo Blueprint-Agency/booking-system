@@ -357,6 +357,28 @@ describe('credit history over HTTP', { skip: integrationTestsEnabled ? false : S
       .from(schema.manualAdjustments)
       .where(eq(schema.manualAdjustments.clientPackageId, pkg))
     assert.equal(adjustment?.reason, 'Expiry changed from 2031-09-01 to 2031-08-13: Desk correction')
+
+    // The control, at a Singapore studio: 16:30 UTC on the 12th is 00:30 on the 13th there too (UTC+8),
+    // and the line states that studio day, not the UTC one.
+    const sing = await member(one, 'singexpiry')
+    const singPkg = await give(one, sing, 5)
+    await harness.db
+      .update(schema.clientPackages)
+      .set({ expiresAt: new Date('2031-09-01T12:00:00Z') })
+      .where(eq(schema.clientPackages.id, singPkg))
+    await expectStatus(
+      await harness.app.request(`/api/v1/portal/admin/clients/${sing.clientId}/packages/${singPkg}/expiry`, {
+        method: 'POST',
+        headers: { ...one.admin.headers, ...json },
+        body: JSON.stringify({ expires_at: '2031-08-12T16:30:00.000Z', reason: 'Desk correction' }),
+      }),
+      200,
+    )
+    const [singAdjustment] = await harness.db
+      .select({ reason: schema.manualAdjustments.reason })
+      .from(schema.manualAdjustments)
+      .where(eq(schema.manualAdjustments.clientPackageId, singPkg))
+    assert.equal(singAdjustment?.reason, 'Expiry changed from 2031-09-01 to 2031-08-13: Desk correction')
   })
 
   test('CRD-23 a No-show is recorded on its booking as credit kept, with the staff member who marked it', async () => {
