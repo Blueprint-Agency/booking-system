@@ -1141,7 +1141,7 @@ describe('Finance over HTTP', { skip: integrationTestsEnabled ? false : SKIP_REA
     assert.equal(moneyIn, 295)
   })
 
-  test('TEN-70 the CSV date and time columns are on the studio\'s own clock: Sydney\'s 00:30 on the 12th is 22:30 on the 11th at Singapore, and daylight saving moves the offset', async () => {
+  test('TEN-71 the CSV date and time columns are on the studio\'s own clock: Sydney\'s 00:30 on the 12th is 22:30 on the 11th at Singapore, and daylight saving moves the offset', async () => {
     // Orders at fixed instants in 2030-31, in windows no other test reads.
     const order = (at: Studio, who: Member, title: string, when: string) =>
       merchOrder(at, who, title, '12.00', new Date(when), true)

@@ -198,7 +198,7 @@ test('LEV-108 with only a date and no start time, a half-day instructor is not r
 }
 
 // -- the same windows on a Sydney studio's clock ------------------------------
-test('TEN-65 a leave day and its Half Day boundary are Sydney\'s own: 14:00 UTC to 14:00 UTC, split at 03:00 UTC, and 23 or 25 hours on a daylight-saving day', () => {
+test('TEN-66 a leave day and its Half Day boundary are Sydney\'s own: 14:00 UTC to 14:00 UTC, split at 03:00 UTC, and 23 or 25 hours on a daylight-saving day', () => {
   const full = leaveWindowIn(SYDNEY, '2026-08-12', '2026-08-12')
   assert.strictEqual(full.startsAt.toISOString(), '2026-08-11T14:00:00.000Z')
   assert.strictEqual(full.endsAt.toISOString(), '2026-08-12T14:00:00.000Z')

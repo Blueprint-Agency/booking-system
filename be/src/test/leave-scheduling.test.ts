@@ -775,7 +775,7 @@ describe('leave on the schedule', { skip: integrationTestsEnabled ? false : SKIP
   const onSydney = (who: Staff, startsAt: string, endsAt: string) =>
     createClass(adminTwo.headers, classBodyBetween(two, who, startsAt, endsAt))
 
-  test('TEN-59 full-day leave covers the studio\'s own calendar day: at Sydney a class at 00:30 on the day is refused and one at 00:30 the next day is saved, where at Singapore the day is its own', async () => {
+  test('TEN-60 full-day leave covers the studio\'s own calendar day: at Sydney a class at 00:30 on the day is refused and one at 00:30 the next day is saved, where at Singapore the day is its own', async () => {
     const date = '2031-08-12'
     await leave(teacherTwo, date, 'approved', 'none', two)
 
@@ -798,7 +798,7 @@ describe('leave on the schedule', { skip: integrationTestsEnabled ? false : SKIP
     await json(await createClass(admin.headers, classBodyBetween(one, control, '2031-08-13T00:30:00+08:00', '2031-08-13T01:30:00+08:00')), 201)
   })
 
-  test('TEN-60 a Half Day splits at 13:00 on the studio\'s clock: at Sydney a 13:00 class is the afternoon, and it is refused beside afternoon leave', async () => {
+  test('TEN-61 a Half Day splits at 13:00 on the studio\'s clock: at Sydney a 13:00 class is the afternoon, and it is refused beside afternoon leave', async () => {
     const morning = await staffAt(two, 'morning', 'instructor')
     const afternoon = await staffAt(two, 'afternoon', 'instructor')
     await leave(morning, '2031-08-19', 'approved', 'morning', two)
@@ -818,7 +818,7 @@ describe('leave on the schedule', { skip: integrationTestsEnabled ? false : SKIP
     await json(await onSydney(afternoon, '2031-08-26T15:00:00+10:00', '2031-08-26T16:00:00+10:00'), 409)
   })
 
-  test('TEN-61 a daylight-saving day is 23 or 25 hours long, and its Half Day boundary is 13:00 wall time: Sydney on 6 October 2030 and 6 April 2031', async () => {
+  test('TEN-62 a daylight-saving day is 23 or 25 hours long, and its Half Day boundary is 13:00 wall time: Sydney on 6 October 2030 and 6 April 2031', async () => {
     // Spring forward, Sunday 6 October 2030: 00:00 +10:00 to 00:00 +11:00 is 23 hours.
     const spring = await staffAt(two, 'spring', 'instructor')
     await leave(spring, '2030-10-06', 'approved', 'none', two)
@@ -924,7 +924,7 @@ describe('leave on the schedule', { skip: integrationTestsEnabled ? false : SKIP
     assert.deepEqual(told.map(t => t.status), ['sent'])
   })
 
-  test('TEN-80 the email an instructor\'s cancellation sends the studio names the class on the studio\'s clock: a Sydney class at 00:30 reads 00:30 on its own date', async () => {
+  test('TEN-81 the email an instructor\'s cancellation sends the studio names the class on the studio\'s clock: a Sydney class at 00:30 reads 00:30 on its own date', async () => {
     const created = await json(
       await onSydney(teacherTwo, '2031-07-15T00:30:00+10:00', '2031-07-15T01:30:00+10:00'),
       201,

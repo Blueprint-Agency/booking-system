@@ -4141,7 +4141,7 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     }
   }
 
-  test('TEN-66 the Book in advance window counts the studio\'s calendar days: at 00:30 in Sydney, a slot 2 days on is too soon and 7 days on is the last day, where Singapore is still the day before', async () => {
+  test('TEN-67 the Book in advance window counts the studio\'s calendar days: at 00:30 in Sydney, a slot 2 days on is too soon and 7 days on is the last day, where Singapore is still the day before', async () => {
     await atSydneyPastMidnight({ min_book_in_advance_days: 3, book_in_advance_days: 7 }, async () => {
       const kit = await member(two, 'Kit Sydney')
       const solo = await givePt(two, kit, '1on1')
@@ -4167,7 +4167,7 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     })
   })
 
-  test('TEN-67 a proposed slot is a wall-clock time at the studio and the package expiry is judged on that clock: at Sydney a slot at 08:30 on the expiry day is covered, one at 09:30 is refused naming 9:00 am', async () => {
+  test('TEN-68 a proposed slot is a wall-clock time at the studio and the package expiry is judged on that clock: at Sydney a slot at 08:30 on the expiry day is covered, one at 09:30 is refused naming 9:00 am', async () => {
     await atSydneyPastMidnight({ min_book_in_advance_days: 1, book_in_advance_days: 14 }, async () => {
       const lou = await member(two, 'Lou Sydney')
       const packageId = await givePt(two, lou, '1on1')

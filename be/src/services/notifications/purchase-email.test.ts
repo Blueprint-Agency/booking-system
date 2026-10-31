@@ -38,7 +38,7 @@ function input(over: Partial<PurchaseEmailInput> = {}): PurchaseEmailInput {
   }
 }
 
-test('TEN-72 the expiry a purchase email prints is the day on the studio\'s clock: 23:00 on 14 February in Singapore is already the 15th in Sydney', () => {
+test('TEN-73 the expiry a purchase email prints is the day on the studio\'s clock: 23:00 on 14 February in Singapore is already the 15th in Sydney', () => {
   const evening = new Date('2027-02-14T15:00:00Z')
   assert.strictEqual(validityLineIn('credit_bundle', evening, null, 90, 'Australia/Sydney'), 'Expires 15 Feb 2027')
   assert.strictEqual(validityLineIn('credit_bundle', evening, null, 90, SINGAPORE), 'Expires 14 Feb 2027')

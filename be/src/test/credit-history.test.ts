@@ -328,7 +328,7 @@ describe('credit history over HTTP', { skip: integrationTestsEnabled ? false : S
     assert.deepEqual(summary(await historyOf(who, pkg)), summary(history))
   })
 
-  test('TEN-79 a package\'s expiry change is worded on the studio\'s clock: the refusal names the booking\'s time and day, and the credit-history line the new date, as Sydney reads them', async () => {
+  test('TEN-80 a package\'s expiry change is worded on the studio\'s clock: the refusal names the booking\'s time and day, and the credit-history line the new date, as Sydney reads them', async () => {
     const who = await member(two, 'sydneyexpiry')
     const pkg = await give(two, who, 5)
     // The class starts at 00:30 on 12 August 2031 in Sydney (UTC+10); it is 14:30 UTC on the 11th. The package runs past it.

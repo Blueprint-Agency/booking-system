@@ -160,7 +160,7 @@ describe('staff onboarding', { skip: integrationTestsEnabled ? false : SKIP_REAS
     invitationMail(email)
   })
 
-  test('TEN-78 the invitation email states when it expires on the studio\'s own clock: a Sydney studio\'s invitee reads Sydney time, a Singapore one Singapore time', async () => {
+  test('TEN-79 the invitation email states when it expires on the studio\'s own clock: a Sydney studio\'s invitee reads Sydney time, a Singapore one Singapore time', async () => {
     const adminAtTwo = await harness.signInAs('staff', at('admin-two'), two)
     const adminUserTwo = await authUser(at('admin-two'), two.id)
     await harness.db.insert(schema.staffUsers).values({

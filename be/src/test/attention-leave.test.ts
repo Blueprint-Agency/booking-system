@@ -184,7 +184,7 @@ describe('Staff attention: leave requests', { skip: integrationTestsEnabled ? fa
     assert.match(byId.get(`leave_request_pending:${half}`)!.title, /annual leave, \d{1,2} \w{3}( \d{4})? \(morning\)$/)
   })
 
-  test('TEN-74 "starts today" and "starts in n days" count the studio\'s calendar days: at 00:30 in Sydney a request for that day starts today, where it starts tomorrow in Singapore', async () => {
+  test('TEN-75 "starts today" and "starts in n days" count the studio\'s calendar days: at 00:30 in Sydney a request for that day starts today, where it starts tomorrow in Singapore', async () => {
     // 00:30 on 16 October 2026 in Sydney (UTC+11); 22:30 on the 15th in Singapore.
     harness.clock.set(new Date('2026-10-15T14:30:00Z'))
     try {

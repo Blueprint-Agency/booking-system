@@ -260,7 +260,7 @@ describe('Staff attention: instructor pay missing', { skip: integrationTestsEnab
     assert.equal(item.title, '1 completed session has no instructor pay')
   })
 
-  test('TEN-73 the window covers the studio\'s own days: at Sydney a session ending at 01:00 on 1 September is in, where Singapore is still on 31 August, and the link names the studio\'s today', async () => {
+  test('TEN-74 the window covers the studio\'s own days: at Sydney a session ending at 01:00 on 1 September is in, where Singapore is still on 31 August, and the link names the studio\'s today', async () => {
     // 00:30 on 16 October 2026 in Sydney (UTC+11, daylight saving): 22:30 on the 15th in Singapore.
     harness.clock.set(new Date('2026-10-15T14:30:00Z'))
     const sydney = await freshStudio('Australia/Sydney')

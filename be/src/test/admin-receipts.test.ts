@@ -298,7 +298,7 @@ describe('a studio admin reads every Receipt in the studio', { skip: integration
     )
   })
 
-  test('TEN-68 the Receipts date filter and the CSV date are the studio\'s own calendar days: at Sydney a Receipt issued at 00:30 on the 12th is the 12th, where Singapore is still on the 11th', async () => {
+  test('TEN-69 the Receipts date filter and the CSV date are the studio\'s own calendar days: at Sydney a Receipt issued at 00:30 on the 12th is the 12th, where Singapore is still on the 11th', async () => {
     const tag = `Days ${run}`
     const adminOfTwo = await staff(two, 'admin')
     const syd = await member(two, `Syd ${tag}`)
@@ -344,7 +344,7 @@ describe('a studio admin reads every Receipt in the studio', { skip: integration
     )
   })
 
-  test('TEN-69 a Receipt is dated with the day it was issued and paid on the studio\'s clock, on the page the member opens and in the PDF text', async () => {
+  test('TEN-70 a Receipt is dated with the day it was issued and paid on the studio\'s clock, on the page the member opens and in the PDF text', async () => {
     const tag = `Dated ${run}`
     const syd = await member(two, `Syd ${tag}`)
     const sing = await member(one, `Sing ${tag}`)

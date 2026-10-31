@@ -156,7 +156,7 @@ const composeRefundEmail = (input: Omit<Parameters<typeof composeRefundEmailIn>[
 }
 
 // --- the same sentences on a Sydney studio's clock ----------------------------
-test('TEN-71 the refund notice, the cancelled-class line and the silence notice name dates and times on the studio\'s clock: Sydney, not Singapore', () => {
+test('TEN-72 the refund notice, the cancelled-class line and the silence notice name dates and times on the studio\'s clock: Sydney, not Singapore', () => {
   const SYDNEY = 'Australia/Sydney'
   // 15:30 UTC on 2 September is 01:30 on the 3rd in Sydney (UTC+10), and 23:30 on the 2nd in Singapore.
   const late = { name: 'Late Flow', startsAt: new Date('2026-09-02T15:30:00Z') }

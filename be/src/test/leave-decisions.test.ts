@@ -447,7 +447,7 @@ describe('leave decisions over HTTP', { skip: integrationTestsEnabled ? false : 
     assert.match(mail[0]!.html, /\d{1,2}:\d{2}/, 'with the time of day')
   })
 
-  test('TEN-77 the revoke email states the revoke time on the studio\'s own clock: a Sydney instructor reads Sydney\'s hour, a Singapore one Singapore\'s', async () => {
+  test('TEN-78 the revoke email states the revoke time on the studio\'s own clock: a Sydney instructor reads Sydney\'s hour, a Singapore one Singapore\'s', async () => {
     const sydney = await file(dee, 'annual')
     assert.equal((await approve(adminTwo, sydney.id)).status, 200)
     assert.equal((await revoke(adminTwo, sydney.id)).status, 200, 'revoked')

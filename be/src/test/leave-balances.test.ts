@@ -309,7 +309,7 @@ describe('leave balances and pools over HTTP', { skip: integrationTestsEnabled ?
 
   // ── Instructor: own balances ──────────────────────────────────────────────
 
-  test('LEV-15, TEN-62 the Leave Year rolls over at midnight on 1 January on the studio\'s clock: a Sydney instructor is in the new year hours before a Singapore one', async () => {
+  test('LEV-15, TEN-63 the Leave Year rolls over at midnight on 1 January on the studio\'s clock: a Sydney instructor is in the new year hours before a Singapore one', async () => {
     const sing = await instructor('Rollover Sing')
     const syd = await instructor('Rollover Syd', two)
     try {

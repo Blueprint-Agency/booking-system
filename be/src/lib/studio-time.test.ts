@@ -18,7 +18,7 @@ const HOUR = 3_600_000
 // Sydney's daylight saving in 2026 starts on Sunday 4 October (02:00 AEST becomes
 // 03:00 AEDT) and ends on Sunday 5 April (03:00 AEDT becomes 02:00 AEST).
 
-test('TEN-53 a studio\'s calendar day is read on its own zone, not Singapore\'s, UTC\'s or the server\'s', () => {
+test('TEN-54 a studio\'s calendar day is read on its own zone, not Singapore\'s, UTC\'s or the server\'s', () => {
   // 00:30 on 12 August in Sydney (UTC+10): the 11th in Singapore and in UTC
   const winter = new Date('2026-08-11T14:30:00.000Z')
   assert.strictEqual(localDate(SYDNEY, winter), '2026-08-12')
@@ -33,7 +33,7 @@ test('TEN-53 a studio\'s calendar day is read on its own zone, not Singapore\'s,
   assert.strictEqual(localDate(SYDNEY, new Date('2026-08-12T14:00:00.000Z')), '2026-08-13')
 })
 
-test('TEN-54 a wall-clock time on a date is the studio\'s own, through the zone\'s rules on that date', () => {
+test('TEN-55 a wall-clock time on a date is the studio\'s own, through the zone\'s rules on that date', () => {
   assert.strictEqual(instantAt(SYDNEY, '2026-08-12', '13:00').toISOString(), '2026-08-12T03:00:00.000Z')
   assert.strictEqual(instantAt(SYDNEY, '2026-12-12', '13:00').toISOString(), '2026-12-12T02:00:00.000Z')
   assert.strictEqual(instantAt(SINGAPORE, '2026-08-12', '13:00').toISOString(), '2026-08-12T05:00:00.000Z')
@@ -43,7 +43,7 @@ test('TEN-54 a wall-clock time on a date is the studio\'s own, through the zone\
   assert.strictEqual(instantAt('America/Los_Angeles', '2026-08-12', '19:00').toISOString(), '2026-08-13T02:00:00.000Z')
 })
 
-test('TEN-55 a wall time in the spring-forward gap resolves one hour later, and one that occurs twice at fall-back resolves to its first occurrence', () => {
+test('TEN-56 a wall time in the spring-forward gap resolves one hour later, and one that occurs twice at fall-back resolves to its first occurrence', () => {
   // 02:30 on 4 October does not exist in Sydney: 03:30 AEDT is 16:30 UTC on the 3rd
   assert.strictEqual(instantAt(SYDNEY, '2026-10-04', '02:30').toISOString(), '2026-10-03T16:30:00.000Z')
   assert.strictEqual(instantAt(SYDNEY, '2026-10-04', '03:30').toISOString(), '2026-10-03T16:30:00.000Z')
@@ -54,7 +54,7 @@ test('TEN-55 a wall time in the spring-forward gap resolves one hour later, and 
   assert.strictEqual(instantAt(SYDNEY, '2026-04-05', '01:30').toISOString(), '2026-04-04T14:30:00.000Z')
 })
 
-test('TEN-56 a day is the half-open window from local midnight to the next local midnight, 23 or 25 hours on a transition day', () => {
+test('TEN-57 a day is the half-open window from local midnight to the next local midnight, 23 or 25 hours on a transition day', () => {
   const day = (date: string) => {
     const w = dayWindow(SYDNEY, date)
     return { w, hours: (w.endsAt.getTime() - w.startsAt.getTime()) / HOUR }
@@ -80,7 +80,7 @@ test('TEN-56 a day is the half-open window from local midnight to the next local
   assert.strictEqual(dayWindow(SINGAPORE, '2026-10-04').endsAt.toISOString(), '2026-10-04T16:00:00.000Z')
 })
 
-test('TEN-57 "N days ahead" counts calendar days, not multiples of 24 hours, and "a week later" keeps its wall time across a daylight-saving change', () => {
+test('TEN-58 "N days ahead" counts calendar days, not multiples of 24 hours, and "a week later" keeps its wall time across a daylight-saving change', () => {
   // 3 October to 6 October is three calendar days although only 71 hours apart in Sydney
   assert.strictEqual(daysBetween('2026-10-03', '2026-10-06'), 3)
   const from = instantAt(SYDNEY, '2026-10-03', '09:00')
@@ -95,7 +95,7 @@ test('TEN-57 "N days ahead" counts calendar days, not multiples of 24 hours, and
   assert.strictEqual(isoWeekday('2026-10-04'), 7)
 })
 
-test('TEN-58 a formatter is fixed to the studio\'s zone, and cached per zone, locale and layout', () => {
+test('TEN-59 a formatter is fixed to the studio\'s zone, and cached per zone, locale and layout', () => {
   const at = new Date('2026-08-11T14:30:00.000Z')
   const layout = { day: 'numeric', month: 'short', year: 'numeric' } as const
   assert.strictEqual(zoneFormat(SYDNEY, 'en-GB', layout).format(at), '12 Aug 2026')

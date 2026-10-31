@@ -27,7 +27,7 @@ const request = (over: Partial<PendingLeaveForDecision> = {}): PendingLeaveForDe
   ...over,
 })
 
-test('TEN-75 a pending leave request\'s deadline is the start of its first day on the studio\'s clock, which moves with daylight saving', () => {
+test('TEN-76 a pending leave request\'s deadline is the start of its first day on the studio\'s clock, which moves with daylight saving', () => {
   const sydney = context('Australia/Sydney', '2026-10-15T14:30:00Z')
   // Sydney on 16 October 2026 is UTC+11: midnight is 13:00 UTC on the 15th.
   assert.strictEqual(toItem(sydney, request()).deadlineAt?.toISOString(), '2026-10-15T13:00:00.000Z')
@@ -38,7 +38,7 @@ test('TEN-75 a pending leave request\'s deadline is the start of its first day o
   assert.strictEqual(toItem(singapore, request()).deadlineAt?.toISOString(), '2026-10-15T16:00:00.000Z')
 })
 
-test('TEN-76 "starts today" counts the studio\'s calendar days: 00:30 in Sydney is the evening before in Singapore', () => {
+test('TEN-77 "starts today" counts the studio\'s calendar days: 00:30 in Sydney is the evening before in Singapore', () => {
   const now = '2026-10-15T14:30:00Z'
   assert.strictEqual(toItem(context('Australia/Sydney', now), request()).detail, '1 day · starts today')
   assert.strictEqual(toItem(context('Asia/Singapore', now), request()).detail, '1 day · starts in 1 day')

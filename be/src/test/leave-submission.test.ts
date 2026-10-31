@@ -593,7 +593,7 @@ describe('instructor leave submission over HTTP', { skip: integrationTestsEnable
     assert.equal(edge.body.status, 'pending')
   })
 
-  test('TEN-63 "today" for the leave rules is the studio\'s own day: at 00:30 in Sydney annual leave starting that day is refused and medical leave may be backdated seven of Sydney\'s days, where Singapore is still on the day before', async () => {
+  test('TEN-64 "today" for the leave rules is the studio\'s own day: at 00:30 in Sydney annual leave starting that day is refused and medical leave may be backdated seven of Sydney\'s days, where Singapore is still on the day before', async () => {
     // 00:30 on 12 August 2031 in Sydney (UTC+10); 22:30 on the 11th in Singapore.
     harness.clock.set(new Date('2031-08-11T14:30:00Z'))
     try {
@@ -618,7 +618,7 @@ describe('instructor leave submission over HTTP', { skip: integrationTestsEnable
     }
   })
 
-  test('TEN-64 a class or private session is a clash with leave when it falls on the studio\'s leave day: at Sydney one at 00:30 the next day is not, and one at 00:30 on the day is', async () => {
+  test('TEN-65 a class or private session is a clash with leave when it falls on the studio\'s leave day: at Sydney one at 00:30 the next day is not, and one at 00:30 on the day is', async () => {
     harness.clock.set(new Date('2031-08-01T00:00:00Z'))
     try {
       const syd = await instructor(two, 'Syd Clash')
