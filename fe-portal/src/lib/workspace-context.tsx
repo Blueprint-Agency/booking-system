@@ -13,6 +13,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { AccessDenied } from "@/components/auth/access-denied";
 import { authFailure } from "@/lib/access-refusal";
 import { ApiError, makeApi, type Api } from "@/lib/api";
+import { answeredElsewhere } from "@/lib/failed-read";
 import { reportError } from "@/lib/report-error";
 import { knownPermissions, mayDo, type InstructorPermission } from "@/lib/instructor-permissions";
 import { runsStudio } from "@/lib/staff-role";
@@ -20,6 +21,7 @@ import { sessionTenantRefusal } from "@/lib/session-tenant";
 import { getPortalToken, signOutPortal, usePortalSession } from "@/lib/portal-auth";
 import {
   assertLoadedInFull,
+  confirmArchive,
   latestRead,
   locationsToManage,
   workspaceLocations,
@@ -70,6 +72,8 @@ function locationFromApi(row: LocationApiRow): Location {
 
 interface WorkspaceContextValue {
   loading: boolean;
+  /** Who is signed in could not be read (neither a sign-out nor a refusal): Try again is `refresh`. */
+  meFailed: boolean;
   currentStaff: StaffUser | null;
   role: StaffRole | null;
   /** The Instructor Permissions `me` reported, known keys only. */
@@ -135,6 +139,8 @@ export function WorkspaceProvider({
   const pathname = usePathname();
 
   const [loading, setLoading] = useState(true);
+  // `/portal/auth/me` failed for a reason that is neither a sign-out nor a refusal.
+  const [meFailed, setMeFailed] = useState(false);
   /**
    * The backend's refusal code, when it has told us this session may not be
    * here. Held rather than acted on: a 403 is an answer about *this account on
@@ -201,6 +207,7 @@ export function WorkspaceProvider({
   const loadMe = useCallback(async () => {
     if (!api) return;
     setLoading(true);
+    setMeFailed(false);
     try {
       const me = await api.get<AuthMePayload>("/portal/auth/me");
       const accessible = me.locations.map(l => ({
@@ -249,9 +256,12 @@ export function WorkspaceProvider({
         resetFullLocations();
         return;
       }
-      // Network or unexpected — leave staff null so UI shows error/empty
-      // state. Re-thrown errors here would crash the whole admin app.
+      // Network or unexpected — leave staff null and say the workspace could
+      // not be loaded (`meFailed`), with Try again; a spinner that never ends
+      // would not. Re-thrown errors here would crash the whole admin app. A
+      // maintenance answer is the maintenance screen's to show.
       reportError(err, { scope: "workspace-auth-me" });
+      if (!answeredElsewhere(err)) setMeFailed(true);
     } finally {
       setLoading(false);
     }
@@ -393,22 +403,14 @@ export function WorkspaceProvider({
     async (id: string) => {
       if (!api) return false;
       const loc = locations.find(l => l.id === id);
-      // The warning is informational — if the count can't be read, archiving
-      // still goes ahead rather than being blocked by it.
-      const count = await api
-        .get<{ count: number }>(`/portal/admin/locations/${id}/live-unlimited-count`)
-        .then(r => r.count)
-        .catch(() => 0);
-      if (
-        count > 0 &&
-        !window.confirm(
-          `${count} live Unlimited ${count === 1 ? "Plan calls" : "Plans call"} ` +
-            `${loc?.name ?? "this location"} home. Archiving it strands ` +
-            `${count === 1 ? "that member" : "those members"}. Archive anyway?`,
-        )
-      ) {
-        return false;
-      }
+      // The warning is informational: a count that can't be read does not block
+      // archiving, but it is said so, never taken as 0 (no one stranded).
+      const agreed = await confirmArchive(
+        () => api.get<{ count: number }>(`/portal/admin/locations/${id}/live-unlimited-count`),
+        loc?.name ?? "this location",
+        question => window.confirm(question),
+      );
+      if (!agreed) return false;
       await api.post(`/portal/admin/locations/${id}/archive`);
       await refreshAllLocations();
       return true;
@@ -454,6 +456,7 @@ export function WorkspaceProvider({
 
   const value: WorkspaceContextValue = {
     loading,
+    meFailed,
     currentStaff,
     role: currentStaff?.role ?? null,
     permissions,

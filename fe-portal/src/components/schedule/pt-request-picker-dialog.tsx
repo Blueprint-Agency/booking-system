@@ -1,6 +1,8 @@
 "use client";
-import { useEffect, useState } from "react";
-import { Button, Dialog, Pagination, usePaged } from "@/components/ui";
+import { useState } from "react";
+import { Button, Dialog, LoadFailure, Pagination, usePaged } from "@/components/ui";
+import { rowsOf } from "@/lib/failed-read";
+import { useRead } from "@/lib/use-read";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ScheduleFromRequestDialog } from "@/components/pt-requests/schedule-from-request-dialog";
 import { ManualPtSessionDialog } from "@/components/schedule/manual-pt-session-dialog";
@@ -17,38 +19,28 @@ export function PtRequestPickerDialog({
   onClose: () => void;
   onScheduled: () => void;
 }) {
-  const { api, activeLocation } = useWorkspace();
-  const [pending, setPending] = useState<ApiPtRequest[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { activeLocation } = useWorkspace();
   const [picked, setPicked] = useState<ApiPtRequest | null>(null);
   /** Add manually: a session agreed outside the app, with no request behind it. */
   const [manual, setManual] = useState(false);
 
-  useEffect(() => {
-    if (!api || !activeLocation) {
-      setPending([]);
-      setLoading(false);
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    void (async () => {
-      try {
-        const res = await api.get<{ pt_requests: ApiPtRequest[] }>(
-          "/portal/admin/pt-sessions",
-          { status: "pending", location_id: activeLocation.id },
-        );
-        if (!cancelled) setPending(res.pt_requests ?? []);
-      } catch {
-        if (!cancelled) setPending([]);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [api, activeLocation]);
+  // A failed read is "Couldn't load", never "No pending PT requests".
+  const locationId = activeLocation?.id ?? null;
+  const { read, retry } = useRead(
+    locationId ?? "",
+    async (api) => {
+      const res = await api.get<{ pt_requests: ApiPtRequest[] }>("/portal/admin/pt-sessions", {
+        status: "pending",
+        location_id: locationId,
+      });
+      return res.pt_requests ?? [];
+    },
+    { enabled: locationId !== null, scope: "pt-request-picker" },
+  );
+  // With no workspace there is nothing to ask for, so nothing is pending.
+  const pending = rowsOf(read);
+  const loading = locationId !== null && read.status === "loading";
+  const failed = read.status === "failed";
 
   const { visible, pagination } = usePaged(pending);
 
@@ -83,6 +75,16 @@ export function PtRequestPickerDialog({
     >
       {loading ? (
         <p className="px-1 py-4 text-sm text-muted">Loading…</p>
+      ) : failed ? (
+        <div className="space-y-3">
+          <LoadFailure what="the pending PT requests" onRetry={retry} className="py-4" />
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={onClose}>
+              Close
+            </Button>
+            <Button onClick={() => setManual(true)}>Add manually</Button>
+          </div>
+        </div>
       ) : pending.length === 0 ? (
         <div className="space-y-3">
           <p className="text-sm text-muted">

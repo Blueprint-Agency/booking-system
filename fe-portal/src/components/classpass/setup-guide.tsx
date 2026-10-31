@@ -2,8 +2,9 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { AlertTriangle, Check, ChevronDown, ChevronUp, Copy, ExternalLink, PartyPopper } from "lucide-react";
 import { toast } from "sonner";
-import { Badge, Button, Select } from "@/components/ui";
+import { Badge, Button, LoadFailure, Select } from "@/components/ui";
 import { ApiError, type Api } from "@/lib/api";
+import { answeredElsewhere } from "@/lib/failed-read";
 import { formatDateTime } from "@/lib/formatters";
 import {
   CLASSPASS_SENDER,
@@ -315,23 +316,39 @@ function UnmappedLocations({
   const [items, setItems] = useState<ClassPassReviewItem[] | null>(null);
   const [choice, setChoice] = useState<Record<string, string>>({});
   const [mapping, setMapping] = useState(false);
+  // The review list could not be read: the step says so instead of vanishing as if nothing waited.
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const options = useMemo(() => mappableLocations(locations), [locations]);
 
   useEffect(() => {
     let cancelled = false;
+    setFailed(false);
     listClassPassReview(api).then(
       (rows) => {
         if (!cancelled) setItems(rows);
       },
-      () => undefined,
+      (err: unknown) => {
+        if (!cancelled && !answeredElsewhere(err)) setFailed(true);
+      },
     );
     return () => {
       cancelled = true;
     };
-  }, [api, revision]);
+  }, [api, revision, attempt]);
 
   const names = items ? unmappedLocations(items) : [];
-  if (names.length === 0) return null;
+  // A failed read says so; after a failed re-read the items from the last good
+  // read stay beneath it, and are not drawn as the whole list.
+  const failure = failed ? (
+    <LoadFailure
+      what="the ClassPass locations waiting in review"
+      variant="inline"
+      detail={items ? "Showing what loaded earlier." : undefined}
+      onRetry={() => setAttempt((n) => n + 1)}
+    />
+  ) : null;
+  if (names.length === 0) return failure;
 
   async function map(itemId: string, locationId: string) {
     setMapping(true);
@@ -347,6 +364,8 @@ function UnmappedLocations({
   }
 
   return (
+    <div className="space-y-2">
+      {failure}
     <ul className="space-y-2">
       {names.map((n) => (
         <li key={n.itemId} className="flex flex-col gap-2 rounded-md border border-border bg-paper p-2 sm:flex-row sm:items-center">
@@ -381,5 +400,6 @@ function UnmappedLocations({
         </li>
       ))}
     </ul>
+    </div>
   );
 }

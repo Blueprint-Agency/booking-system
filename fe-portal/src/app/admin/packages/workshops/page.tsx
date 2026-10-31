@@ -1,4 +1,5 @@
 "use client";
+import { LoadFailure } from "@/components/ui/load-failure";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { Plus, MapPin, Loader2 } from "lucide-react";
@@ -62,12 +63,7 @@ export default function WorkshopsListPage() {
           <Loader2 className="h-4 w-4 animate-spin" /> Loading workshops…
         </div>
       ) : error ? (
-        <div className="rounded-xl border border-error/30 bg-error/5 p-6 text-center">
-          <p className="text-sm text-error">Failed to load: {error}</p>
-          <Button size="sm" variant="ghost" onClick={load} className="mt-2">
-            Retry
-          </Button>
-        </div>
+        <LoadFailure what="the workshops" onRetry={load} className="rounded-xl border border-border bg-card" />
       ) : workshops.length === 0 ? (
         <EmptyState
           title="No workshops yet"

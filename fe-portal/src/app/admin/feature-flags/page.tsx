@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
-import { PageHeader } from "@/components/ui";
+import { LoadFailure, PageHeader } from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
 import { formatDateTime } from "@/lib/formatters";
@@ -49,12 +49,16 @@ export default function FeatureFlagsPage() {
     <div className="mx-auto max-w-3xl">
       <PageHeader title="Features" description="Studio-wide switches. Each takes effect straight away." />
 
-      {error && (
+      {error && flags && (
         <p className="mb-4 rounded-md border border-error/30 bg-error/5 px-3 py-2 text-xs text-error">{error}</p>
       )}
 
       {!flags ? (
-        !error && (
+        error ? (
+          <div className="rounded-xl border border-border bg-card shadow-soft">
+            <LoadFailure what="the switches" onRetry={load} />
+          </div>
+        ) : (
           <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted">
             <Loader2 className="h-4 w-4 animate-spin" /> Loading…
           </div>

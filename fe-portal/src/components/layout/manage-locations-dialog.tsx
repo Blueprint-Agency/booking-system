@@ -1,10 +1,9 @@
 "use client";
 import { useState } from "react";
 import { Pencil, Archive, RotateCcw, Plus } from "lucide-react";
-import { Dialog, Button, Badge } from "@/components/ui";
+import { Dialog, Button, Badge, LoadFailure } from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
 import { LocationFormDialog } from "@/components/locations/location-form-dialog";
-import { LocationsLoadError } from "@/components/locations/locations-load-error";
 import type { Location } from "@/types";
 
 export function ManageLocationsDialog({ onClose }: { onClose: () => void }) {
@@ -30,7 +29,12 @@ export function ManageLocationsDialog({ onClose }: { onClose: () => void }) {
             </Button>
           </div>
           {locationsStatus === "failed" && (
-            <LocationsLoadError onRetry={() => void retryLocations()} />
+            <LoadFailure
+              what="the studio's locations, archived ones included"
+              detail="Nothing can be edited until they load."
+              onRetry={() => retryLocations()}
+              className="rounded-lg border border-border"
+            />
           )}
           {locationsStatus === "loading" && (
             <p className="px-1 text-sm text-muted">Loading locations…</p>

@@ -1,12 +1,13 @@
 "use client";
-import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { purchaseParam, withWantedFirst } from "@/lib/attention";
 import { AlertTriangle, Loader2, Wallet } from "lucide-react";
 import { toast } from "sonner";
 
-import { Badge, Button, EmptyState, PageHeader, Pagination, usePaged } from "@/components/ui";
+import { Badge, Button, EmptyState, LoadFailure, PageHeader, Pagination, usePaged } from "@/components/ui";
+import { useRead } from "@/lib/use-read";
 import { RefundDialog } from "@/components/clients/refund-dialog";
 import { useWorkspace } from "@/lib/workspace-context";
 import { runsStudio } from "@/lib/staff-role";
@@ -73,33 +74,22 @@ function UnfinishedPurchases() {
   // The same gate the member detail page puts on its Refund buttons.
   const canRefund = runsStudio(role);
 
-  const [rows, setRows] = useState<ApiSilentPurchase[]>([]);
-  const [silentAfterDays, setSilentAfterDays] = useState<number | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [refundFor, setRefundFor] = useState<ApiSilentPurchase | null>(null);
 
-  const load = useCallback(async () => {
-    if (!api) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await api.get<{
-        purchases: ApiSilentPurchase[];
-        silent_after_days: number;
-      }>("/portal/admin/purchases/silent");
-      setRows(res.purchases);
-      setSilentAfterDays(res.silent_after_days);
-    } catch (err) {
-      setError(err instanceof ApiError ? `HTTP ${err.status}` : "Network error");
-    } finally {
-      setLoading(false);
-    }
-  }, [api]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  // Held money is never drawn as "nothing": a failed read has no rows, no count
+  // and no total, only the failure line.
+  const { read, retry: load } = useRead(
+    "silent",
+    (client) =>
+      client.get<{ purchases: ApiSilentPurchase[]; silent_after_days: number }>(
+        "/portal/admin/purchases/silent",
+      ),
+    { scope: "purchases-silent" },
+  );
+  const rows: readonly ApiSilentPurchase[] = read.status === "loaded" ? read.data.purchases : [];
+  const silentAfterDays = read.status === "loaded" ? read.data.silent_after_days : null;
+  const loading = read.status === "loading";
+  const error = read.status === "failed";
 
   // Count and held total cover every row, not just the page on screen.
   const heldTotal = rows.reduce((sum, r) => sum + Number(r.paid_sgd), 0);
@@ -122,13 +112,11 @@ function UnfinishedPurchases() {
         Nothing is refunded automatically — every one of these is somebody&apos;s decision.
       </div>
 
-      {error && (
-        <div className="rounded-lg border border-error/30 bg-error/5 p-3 text-xs text-error">
-          {error}
+      {error ? (
+        <div className="rounded-xl border border-border bg-card">
+          <LoadFailure what="the partial payments" onRetry={load} />
         </div>
-      )}
-
-      {loading ? (
+      ) : loading ? (
         <div className="flex items-center justify-center gap-2 rounded-xl border border-border bg-card py-16 text-sm text-muted">
           <Loader2 className="h-4 w-4 animate-spin" /> Loading partial payments…
         </div>

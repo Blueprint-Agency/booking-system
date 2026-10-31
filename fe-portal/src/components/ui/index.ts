@@ -10,5 +10,6 @@ export * from "./badge";
 export * from "./status-badge";
 export * from "./avatar";
 export * from "./empty-state";
+export * from "./load-failure";
 export * from "./page-header";
 export * from "./pagination";

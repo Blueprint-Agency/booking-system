@@ -7,9 +7,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, Loader2, Search, X } from "lucide-react";
-import { Button, Input } from "@/components/ui";
+import { Button, Input, LoadFailure } from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
-import { searchMembers, type MemberMatch, type StaffRole } from "@/lib/class-seats";
+import { memberSearchNotice, searchMembers, type MemberMatch, type StaffRole } from "@/lib/class-seats";
+import { answeredElsewhere } from "@/lib/failed-read";
 import {
   fetchSeatCandidates,
   seatChoice,
@@ -184,6 +185,9 @@ export function MemberSearch({
   const [q, setQ] = useState("");
   const [matches, setMatches] = useState<MemberMatch[]>([]);
   const [searching, setSearching] = useState(false);
+  const [searchFailed, setSearchFailed] = useState(false);
+  // Bumped by Try again, to search the same term once more.
+  const [searchAttempt, setSearchAttempt] = useState(0);
 
   useEffect(() => {
     if (!api) return;
@@ -192,11 +196,15 @@ export function MemberSearch({
     let live = true;
     const t = setTimeout(async () => {
       setSearching(true);
+      setSearchFailed(false);
       try {
         const rows = await searchMembers(api, role, term);
         if (live) setMatches(rows);
-      } catch {
-        if (live) setMatches([]);
+      } catch (e) {
+        if (live) {
+          setMatches([]);
+          setSearchFailed(!answeredElsewhere(e));
+        }
       } finally {
         if (live) setSearching(false);
       }
@@ -207,10 +215,11 @@ export function MemberSearch({
       // A search cut short by a new term, or by Add clearing it, must not leave "Searching…" up.
       setSearching(false);
     };
-  }, [api, q, role]);
+  }, [api, q, role, searchAttempt]);
 
   const searchable = q.trim().length >= 2;
   const shown = searchable ? matches : [];
+  const notice = memberSearchNotice({ searchable, searching, failed: searchFailed, shown: shown.length });
 
   return (
     <div className="rounded-lg border border-border bg-paper p-3">
@@ -218,14 +227,29 @@ export function MemberSearch({
         <Search className="h-4 w-4 shrink-0 text-muted" />
         <Input
           value={q}
-          onChange={(e) => setQ(e.target.value)}
+          onChange={(e) => {
+            setQ(e.target.value);
+            // A new term starts clean: the last term's failure or rows are not this term's.
+            setSearchFailed(false);
+            setMatches([]);
+          }}
           placeholder="Search members by name, email or phone"
           aria-label="Search members"
         />
       </div>
       <ul className="mt-2 divide-y divide-border">
-        {searching && shown.length === 0 && <li className="py-2 text-xs text-muted">Searching…</li>}
-        {!searching && searchable && shown.length === 0 && <li className="py-2 text-xs text-muted">No members match.</li>}
+        {notice === "searching" && <li className="py-2 text-xs text-muted">Searching…</li>}
+        {notice === "none" && <li className="py-2 text-xs text-muted">No members match.</li>}
+        {notice === "failed" && (
+          <li className="py-2">
+            <LoadFailure
+              variant="inline"
+              what="the member search"
+              sentence="Couldn't search members."
+              onRetry={() => setSearchAttempt((n) => n + 1)}
+            />
+          </li>
+        )}
         {shown.map((m) => {
           const already = added.includes(m.id);
           return (

@@ -1,4 +1,5 @@
 "use client";
+import { LoadFailure } from "@/components/ui/load-failure";
 import { useCallback, useEffect, useState } from "react";
 import { Loader2, LogOut, Monitor, Smartphone } from "lucide-react";
 import { toast } from "sonner";
@@ -108,12 +109,7 @@ export function SessionsPanel({
 
       <div className="rounded-xl border border-border bg-card shadow-soft">
         {error ? (
-          <div className="flex items-center justify-between gap-2 px-4 py-3 text-sm text-error sm:px-5">
-            <span className="min-w-0 break-words">{error}</span>
-            <Button size="sm" variant="ghost" onClick={load}>
-              Retry
-            </Button>
-          </div>
+          <LoadFailure what="the sessions" onRetry={load} className="py-4" />
         ) : !sessions ? (
           <div className="flex items-center gap-2 px-4 py-3 text-sm text-muted sm:px-5">
             <Loader2 className="h-4 w-4 animate-spin" /> Loading sessions…

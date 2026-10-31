@@ -1,4 +1,5 @@
 "use client";
+import { LoadFailure } from "@/components/ui/load-failure";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
@@ -151,12 +152,12 @@ export default function EditCorporatePackagePage() {
   if (loadError || !row) {
     return (
       <div className="mx-auto max-w-2xl">
-        <div className="rounded-xl border border-error/30 bg-error/5 p-6 text-center">
-          <p className="text-sm text-error">Failed to load: {loadError ?? "Not found"}</p>
-          <Button size="sm" variant="ghost" onClick={load} className="mt-2">
-            Retry
-          </Button>
-        </div>
+        <LoadFailure
+          what="the corporate package"
+          detail={loadError ?? undefined}
+          onRetry={load}
+          className="rounded-xl border border-border bg-card"
+        />
       </div>
     );
   }

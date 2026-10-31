@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "@/lib/api";
+import { answeredElsewhere } from "@/lib/failed-read";
 import { useWorkspace } from "@/lib/workspace-context";
 import type { EventState } from "@/types";
 
@@ -211,7 +212,12 @@ export function useSchedule(filters: ScheduleFilters) {
       );
       setEntries(res.entries.map(fromApi));
     } catch (err) {
-      setError(err instanceof ApiError ? `HTTP ${err.status}` : "Network error");
+      // A `401` ends the session (`lib/session-expiry.ts`) and the shell sends
+      // the person to sign in; maintenance puts up the maintenance screen. Both
+      // replace this page, so no failure is drawn for them.
+      if (!answeredElsewhere(err)) {
+        setError(err instanceof ApiError ? `HTTP ${err.status}` : "Network error");
+      }
       setEntries([]);
     } finally {
       setLoading(false);

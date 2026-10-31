@@ -23,12 +23,14 @@ import {
   EmptyState,
   Input,
   Label,
+  LoadFailure,
   PageHeader,
   Tabs,
   TabsList,
   TabsTrigger,
 } from "@/components/ui";
 import { ApiError } from "@/lib/api";
+import { answeredElsewhere } from "@/lib/failed-read";
 import { useAttention } from "@/components/attention/attention-provider";
 import { withoutParams } from "@/lib/attention";
 import { staffLinkTarget, type StaffLinkTarget } from "@/lib/staff-deep-link";
@@ -132,6 +134,11 @@ function StaffView() {
   const [tab, setTab] = useState<StaffTab>("admin");
   const [view, setView] = useState<"active" | "archived">("active");
   const [loading, setLoading] = useState(true);
+  // The staff list has never been read: the page says so, and draws no counts,
+  // no "No active … yet" and no hidden invitations.
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [everLoaded, setEverLoaded] = useState(false);
+  const nothingLoaded = loadFailed && !everLoaded;
   const [inviteDialog, setInviteDialog] = useState(false);
   const [revokeTarget, setRevokeTarget] = useState<InvitationApiRow | null>(null);
   const [busyInviteId, setBusyInviteId] = useState<string | null>(null);
@@ -149,10 +156,19 @@ function StaffView() {
       const data = await api.get<StaffListResponse>("/portal/admin/staff");
       setStaff(data.staff);
       setInvites(data.invitations);
+      setLoadFailed(false);
+      setEverLoaded(true);
     } catch (err) {
-      const msg =
-        err instanceof ApiError ? `Failed to load (HTTP ${err.status}).` : "Failed to load.";
-      toast.error(msg);
+      // A `401` ends the session and maintenance puts up its screen; both
+      // replace this page, so no failure is drawn for them.
+      if (!answeredElsewhere(err)) {
+        const msg =
+          err instanceof ApiError ? `Failed to load (HTTP ${err.status}).` : "Failed to load.";
+        toast.error(msg);
+        // A re-read after an action that fails keeps the rows already read,
+        // under a notice; with none ever read, the page says so instead.
+        setLoadFailed(true);
+      }
     } finally {
       setLoading(false);
     }
@@ -181,13 +197,14 @@ function StaffView() {
   // invitation is ringed, on the tab (and Active/Archived view) it belongs to.
   // The params are dropped once used, so following the same link again works.
   useEffect(() => {
-    if (loading) return;
+    // A list that failed to load has nothing to find the link's row in; the link waits for Try again.
+    if (loading || nothingLoaded) return;
     const query = `?${search.toString()}`;
     if (!search.has("invitation") && !search.has("staff")) return;
     const target = staffLinkTarget(query, staff, invites);
     if (target) showRef.current(target);
     router.replace(`${pathname}${withoutParams(query, ["invitation", "staff"])}`, { scroll: false });
-  }, [loading, staff, invites, search, pathname, router]);
+  }, [loading, nothingLoaded, staff, invites, search, pathname, router]);
 
   useEffect(() => {
     if (!highlightInviteId) return;
@@ -448,7 +465,7 @@ function StaffView() {
             setView("active");
           }}
         >
-          Admin <TabCount n={adminCount} active={tab === "admin"} />
+          Admin {everLoaded && <TabCount n={adminCount} active={tab === "admin"} />}
         </TabButton>
         <TabButton
           active={tab === "instructors"}
@@ -457,7 +474,7 @@ function StaffView() {
             setView("active");
           }}
         >
-          Instructors <TabCount n={instructorCount} active={tab === "instructors"} />
+          Instructors {everLoaded && <TabCount n={instructorCount} active={tab === "instructors"} />}
         </TabButton>
       </div>
 
@@ -465,8 +482,21 @@ function StaffView() {
         <div className="rounded-xl border border-border bg-card px-5 py-12 text-center text-sm text-muted">
           Loading staff…
         </div>
+      ) : nothingLoaded ? (
+        <div className="rounded-xl border border-border bg-card">
+          <LoadFailure what="the staff list" onRetry={refresh} />
+        </div>
       ) : (
         <>
+          {loadFailed && (
+            <LoadFailure
+              what="the staff list"
+              variant="inline"
+              detail="Showing what loaded earlier."
+              onRetry={refresh}
+              className="mb-4"
+            />
+          )}
           {active.length + archived.length > 0 && (
             <Tabs
               value={view}

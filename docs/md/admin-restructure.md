@@ -979,6 +979,21 @@ Unchanged from prior spec: workshops are non-refundable and non-cancellable by c
 
 ---
 
+## 18f. A failed read is not data (as built, #521)
+
+The staff portal draws a failed read as a failure, never as an empty list, a zero or "Unknown" (`fe-portal/src/lib/failed-read.ts`; the member app's rule is `fe-client-features` § 9.3). Where a screen cannot stand without a read, it replaces the list with one line, "Couldn't load the staff list." and so on, with **Try again** (`components/ui/load-failure.tsx`); where it can, the line sits beside what did load.
+
+- **Waiting, not failing.** A `401` on any call that sent the person's token ends the session (`lib/session-expiry.ts`, wired in `lib/api.ts`, handled by `lib/portal-auth.ts`): the token is forgotten and the session reads as signed out, so a studio's portal (`lib/workspace-context.tsx`) and the super portal (`components/platform/platform-shell.tsx`) each send the person to `/login?next=…`. A `503 maintenance` answer is the maintenance screen (`components/layout/maintenance-gate.tsx`). A screen whose read got either draws no failure of its own. A `401` on a call with no token, or a late one for a token since replaced, ends nothing.
+- **Lists.** Staff, Leave, PT requests, Corporate requests (the tab's old rows are dropped on a failed tab switch), Partial payments, Merch, Features, the Studios list on the super portal, Finance's transactions and period figures, the admin and instructor timetables, My schedule, the Instructor's PT requests, the Teaching log and My leave each say what could not be loaded, with no tab count (a "(0)") and no empty state beside it. The pickers behind "+ PT" and "+ Corporate" say they couldn't load the pending requests, not "No pending PT requests."
+- **Searches and forms.** A failed member search (Add member on a roster, a private session's seat) says "Couldn't search members.", not "No members match.". Scheduling a PT request says it couldn't load the instructors and rooms rather than calling the bound coach no longer active, and cannot be submitted until they load. The workshop editor says it couldn't load the locations, instructors and rooms and cannot be saved until they do. The ClassPass setup guide says it couldn't check the locations waiting in review. The super portal's Studios page says when it couldn't check for running imports, and the maintenance switch says when it couldn't be read.
+- **The bell.** When the first notification summary read fails the bell shows a warning mark ("!") and reads "couldn't check what needs attention", and the panel's Needs action tab shows no count; the sidebar badges draw nothing until a summary has loaded. Once a summary has loaded, a failed poll keeps the last number.
+- **Shell.** If `/portal/auth/me` fails for any reason but a sign-out or a refusal, the page says it couldn't load the workspace, with Try again, instead of a spinner that never ends.
+- **Archiving a location.** If the count of live Unlimited Plans that call the location home cannot be read, the confirmation says the app couldn't check, so archiving may strand members, and asks. The count is never taken as 0.
+- **Refreshes and pickers.** A re-read that fails after the list was loaded keeps the rows under a notice saying so (Staff), never in place of them; one that fails with nothing loaded replaces the list. The instructor pickers on the scheduling screens mark every instructor "leave not checked" when the leave read fails, instead of saying nothing. The corporate session page says when it couldn't load its package, whose name and link are then missing. The bell keeps each workspace's counts apart, so a failed read at one never shows another's.
+- **One line.** Every failed read in the portal is the same line, `components/ui/load-failure.tsx`: "Couldn't load …" with a **Try again** whose accessible name says what it retries.
+
+---
+
 ## 19. Next Phase — Deferred Items
 
 The following sections are out of scope for this phase and will be defined in the next design cycle.

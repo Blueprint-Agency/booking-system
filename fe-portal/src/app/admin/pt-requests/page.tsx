@@ -2,7 +2,8 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRequestDeepLink } from "@/components/attention/deep-links";
 import { useAttention } from "@/components/attention/attention-provider";
-import { PageHeader, Badge, Pagination, usePaged } from "@/components/ui";
+import { PageHeader, Badge, LoadFailure, Pagination, usePaged } from "@/components/ui";
+import { answeredElsewhere } from "@/lib/failed-read";
 import { useWorkspace } from "@/lib/workspace-context";
 import { PtRequestDrawer } from "@/components/pt-requests/pt-request-drawer";
 import { ScheduleFromRequestDialog } from "@/components/pt-requests/schedule-from-request-dialog";
@@ -59,8 +60,9 @@ function PtRequestsView() {
         { status: "all", location_id: activeLocation.id },
       );
       setRequests(res.pt_requests ?? []);
-    } catch {
-      setError("Couldn't load PT requests.");
+    } catch (err) {
+      // A `401` or maintenance is answered by the sign-in and the maintenance screen.
+      if (!answeredElsewhere(err)) setError("Couldn't load PT requests.");
       setRequests([]);
     } finally {
       setLoading(false);
@@ -112,12 +114,6 @@ function PtRequestsView() {
           : "Select a workspace location to see its PT requests."}
       </div>
 
-      {error && (
-        <div className="rounded-lg border border-error/30 bg-error/5 px-3 py-2 text-xs text-error">
-          {error}
-        </div>
-      )}
-
       <div className="flex flex-wrap gap-2">
         {filters.map((f) => {
           const count = requests.filter((r) => ptInFilter(r, f)).length;
@@ -132,13 +128,19 @@ function PtRequestsView() {
                   : "border-border bg-card text-muted"
               }`}
             >
-              {PT_FILTER_LABEL[f]} ({count})
+              {/* No count for a list that failed to load: it would read as 0. */}
+              {PT_FILTER_LABEL[f]}
+              {!error && ` (${count})`}
             </button>
           );
         })}
       </div>
 
-      {loading || wsLoading ? (
+      {error ? (
+        <div className="rounded-lg border border-border bg-card">
+          <LoadFailure what="the PT requests" onRetry={load} />
+        </div>
+      ) : loading || wsLoading ? (
         <div className="rounded-lg border border-border bg-card p-8 text-center text-sm text-muted">
           Loading…
         </div>

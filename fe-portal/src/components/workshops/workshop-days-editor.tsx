@@ -56,6 +56,7 @@ export function WorkshopDaysEditor({
   onChange,
   rooms,
   locationChosen,
+  roomsUnknown = false,
 }: {
   mode: Mode;
   onModeChange: (m: Mode) => void;
@@ -66,6 +67,8 @@ export function WorkshopDaysEditor({
   onChange: (days: WorkshopDay[]) => void;
   rooms: RoomOption[];
   locationChosen: boolean;
+  /** The rooms could not be read, so an empty list is not "no rooms". */
+  roomsUnknown?: boolean;
 }) {
   function regenerateFromRange(start: string, end: string) {
     onRangeChange(start, end);
@@ -215,7 +218,7 @@ export function WorkshopDaysEditor({
                     </option>
                   ))}
                 </select>
-                {locationChosen && rooms.length === 0 && (
+                {locationChosen && rooms.length === 0 && !roomsUnknown && (
                   <p className="text-xs text-error">
                     No rooms at this location yet — add one under Building Blocks → Rooms.
                   </p>

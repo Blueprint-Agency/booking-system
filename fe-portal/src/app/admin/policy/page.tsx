@@ -1,4 +1,5 @@
 "use client";
+import { LoadFailure } from "@/components/ui/load-failure";
 import { useCallback, useEffect, useState } from "react";
 import { Save, Info, Loader2, Plus, X } from "lucide-react";
 import { toast } from "sonner";
@@ -272,12 +273,11 @@ export default function PolicyPage() {
 
   if (error) {
     return (
-      <div className="mx-auto max-w-3xl rounded-xl border border-error/30 bg-error/5 p-6 text-center">
-        <p className="text-sm text-error">Failed to load: {error}</p>
-        <Button size="sm" variant="ghost" onClick={load} className="mt-2">
-          Retry
-        </Button>
-      </div>
+      <LoadFailure
+        what="the cancellation policy"
+        onRetry={load}
+        className="mx-auto max-w-3xl rounded-xl border border-border bg-card"
+      />
     );
   }
 

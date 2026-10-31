@@ -1,4 +1,5 @@
 "use client";
+import { LoadFailure } from "@/components/ui/load-failure";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { use, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
@@ -533,12 +534,12 @@ export default function ClientProfilePage({
           <Loader2 className="h-4 w-4 animate-spin" /> Loading customer…
         </div>
       ) : error || !profile ? (
-        <div className="rounded-xl border border-error/30 bg-error/5 p-8 text-center">
-          <p className="text-sm text-error">{error ?? "Could not load customer."}</p>
-          <Button size="sm" variant="ghost" onClick={load} className="mt-2">
-            Retry
-          </Button>
-        </div>
+        <LoadFailure
+          what="the customer"
+          detail={error ?? undefined}
+          onRetry={load}
+          className="rounded-xl border border-border bg-card"
+        />
       ) : (
         <div className="space-y-6">
           {!canEdit && (

@@ -1,4 +1,5 @@
 "use client";
+import { LoadFailure } from "@/components/ui/load-failure";
 import Link from "next/link";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
@@ -293,12 +294,7 @@ function CustomersList() {
             <Loader2 className="h-4 w-4 animate-spin" /> Loading customers…
           </div>
         ) : error ? (
-          <div className="py-12 text-center">
-            <p className="text-sm text-error">Failed to load: {error}</p>
-            <Button size="sm" variant="ghost" onClick={load} className="mt-2">
-              Retry
-            </Button>
-          </div>
+          <LoadFailure what="the customers" onRetry={load} className="py-12" />
         ) : (
           // Dimmed rather than blanked while the next page loads, so the pager
           // does not jump under the admin's cursor.
