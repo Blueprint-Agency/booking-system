@@ -1,4 +1,5 @@
 "use client";
+import { LoadFailure } from "@/components/ui/load-failure";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Copy, Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
@@ -112,12 +113,11 @@ export default function ClassPassPage() {
 
   if (error || !status || !api) {
     return (
-      <div className="mx-auto max-w-3xl rounded-xl border border-error/30 bg-error/5 p-6 text-center">
-        <p className="text-sm text-error">Failed to load: {error ?? "no answer"}</p>
-        <Button size="sm" variant="ghost" onClick={() => setAttempt((n) => n + 1)} className="mt-2">
-          Retry
-        </Button>
-      </div>
+      <LoadFailure
+        what="ClassPass"
+        onRetry={() => setAttempt((n) => n + 1)}
+        className="mx-auto max-w-3xl rounded-xl border border-border bg-card"
+      />
     );
   }
 

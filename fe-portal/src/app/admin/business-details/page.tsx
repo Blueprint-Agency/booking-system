@@ -1,4 +1,5 @@
 "use client";
+import { LoadFailure } from "@/components/ui/load-failure";
 import { useCallback, useEffect, useState } from "react";
 import { Loader2, Save } from "lucide-react";
 import { toast } from "sonner";
@@ -102,12 +103,11 @@ export default function BusinessDetailsPage() {
 
   if (error) {
     return (
-      <div className="mx-auto max-w-3xl rounded-xl border border-error/30 bg-error/5 p-6 text-center">
-        <p className="text-sm text-error">Failed to load: {error}</p>
-        <Button size="sm" variant="ghost" onClick={() => setAttempt((n) => n + 1)} className="mt-2">
-          Retry
-        </Button>
-      </div>
+      <LoadFailure
+        what="the business details"
+        onRetry={() => setAttempt((n) => n + 1)}
+        className="mx-auto max-w-3xl rounded-xl border border-border bg-card"
+      />
     );
   }
 

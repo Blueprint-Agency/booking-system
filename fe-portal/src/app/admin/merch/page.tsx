@@ -11,10 +11,12 @@ import {
   EmptyState,
   Input,
   Label,
+  LoadFailure,
   Pagination,
   Textarea,
   usePaged,
 } from "@/components/ui";
+import { answeredElsewhere } from "@/lib/failed-read";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
 
@@ -40,6 +42,8 @@ export default function MerchPage() {
   const [items, setItems] = useState<Merch[] | null>(null);
   const [editing, setEditing] = useState<Merch | null>(null);
   const [creating, setCreating] = useState(false);
+  // The list has never been read: the page says so, not a blank grid.
+  const [loadFailed, setLoadFailed] = useState(false);
 
   const load = useCallback(async () => {
     if (!api) return;
@@ -48,7 +52,10 @@ export default function MerchPage() {
         include_archived: "true",
       });
       setItems(res.merch);
+      setLoadFailed(false);
     } catch (err) {
+      if (answeredElsewhere(err)) return;
+      setLoadFailed(true);
       toast.error(errorMessage(err, "Couldn't load merch"));
     }
   }, [api]);
@@ -96,7 +103,11 @@ export default function MerchPage() {
         }
       />
 
-      {items && active.length + archived.length === 0 ? (
+      {loadFailed && !items ? (
+        <div className="rounded-xl border border-border bg-card shadow-soft">
+          <LoadFailure what="the merch" onRetry={load} />
+        </div>
+      ) : items && active.length + archived.length === 0 ? (
         <EmptyState
           title="No merch yet"
           description="Add mats, props or apparel and they show up in the customer app."

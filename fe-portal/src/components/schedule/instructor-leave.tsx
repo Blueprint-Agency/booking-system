@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useWorkspace } from "@/lib/workspace-context";
-import { LEAVE_HALF_DAY_SHORT, type HalfDay } from "@/lib/leave";
+import { answeredElsewhere } from "@/lib/failed-read";
+import { instructorOptionLabel, type HalfDay } from "@/lib/leave";
 import type { CatalogInstructor } from "@/lib/catalog";
 
 /**
@@ -10,19 +11,28 @@ import type { CatalogInstructor } from "@/lib/catalog";
  *
  * This is a HINT, never the enforcement. The backend refuses an assignment that
  * lands on pending or approved leave (services/schedule/occupancy), and it does
- * so whatever this screen last managed to fetch. So a failed load is silently an
- * empty map: showing an error for a hint would be noise, and the save is still
- * safe. Equally, an option is disabled only to save the admin a pointless round
- * trip — nothing here decides anything.
+ * so whatever this screen last managed to fetch, so the save is safe. But a
+ * failed load is not "nobody is away": every option is then marked "leave not
+ * checked" (`unchecked`), so the admin is not told a free day by silence. An
+ * option is disabled only to save the admin a pointless round trip — nothing
+ * here decides anything.
  *
  * Reads the all-staff `GET /portal/leave-calendar` with from == to == the chosen
  * date. Nothing leave-specific is added to the backend for the picker.
  */
 
-/** Instructor id → the shape of their absence on the queried date. Absent = free. */
-export type InstructorLeave = ReadonlyMap<string, HalfDay>;
+/**
+ * Who is away on the queried date, and whether that is known. `away` maps an
+ * instructor id to the shape of their absence; absent = free, when `unchecked`
+ * is false.
+ */
+export interface InstructorLeave {
+  away: ReadonlyMap<string, HalfDay>;
+  unchecked: boolean;
+}
 
-const NO_LEAVE: InstructorLeave = new Map();
+const NO_LEAVE: InstructorLeave = { away: new Map(), unchecked: false };
+const LEAVE_UNCHECKED: InstructorLeave = { away: new Map(), unchecked: true };
 
 /** `date` is `YYYY-MM-DD`, or "" before the admin has picked one — nobody is
  *  greyed until there is a date to be away on. */
@@ -49,9 +59,10 @@ export function useInstructorsOnLeave(date: string): InstructorLeave {
           // both halves) — the stricter reading wins.
           map.set(e.staff.id, prev === undefined || prev === e.half_day ? e.half_day : "none");
         }
-        setOnLeave(map);
-      } catch {
-        if (!cancelled) setOnLeave(NO_LEAVE);
+        setOnLeave({ away: map, unchecked: false });
+      } catch (err) {
+        // A `401` ends the session and maintenance replaces the page; neither is this read's to flag.
+        if (!cancelled) setOnLeave(answeredElsewhere(err) ? NO_LEAVE : LEAVE_UNCHECKED);
       }
     })();
     return () => {
@@ -103,15 +114,14 @@ export function InstructorOption({
   /** The class's intended start, `HH:MM`. Omitted where the form has no time. */
   startTime?: string;
 }) {
-  const half = onLeave.get(instructor.id);
+  const half = onLeave.away.get(instructor.id);
   return (
     <option
       value={instructor.id}
       disabled={half === "none" || (half !== undefined && half === halfOfDay(startTime))}
       className={half ? "text-muted" : undefined}
     >
-      {instructor.name}
-      {half ? ` — On leave${LEAVE_HALF_DAY_SHORT[half]}` : ""}
+      {instructorOptionLabel(instructor.name, half, onLeave.unchecked)}
     </option>
   );
 }

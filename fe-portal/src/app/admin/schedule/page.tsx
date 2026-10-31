@@ -26,7 +26,8 @@ import {
   startOfMonth,
   startOfWeek,
 } from "date-fns";
-import { Button, PageHeader } from "@/components/ui";
+import { Button, LoadFailure, PageHeader } from "@/components/ui";
+import { answeredElsewhere } from "@/lib/failed-read";
 import { cn } from "@/lib/utils";
 import { formatTime } from "@/lib/formatters";
 import { localDay } from "@/lib/local-day";
@@ -91,6 +92,9 @@ export default function SchedulePage() {
   const [pickedSlot, setPickedSlot] = useState<Slot | null>(null);
 
   const [instructorsList, setInstructorsList] = useState<ApiInstructor[]>([]);
+  // The instructor names could not be read: say so, never "Unknown".
+  const [instructorsFailed, setInstructorsFailed] = useState(false);
+  const [instructorsAttempt, setInstructorsAttempt] = useState(0);
 
   // Seven columns don't fit a phone: open on the day there, where every class
   // gets the full width. The toggle still offers week and month.
@@ -108,14 +112,15 @@ export default function SchedulePage() {
         );
         if (cancelled) return;
         setInstructorsList(ins.instructors);
-      } catch {
-        // Names degrade to "Unknown" if the catalog fetch fails.
+        setInstructorsFailed(false);
+      } catch (err) {
+        if (!cancelled && !answeredElsewhere(err)) setInstructorsFailed(true);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [api]);
+  }, [api, instructorsAttempt]);
 
   const instructorById = useMemo(
     () => new Map(instructorsList.map((i) => [i.id, i.name])),
@@ -127,10 +132,10 @@ export default function SchedulePage() {
   );
   const resolver = useMemo<Resolver>(
     () => ({
-      instructorName: (id) => instructorById.get(id) ?? "Unknown",
+      instructorName: (id) => instructorById.get(id) ?? (instructorsFailed ? "—" : "Unknown"),
       locationName: (id) => (id ? (locationById.get(id) ?? "Unknown") : "—"),
     }),
-    [instructorById, locationById],
+    [instructorById, locationById, instructorsFailed],
   );
 
   const filterInstructors = useMemo(
@@ -348,12 +353,19 @@ export default function SchedulePage() {
             view !== "month" && "max-h-[calc(100dvh-16rem)] min-h-[420px]"
           )}
         >
-          {error && (
-            <div className="border-b border-error/30 bg-error/5 px-4 py-2 text-xs text-error">
-              Failed to load schedule: {error}
-            </div>
+          {instructorsFailed && !error && (
+            <LoadFailure
+              what="the instructor names"
+              variant="inline"
+              detail="Classes show no instructor until they load."
+              onRetry={() => setInstructorsAttempt((n) => n + 1)}
+              className="m-2"
+            />
           )}
-          {loading && allEntries.length === 0 ? (
+          {/* A schedule that failed to load is never drawn as an empty week. */}
+          {error ? (
+            <LoadFailure what="the schedule" onRetry={reload} className="py-16" />
+          ) : loading && allEntries.length === 0 ? (
             <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted">
               <Loader2 className="h-4 w-4 animate-spin" /> Loading schedule…
             </div>

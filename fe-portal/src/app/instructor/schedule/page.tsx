@@ -9,13 +9,14 @@ import {
   DialogFooter,
   EmptyState,
   Label,
+  LoadFailure,
   PageHeader,
   StatusBadge,
   Textarea,
 } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { useWorkspace } from "@/lib/workspace-context";
-import { permissionRefusal } from "@/lib/access-refusal";
+import { answeredElsewhere, loadError, type LoadError } from "@/lib/failed-read";
 import { ApiError } from "@/lib/api";
 import { formatDate, formatTime, todayIso } from "@/lib/formatters";
 import { localDay } from "@/lib/local-day";
@@ -61,7 +62,7 @@ export default function InstructorSchedulePage() {
   const [entries, setEntries] = useState<ScheduleEntry[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<LoadError | null>(null);
   // Cancel-own-class flow: only ever offered for a class this instructor leads.
   const [cancelling, setCancelling] = useState<ScheduleEntry | null>(null);
   const [reason, setReason] = useState("");
@@ -84,10 +85,8 @@ export default function InstructorSchedulePage() {
       setEntries(sched.entries ?? []);
       setRooms(rm.rooms ?? []);
     } catch (err) {
-      setError(
-        permissionRefusal(err) ??
-          (err instanceof ApiError ? `HTTP ${err.status}` : "Network error"),
-      );
+      // A `401` or maintenance is answered by the sign-in and the maintenance screen.
+      if (!answeredElsewhere(err)) setError(loadError(err));
     } finally {
       setLoading(false);
     }
@@ -182,13 +181,14 @@ export default function InstructorSchedulePage() {
         />
       )}
 
-      {error && (
-        <div className="rounded-lg border border-error/30 bg-error/5 p-3 text-xs text-error">
-          Failed to load schedule: {error}
-        </div>
-      )}
-
-      {loading ? (
+      {/* A schedule that failed to load is never drawn as "Nothing scheduled". */}
+      {error ? (
+        <LoadFailure
+          what="your schedule"
+          detail={error.detail}
+          onRetry={load}
+        />
+      ) : loading ? (
         <div className="flex items-center justify-center py-16 text-muted">
           <Loader2 className="h-5 w-5 animate-spin" />
         </div>

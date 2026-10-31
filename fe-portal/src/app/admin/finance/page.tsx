@@ -10,6 +10,7 @@ import {
   DialogFooter,
   Input,
   Label,
+  LoadFailure,
   Pagination,
   Select,
   DEFAULT_PAGE_SIZE,
@@ -21,6 +22,7 @@ import {
 } from "@/components/date-range-filter";
 import { useWorkspace } from "@/lib/workspace-context";
 import type { Api } from "@/lib/api";
+import { answeredElsewhere, loadError, type LoadError } from "@/lib/failed-read";
 import {
   fetchActiveInstructors,
   fetchActiveLocations,
@@ -120,9 +122,14 @@ function FinanceScreen() {
   }, [needsPay, range]);
 
   const [overview, setOverview] = useState<FinanceOverview | null>(null);
+  // The overview or the filters' lists could not be read: said, never a spinner
+  // that never ends or a Location filter with only "Unattributed" in it.
+  const [overviewFailed, setOverviewFailed] = useState(false);
+  const [listsFailed, setListsFailed] = useState(false);
+  const [listsAttempt, setListsAttempt] = useState(0);
   const [data, setData] = useState<FinanceResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<LoadError | null>(null);
   const [exporting, setExporting] = useState(false);
 
   // Local draft values for the inline-editable amount cells.
@@ -148,24 +155,27 @@ function FinanceScreen() {
         if (cancelled) return;
         setInstructors(ins);
         setLocations(loc);
-      } catch {
-        /* filters degrade gracefully — the table still loads */
+        setListsFailed(false);
+      } catch (err) {
+        // The table still loads; the filters say they are incomplete.
+        if (!cancelled && !answeredElsewhere(err)) setListsFailed(true);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [api]);
+  }, [api, listsAttempt]);
 
   // The overview reloads on the period alone. Kept separate from the ledger's
   // effect so typing in the search box doesn't re-run four analytics queries.
   const loadOverview = useCallback(async () => {
     if (!api) return;
     setOverview(null);
+    setOverviewFailed(false);
     try {
       setOverview(await fetchFinanceOverview(api, range));
-    } catch {
-      /* the ledger below is the load-bearing half; it reports its own errors */
+    } catch (err) {
+      if (!answeredElsewhere(err)) setOverviewFailed(true);
     }
   }, [api, range]);
 
@@ -183,7 +193,8 @@ function FinanceScreen() {
       setData(await fetchFinance(api, filters));
       setDrafts({});
     } catch (err) {
-      setError(financeErrorMessage(err, "Couldn't load finance"));
+      // A `401` or maintenance is answered by the sign-in and the maintenance screen.
+      if (!answeredElsewhere(err)) setError(loadError(err));
     } finally {
       setLoading(false);
     }
@@ -368,6 +379,10 @@ function FinanceScreen() {
 
       {overview ? (
         <OverviewPanel data={overview} unpricedCount={overview.unpriced_count} />
+      ) : overviewFailed ? (
+        <div className="rounded-xl border border-border bg-card shadow-soft">
+          <LoadFailure what="the period's figures" onRetry={loadOverview} className="py-6" />
+        </div>
       ) : (
         <div className="flex items-center justify-center py-10 text-muted">
           <Loader2 className="h-5 w-5 animate-spin" />
@@ -449,13 +464,22 @@ function FinanceScreen() {
         </button>
       )}
 
-      {error && (
-        <div className="mb-4 rounded-lg border border-error/30 bg-error/5 p-3 text-xs text-error">
-          {error}
-        </div>
+      {listsFailed && (
+        <LoadFailure
+          what="the Location and instructor lists"
+          variant="inline"
+          detail="Those filters are incomplete."
+          onRetry={() => setListsAttempt((n) => n + 1)}
+          className="mb-4"
+        />
       )}
 
-      {loading ? (
+      {/* A ledger that failed to load is never drawn as "Nothing in this period". */}
+      {error ? (
+        <div className="rounded-xl border border-border bg-card shadow-soft">
+          <LoadFailure what="the transactions" detail={error.detail} onRetry={load} />
+        </div>
+      ) : loading ? (
         <div className="flex items-center justify-center py-16 text-muted">
           <Loader2 className="h-5 w-5 animate-spin" />
         </div>

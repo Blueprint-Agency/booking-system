@@ -1,7 +1,8 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { AlertCircle, Loader2, Wallet } from "lucide-react";
-import { EmptyState, PageHeader } from "@/components/ui";
+import { EmptyState, LoadFailure, PageHeader } from "@/components/ui";
+import { answeredElsewhere, loadError, type LoadError } from "@/lib/failed-read";
 import {
   DateRangeFilter,
   presetRange,
@@ -22,7 +23,7 @@ export default function InstructorPayrollPage() {
   const [range, setRange] = useState<DateRange>(() => presetRange("month"));
   const [data, setData] = useState<ApiInstructorPayrollResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<LoadError | null>(null);
 
   const load = useCallback(async () => {
     if (!api) return;
@@ -34,7 +35,8 @@ export default function InstructorPayrollPage() {
     try {
       setData(await fetchInstructorPayroll(api, range));
     } catch (err) {
-      setError(payrollErrorMessage(err, "Couldn't load payroll"));
+      // A `401` or maintenance is answered by the sign-in and the maintenance screen.
+      if (!answeredElsewhere(err)) setError(loadError(err));
     } finally {
       setLoading(false);
     }
@@ -79,13 +81,16 @@ export default function InstructorPayrollPage() {
         </div>
       )}
 
-      {error && (
-        <div className="mb-4 rounded-lg border border-error/30 bg-error/5 p-3 text-xs text-error">
-          {error}
+      {/* A log that failed to load is never drawn as "No completed sessions". */}
+      {error ? (
+        <div className="rounded-xl border border-border bg-card shadow-soft">
+          <LoadFailure
+            what="your teaching log"
+            detail={error.detail}
+            onRetry={load}
+          />
         </div>
-      )}
-
-      {loading ? (
+      ) : loading ? (
         <div className="flex items-center justify-center py-16 text-muted">
           <Loader2 className="h-5 w-5 animate-spin" />
         </div>

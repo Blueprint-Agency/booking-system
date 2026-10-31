@@ -8,10 +8,12 @@ import {
   EmptyState,
   Input,
   Label,
+  LoadFailure,
   PageHeader,
   Select,
   Textarea,
 } from "@/components/ui";
+import { answeredElsewhere } from "@/lib/failed-read";
 import { LeaveCalendar } from "@/components/leave-calendar";
 import { BalanceCard } from "@/components/leave/balance-card";
 import { DocumentButton, TransitionButton } from "@/components/leave/request-buttons";
@@ -96,7 +98,8 @@ export function MyLeave() {
     try {
       setData(await api.get<ApiLeaveResponse>(OWN_LEAVE_PATH));
     } catch (err) {
-      setError(leaveErrorMessage(err, "Couldn't load your leave"));
+      // A `401` or maintenance is answered by the sign-in and the maintenance screen.
+      if (!answeredElsewhere(err)) setError(leaveErrorMessage(err, "Couldn't load your leave"));
     } finally {
       setLoading(false);
     }
@@ -225,7 +228,8 @@ export function MyLeave() {
         description="Annual, medical and study leave, and what you have left this year. An admin approves or rejects each request."
       />
 
-      {error && (
+      {/* A failed re-read keeps the balances and requests already shown, and says so. */}
+      {error && data && (
         <div className="mb-4 rounded-lg border border-error/30 bg-error/5 p-3 text-xs text-error">
           {error}
         </div>
@@ -257,7 +261,13 @@ export function MyLeave() {
         <div className="flex items-center justify-center py-16 text-muted">
           <Loader2 className="h-5 w-5 animate-spin" />
         </div>
-      ) : !data ? null : (
+      ) : !data ? (
+        error ? (
+          <div className="rounded-xl border border-border bg-card shadow-soft">
+            <LoadFailure what="your leave" onRetry={load} />
+          </div>
+        ) : null
+      ) : (
         <>
           <div className="mb-4 grid gap-3 sm:grid-cols-3">
             {data.balances.map((b) => (

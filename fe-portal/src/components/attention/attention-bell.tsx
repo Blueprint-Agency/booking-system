@@ -11,9 +11,9 @@ import { AttentionPanel } from "./attention-panel";
  * opens. The count is also its accessible name, so it is not visual-only.
  */
 export function AttentionBell() {
-  const { total, panelOpen, setPanelOpen } = useAttention();
+  const { total, unchecked, panelOpen, setPanelOpen } = useAttention();
   const button = useRef<HTMLButtonElement>(null);
-  const text = bubbleText(total);
+  const text = bubbleText(total, unchecked);
 
   return (
     <>
@@ -21,7 +21,7 @@ export function AttentionBell() {
         ref={button}
         type="button"
         onClick={() => setPanelOpen(!panelOpen)}
-        aria-label={bellLabel(total)}
+        aria-label={bellLabel(total, unchecked)}
         aria-haspopup="dialog"
         aria-expanded={panelOpen}
         data-testid="attention-bell"
@@ -32,7 +32,10 @@ export function AttentionBell() {
           <span
             data-testid="attention-bubble"
             aria-hidden="true"
-            className="absolute -right-0.5 -top-0.5 inline-flex min-w-[18px] items-center justify-center rounded-full bg-error px-1 text-[11px] font-semibold leading-[18px] tabular-nums text-white ring-2 ring-card"
+            className={`absolute -right-0.5 -top-0.5 inline-flex min-w-[18px] items-center justify-center rounded-full px-1 text-[11px] font-semibold leading-[18px] tabular-nums ring-2 ring-card ${
+              // Dark ink on the amber (about 6.8:1); white on the red (about 4.9:1).
+              unchecked ? "bg-warning text-ink" : "bg-error text-white"
+            }`}
           >
             {text}
           </span>

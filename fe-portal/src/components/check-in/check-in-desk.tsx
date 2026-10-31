@@ -1,4 +1,5 @@
 "use client";
+import { LoadFailure } from "@/components/ui/load-failure";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -465,15 +466,11 @@ function Desk({ audience, params }: { audience: CheckInAudience; params: DeskPar
             <Loader2 className="h-4 w-4 animate-spin" /> Loading today&apos;s sessions…
           </div>
         ) : loadError && !day ? (
-          <div
-            role="alert"
-            className="rounded-xl border border-error/30 bg-error/5 p-6 text-center text-sm text-error"
-          >
-            <p>{loadError}</p>
-            <Button size="sm" variant="ghost" onClick={reload} className="mt-2">
-              Retry
-            </Button>
-          </div>
+          <LoadFailure
+            what="today's sessions"
+            onRetry={reload}
+            className="rounded-xl border border-border bg-card"
+          />
         ) : sessions.length === 0 ? (
           <div className="rounded-xl border border-border bg-card shadow-soft">
             <EmptyState

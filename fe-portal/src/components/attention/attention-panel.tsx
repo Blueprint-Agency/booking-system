@@ -5,6 +5,8 @@ import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import { ApiError } from "@/lib/api";
 import { X } from "lucide-react";
+import { LoadFailure } from "@/components/ui";
+import { answeredElsewhere, reportableFailure } from "@/lib/failed-read";
 import { useWorkspace } from "@/lib/workspace-context";
 import { formatRelative } from "@/lib/formatters";
 import { reportError } from "@/lib/report-error";
@@ -17,6 +19,7 @@ import {
   locationFromHref,
   markAllReadLocally,
   markUpdateReadLocally,
+  needsActionTabLabel,
   unreadCount,
   updatesTabLabel,
   type AttentionGroup,
@@ -55,6 +58,8 @@ export function AttentionPanel({
   const [olderCursor, setOlderCursor] = useState<string | null | undefined>(undefined);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [failed, setFailed] = useState(false);
+  // Bumped by Try again, to read the panel's list once more.
+  const [attempt, setAttempt] = useState(0);
   const panel = useRef<HTMLDivElement>(null);
   const total = summary?.total ?? 0;
 
@@ -71,14 +76,14 @@ export function AttentionPanel({
           setFailed(false);
         }
       } catch (err) {
-        if (!cancelled) setFailed(true);
-        reportError(err, { scope: "attention-panel" });
+        if (!cancelled && !answeredElsewhere(err)) setFailed(true);
+        if (reportableFailure(err)) reportError(err, { scope: "attention-panel" });
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [api, total]);
+  }, [api, total, attempt]);
 
   // Escape closes it; focus moves in on open and returns to the bell on close.
   // A press outside the panel closes it too. It is a listener, not a backdrop,
@@ -113,7 +118,8 @@ export function AttentionPanel({
   }, [returnFocusTo]);
 
   const groups = data?.needs_action.groups ?? [];
-  const needsAction = summary?.needs_action ?? groups.reduce((n, g) => n + g.count, 0);
+  // Null while neither the summary nor the list has been read: no "(0)" for a read that has no answer.
+  const needsAction = summary?.needs_action ?? (data ? groups.reduce((n, g) => n + g.count, 0) : null);
   const unread = summary?.unread_updates ?? 0;
   // The first page comes with the panel; "Show older" appends pages after it.
   const updates = appendOlder(data?.updates.items ?? [], older);
@@ -218,7 +224,7 @@ export function AttentionPanel({
         <div className="flex items-center justify-between border-b border-border px-4 py-2">
           <div role="tablist" aria-label="Notifications" className="flex gap-1">
             <TabButton active={tab === "needs_action"} onClick={() => setTab("needs_action")}>
-              Needs action ({needsAction})
+              {needsActionTabLabel(needsAction)}
             </TabButton>
             <TabButton active={tab === "updates"} onClick={() => setTab("updates")}>
               {updatesTabLabel(unread)}
@@ -237,7 +243,14 @@ export function AttentionPanel({
         <div role="tabpanel" className="flex-1 overflow-y-auto">
           {tab === "needs_action" ? (
             failed && !data ? (
-              <p className="px-4 py-8 text-center text-sm text-muted">Couldn&apos;t load notifications.</p>
+              <LoadFailure
+                what="notifications"
+                onRetry={() => {
+                  setFailed(false);
+                  refresh();
+                  setAttempt((n) => n + 1);
+                }}
+              />
             ) : !data ? (
               <p className="px-4 py-8 text-center text-sm text-muted">Loading…</p>
             ) : groups.length === 0 ? (
@@ -253,6 +266,15 @@ export function AttentionPanel({
                 />
               ))
             )
+          ) : failed && !data ? (
+            <LoadFailure
+              what="notifications"
+              onRetry={() => {
+                setFailed(false);
+                refresh();
+                setAttempt((n) => n + 1);
+              }}
+            />
           ) : !data ? (
             <p className="px-4 py-8 text-center text-sm text-muted">Loading…</p>
           ) : updates.length === 0 ? (

@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
-import { Button, Dialog, DialogFooter, Input, Label } from "@/components/ui";
+import { Button, Dialog, DialogFooter, Input, Label, LoadFailure } from "@/components/ui";
+import { answeredElsewhere } from "@/lib/failed-read";
 import { LATEST_DATE, todayIso } from "@/lib/formatters";
 import { ApiError } from "@/lib/api";
 import { refusalMessage } from "@/lib/refusal-message";
@@ -86,6 +87,10 @@ export function ScheduleFromRequestDialog({
   const [instructors, setInstructors] = useState<CatalogInstructor[]>([]);
   const [rooms, setRooms] = useState<CatalogRoom[]>([]);
   const [refLoading, setRefLoading] = useState(true);
+  // The instructors or rooms could not be read. The form then cannot tell who is
+  // active, so it says so rather than calling the bound coach inactive.
+  const [refFailed, setRefFailed] = useState(false);
+  const [refAttempt, setRefAttempt] = useState(0);
 
   const [instructorId, setInstructorId] = useState("");
   const [locationId, setLocationId] = useState(request.location.id);
@@ -114,6 +119,7 @@ export function ScheduleFromRequestDialog({
     if (!api) return;
     let cancelled = false;
     setRefLoading(true);
+    setRefFailed(false);
     void (async () => {
       try {
         const [ins, rm] = await Promise.all([
@@ -142,6 +148,8 @@ export function ScheduleFromRequestDialog({
               : ""
             : ins[0]?.id || "",
         );
+      } catch (e) {
+        if (!cancelled && !answeredElsewhere(e)) setRefFailed(true);
       } finally {
         if (!cancelled) setRefLoading(false);
       }
@@ -149,7 +157,7 @@ export function ScheduleFromRequestDialog({
     return () => {
       cancelled = true;
     };
-  }, [api, request.id, request.bound_instructor?.id]);
+  }, [api, request.id, request.bound_instructor?.id, refAttempt]);
 
   const activeLocations = useMemo(
     () => accessibleLocations.filter((l) => !l.archivedAt),
@@ -159,6 +167,7 @@ export function ScheduleFromRequestDialog({
   // binding stays and shows as stale until an admin rebinds it.
   const boundInstructorArchived = Boolean(
     !refLoading &&
+      !refFailed &&
       currentRequest.bound_instructor &&
       !instructors.some((i) => i.id === currentRequest.bound_instructor!.id),
   );
@@ -346,7 +355,9 @@ export function ScheduleFromRequestDialog({
                 className={`text-xs ${boundInstructorArchived ? "text-warning" : "text-muted"}`}
               >
                 This package is bound to {currentRequest.bound_instructor.name}.
-                {boundInstructorArchived
+                {refFailed
+                  ? " Couldn't check whether they're still an active instructor."
+                  : boundInstructorArchived
                   ? " They're no longer an active instructor — pick who runs this session, or rebind the package on the member's profile."
                   : instructorId !== currentRequest.bound_instructor.id
                     ? " You're overriding that for this session only."
@@ -402,6 +413,13 @@ export function ScheduleFromRequestDialog({
             </select>
           </div>
         </div>
+        {refFailed && (
+          <LoadFailure
+            what="the instructors and rooms"
+            className="py-3"
+            onRetry={() => setRefAttempt((n) => n + 1)}
+          />
+        )}
         {offProposal && (
           <ScheduleNoteField id="pt-schedule-note" value={note} onChange={setNote} disabled={saving} />
         )}
@@ -414,7 +432,7 @@ export function ScheduleFromRequestDialog({
           <Button type="button" variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" disabled={partnerBlocked || saving || refLoading}>
+          <Button type="submit" disabled={partnerBlocked || saving || refLoading || refFailed}>
             {saving && <Loader2 className="h-4 w-4 animate-spin" />}
             {saving ? "Scheduling…" : "Schedule session"}
           </Button>

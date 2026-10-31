@@ -29,6 +29,7 @@ import { twoFactorClient } from "better-auth/client/plugins";
 import { getApiBaseUrl } from "@/lib/api-url";
 import { portalAuthBasePath, portalAuthPool } from "@/lib/auth-pool";
 import { noteMaintenance } from "@/lib/maintenance";
+import { onSessionExpired } from "@/lib/session-expiry";
 import { clearTelemetryUser } from "@/lib/telemetry";
 import { tenantRequestHeaders } from "@/lib/tenant-host";
 
@@ -131,6 +132,27 @@ export async function signOutPortal(): Promise<void> {
     portalAuth.$store.notify("$sessionSignal");
   }
 }
+
+/**
+ * The backend refused this hostname's token (a 401 on a signed-in call): the
+ * session is no good, so there is nothing to sign out of. Forget the token and
+ * let the session store re-read. The session reads as signed out, and the
+ * studio portal's workspace gate and the super portal's shell each send the
+ * person to `/login?next=…`.
+ */
+export function handleExpiredSession(sentToken?: string): void {
+  const current = readPortalToken();
+  if (!current) return;
+  // A late 401 for a token this browser has since replaced (the person signed
+  // in again while it was in flight) says nothing about the new session.
+  if (sentToken !== undefined && sentToken !== current) return;
+  storePortalToken(null);
+  challenge = null;
+  clearTelemetryUser();
+  portalAuth.$store.notify("$sessionSignal");
+}
+
+onSessionExpired(handleExpiredSession);
 
 const subscribeNothing = () => () => {};
 

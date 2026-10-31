@@ -2,9 +2,8 @@
 import { useState } from "react";
 import { Plus, Archive, RotateCcw, MapPin, Phone, ExternalLink, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { Button, PageHeader, Badge, EmptyState, Tabs, TabsList, TabsTrigger } from "@/components/ui";
+import { Button, PageHeader, Badge, EmptyState, LoadFailure, Tabs, TabsList, TabsTrigger } from "@/components/ui";
 import { LocationFormDialog } from "@/components/locations/location-form-dialog";
-import { LocationsLoadError } from "@/components/locations/locations-load-error";
 import { runsStudio } from "@/lib/staff-role";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
@@ -108,7 +107,12 @@ export default function LocationsPage() {
       />
 
       {locationsStatus === "failed" && (
-        <LocationsLoadError onRetry={() => void retryLocations()} />
+        <LoadFailure
+          what="the studio's locations, archived ones included"
+          detail="Nothing can be edited until they load."
+          onRetry={() => retryLocations()}
+          className="rounded-lg border border-border"
+        />
       )}
       {locationsStatus === "loading" && (
         <p className="text-sm text-muted">Loading locations…</p>

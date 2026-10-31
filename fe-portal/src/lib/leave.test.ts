@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { supportingDocumentAction, type LeaveStatus, type LeaveType } from "./leave";
+import { instructorOptionLabel, supportingDocumentAction, type LeaveStatus, type LeaveType } from "./leave";
 
 const request = (type: LeaveType, status: LeaveStatus, has_supporting_document = false) => ({
   type,
@@ -29,4 +29,15 @@ test("LEV-142 a document already attached can still be opened, whatever the requ
 test("LEV-142 annual leave offers no document at all", () => {
   assert.equal(supportingDocumentAction(request("annual", "pending")), null);
   assert.equal(supportingDocumentAction(request("annual", "approved")), null);
+});
+
+test("ADM-09 an instructor picker whose leave read failed says leave was not checked, and never reads as nobody being away", () => {
+  assert.equal(instructorOptionLabel("Mei", undefined, true), "Mei — leave not checked");
+  assert.equal(instructorOptionLabel("Mei", undefined, false), "Mei");
+});
+
+test("ADM-09 an instructor who is known to be away is labelled so, checked or not", () => {
+  assert.equal(instructorOptionLabel("Mei", "none", false), "Mei — On leave");
+  assert.equal(instructorOptionLabel("Mei", "morning", false), "Mei — On leave (AM)");
+  assert.equal(instructorOptionLabel("Mei", "afternoon", true), "Mei — On leave (PM)");
 });

@@ -1,7 +1,9 @@
 import test from "node:test";
 import assert from "node:assert";
 import {
+  archiveWarning,
   assertLoadedInFull,
+  confirmArchive,
   latestRead,
   locationSaveRefusal,
   locationsToManage,
@@ -82,4 +84,49 @@ test("LOC-19 once the full list has loaded, an Admin may edit and the screens th
 test("LOC-19 the workspace switcher keeps listing the studio's locations from the short list when the full list is missing, and from the full list once it is there", () => {
   assert.deepStrictEqual(workspaceLocations(short, null), short);
   assert.deepStrictEqual(workspaceLocations(short, full), full);
+});
+
+test("ADM-07 archiving a location asks nothing when no live Unlimited Plan calls it home, and names the stranded members when some do", () => {
+  assert.strictEqual(archiveWarning(0, "Orchard"), null);
+  assert.strictEqual(
+    archiveWarning(1, "Orchard"),
+    "1 live Unlimited Plan calls Orchard home. Archiving it strands that member. Archive anyway?",
+  );
+  assert.strictEqual(
+    archiveWarning(3, "Orchard"),
+    "3 live Unlimited Plans call Orchard home. Archiving it strands those members. Archive anyway?",
+  );
+});
+
+test("ADM-07 archiving a location whose Unlimited Plan count could not be read says it could not check, and never proceeds as if the count were 0", () => {
+  const warning = archiveWarning(null, "Orchard");
+  assert.ok(warning !== null);
+  assert.match(warning, /couldn't check/i);
+  assert.match(warning, /Orchard/);
+  assert.match(warning, /Archive anyway\?$/);
+});
+
+test("ADM-07 the archive confirmation, as the workspace runs it: a count that fails to read asks the admin, and archives only if they agree", async () => {
+  const asked: string[] = [];
+  const failing = async () => {
+    throw new Error("500");
+  };
+  assert.strictEqual(
+    await confirmArchive(failing, "Orchard", (q) => (asked.push(q), false)),
+    false,
+    "an admin who declines is not archived over a count nobody read",
+  );
+  assert.strictEqual(asked.length, 1);
+  assert.match(asked[0]!, /couldn't check/i);
+
+  assert.strictEqual(await confirmArchive(failing, "Orchard", () => true), true);
+});
+
+test("ADM-07 the archive confirmation asks nothing when the count reads 0, and names the stranded members when it reads more", async () => {
+  const asked: string[] = [];
+  const confirm = (q: string) => (asked.push(q), false);
+  assert.strictEqual(await confirmArchive(async () => ({ count: 0 }), "Orchard", confirm), true);
+  assert.deepStrictEqual(asked, []);
+  assert.strictEqual(await confirmArchive(async () => ({ count: 2 }), "Orchard", confirm), false);
+  assert.match(asked[0]!, /2 live Unlimited Plans call Orchard home/);
 });

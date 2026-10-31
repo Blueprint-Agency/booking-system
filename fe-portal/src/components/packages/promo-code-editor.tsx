@@ -1,4 +1,5 @@
 "use client";
+import { LoadFailure } from "@/components/ui/load-failure";
 /**
  * Create or edit one Promo Code (spec-pre-launch-batch.md §9–§11).
  *
@@ -230,12 +231,12 @@ export function PromoCodeEditor({ codeId }: { codeId?: string }) {
 
   if (loadError || (!isNew && !row)) {
     return (
-      <div className="mx-auto max-w-2xl rounded-xl border border-error/30 bg-error/5 p-6 text-center">
-        <p className="text-sm text-error">Failed to load: {loadError ?? "Not found"}</p>
-        <Button size="sm" variant="ghost" onClick={load} className="mt-2">
-          Retry
-        </Button>
-      </div>
+      <LoadFailure
+        what="the promo code"
+        detail={loadError ?? undefined}
+        onRetry={load}
+        className="mx-auto max-w-2xl rounded-xl border border-border bg-card"
+      />
     );
   }
 
