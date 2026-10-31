@@ -27,6 +27,7 @@ import { useCancellationPolicy } from "@/lib/cancellation-policy";
 import { ptCancelResult, ptPolicyNote } from "@/lib/cancellation-copy";
 import { useClientPackages } from "@/lib/use-client-packages";
 import { corporateArrival } from "@/lib/corporate-return";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import { CorporateRequestSent } from "@/components/corporate/corporate-request-sent";
 import {
   bookingItems,
@@ -75,6 +76,7 @@ export default function YourBookingsPage() {
  * `?type=` and `?when=` open it filtered; the old per-kind pages redirect here.
  */
 function YourBookings() {
+  const tz = useStudioZone();
   const params = useSearchParams();
   const api = useApi();
   const policy = useCancellationPolicy();
@@ -126,7 +128,7 @@ function YourBookings() {
     reload();
   }, [reload]);
 
-  const items = useMemo(() => (src ? bookingItems(src, Date.now()) : []), [src]);
+  const items = useMemo(() => (src ? bookingItems(src, Date.now(), tz) : []), [src, tz]);
   const ofType = useMemo(
     () => items.filter((i) => type === "all" || i.type === type),
     [items, type],

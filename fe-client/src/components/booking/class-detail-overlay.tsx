@@ -30,18 +30,10 @@ import {
   OVERLAY_HEADER,
   OVERLAY_PANEL,
 } from "@/components/ui/styles";
-import { cn, formatDate } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { apiErrorCode, useApi } from "@/lib/api";
 import { ERROR_CODES } from "@/lib/error-codes";
-import {
-  fetchMemberClass,
-  fetchPublicClass,
-  formatClassTime,
-  type ApiClassCard,
-  type ApiClassDetail,
-  type ApiInstructorRef,
-  type ApiMemberClassDetail,
-} from "@/lib/classes";
+import { fetchMemberClass, fetchPublicClass, type ApiClassCard, type ApiClassDetail, type ApiInstructorRef, type ApiMemberClassDetail } from "@/lib/classes";
 import { classLength, seatsLine } from "@/lib/class-detail";
 import { classCancelWindowLine } from "@/lib/cancellation-copy";
 import { useCancellationPolicy } from "@/lib/cancellation-policy";
@@ -51,6 +43,8 @@ import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import type { ClassAction, WaitlistPlace } from "@/lib/waitlist";
 import { clashNote, type ApiClash } from "@/lib/clash";
+import { formatClassTime, formatDate } from "@/lib/studio-time";
+import { useStudioZone } from "@/components/brand/brand-provider";
 
 type Load =
   | { state: "loading" }
@@ -105,6 +99,7 @@ export function ClassDetailOverlay({
   onNoneAccepted: () => void;
   onClose: () => void;
 }) {
+  const tz = useStudioZone();
   const trapRef = useFocusTrap<HTMLDivElement>(true);
   useBodyScrollLock(true);
   const api = useApi();
@@ -174,7 +169,7 @@ export function ClassDetailOverlay({
                 {cls.class_type.name}
               </h2>
               <p className="mt-1 text-sm font-medium text-ink/80 tabular-nums">
-                {formatDate(cls.starts_at)} · {formatClassTime(cls.starts_at)} – {formatClassTime(cls.ends_at)}
+                {formatDate(tz, cls.starts_at)} · {formatClassTime(tz, cls.starts_at)} – {formatClassTime(tz, cls.ends_at)}
                 <span className="text-muted"> · {classLength(cls.starts_at, cls.ends_at)}</span>
               </p>
             </div>
@@ -325,11 +320,12 @@ function StateBanner({
   myEntry: WaitlistPlace | null;
   clash: ApiClash | null;
 }) {
+  const tz = useStudioZone();
   if (action === "clash" && clash) {
     return (
       <p className="mb-4 flex items-start gap-2 rounded-xl bg-ink/[0.04] px-4 py-3 text-sm text-ink">
         <CalendarX className="mt-0.5 h-4 w-4 shrink-0 text-muted" aria-hidden />
-        <span>{clashNote(clash)}</span>
+        <span>{clashNote(clash, tz)}</span>
       </p>
     );
   }
@@ -357,6 +353,7 @@ function StateBanner({
  * Signed out: what signing in would show.
  */
 function MyPackages({ detail, isSignedIn }: { detail: ApiClassDetail | ApiMemberClassDetail; isSignedIn: boolean }) {
+  const tz = useStudioZone();
   if (!isSignedIn || !isMemberDetail(detail)) {
     return (
       <p className="mt-3 rounded-xl bg-ink/[0.04] px-4 py-3 text-sm text-ink">
@@ -398,7 +395,7 @@ function MyPackages({ detail, isSignedIn }: { detail: ApiClassDetail | ApiMember
               <span className={cn("block text-sm font-medium break-words", p.eligible ? "text-ink" : "text-ink/70")}>
                 {p.name}
               </span>
-              <span className="block text-xs text-muted">{packageMeta(p)}</span>
+              <span className="block text-xs text-muted">{packageMeta(p, tz)}</span>
               {reason && <span className="mt-0.5 block text-xs text-ink/70">{reason}</span>}
             </span>
           </li>

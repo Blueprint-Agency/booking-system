@@ -347,5 +347,13 @@ test("the year is a column per month, the months after this one marked future", 
 
 test("today is the studio's calendar day", () => {
   // 00:30 on 1 October in Singapore; still 30 September in UTC.
-  assert.equal(studioToday(Date.parse("2026-09-30T16:30:00Z")), "2026-10-01");
+  assert.equal(studioToday(Date.parse("2026-09-30T16:30:00Z"), "Asia/Singapore"), "2026-10-01");
+});
+
+test("TEN-98 a Sydney studio's today is Sydney's day, ahead of Singapore's and UTC's", () => {
+  // 00:30 on 1 October in Sydney (UTC+10): 22:30 on 30 September in Singapore, 14:30 in UTC.
+  const at = Date.parse("2026-09-30T14:30:00Z");
+  assert.equal(studioToday(at, "Australia/Sydney"), "2026-10-01");
+  assert.equal(studioToday(at, "Asia/Singapore"), "2026-09-30");
+  assert.equal(studioToday(at, "UTC"), "2026-09-30");
 });

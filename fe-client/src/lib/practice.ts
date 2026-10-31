@@ -12,6 +12,7 @@
  *
  * Pure, so `practice.test.ts` runs it under `node --test`.
  */
+import { localDate } from "./studio-time.ts";
 
 export type PracticePeriod = "week" | "month" | "quarter" | "year" | "all";
 
@@ -323,6 +324,6 @@ export function practiceSplit(s: PracticeData): PracticePart[] {
 }
 
 /** Today's date on the studio's calendar, as every date the app shows is. */
-export function studioToday(nowMs: number): string {
-  return new Date(nowMs).toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
+export function studioToday(nowMs: number, timezone: string): string {
+  return localDate(timezone, nowMs);
 }

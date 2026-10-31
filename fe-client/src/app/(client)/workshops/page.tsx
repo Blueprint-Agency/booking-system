@@ -23,10 +23,12 @@ import { groupWorkshops, isEnded } from "@/lib/workshop-groups";
 import { OneOpenAccordion } from "@/components/booking/one-open-accordion";
 import { StickyFilters } from "@/components/ui/sticky-filters";
 import { MembersOnly } from "@/components/auth/members-only";
+import { useStudioZone } from "@/components/brand/brand-provider";
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function WorkshopsPage() {
+  const tz = useStudioZone();
   const { data, loading, signedOut, error } = useWorkshops();
   const [selectedLocation, setSelectedLocation] = useState<string>("all");
 
@@ -52,8 +54,8 @@ export default function WorkshopsPage() {
       selectedLocation === "all"
         ? workshops
         : workshops.filter((w) => w.location?.id === selectedLocation);
-    return groupWorkshops(here, nowMs);
-  }, [workshops, selectedLocation, nowMs]);
+    return groupWorkshops(here, nowMs, tz);
+  }, [workshops, selectedLocation, nowMs, tz]);
 
   // One month open at a time, the soonest first.
   const sections = useMemo(
@@ -153,8 +155,9 @@ function firstLine(text: string | null): string {
 }
 
 function WorkshopCard({ workshop }: { workshop: ApiWorkshopCard }) {
+  const tz = useStudioZone();
   const summary = firstLine(workshop.description_html);
-  const dateRange = formatWorkshopDates(workshop.starts_at, workshop.ends_at);
+  const dateRange = formatWorkshopDates(workshop.starts_at, workshop.ends_at, tz);
   const minPrice = workshop.min_price_sgd;
   const priceLabel =
     minPrice == null
