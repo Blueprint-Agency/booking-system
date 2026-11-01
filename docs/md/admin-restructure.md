@@ -474,7 +474,7 @@ PT Requests carry a `location_id` chosen by the client at request time. The `/ad
   - **Location + Room**: required; room must belong to the chosen location.
   - **2on1 + partner is not yet a member** → admin is prompted to create the partner's client account first (via a "+ Create partner" inline action) before submit; the scheduler refuses to save until `co_client_id` is populated.
   - `<CapacityFields />` defaults from session type (`1on1` → `online_booking: 1, buffer: 0, waitlist: 0`; `2on1` → `online_booking: 2`).
-- **Cancel** (admin) is a single-confirm action — no decline note. Branches on current status (see §9e).
+- **Cancel** (admin) is a single-confirm action — no decline note. Branches on current status (see §9e). A `scheduled` request with a session offers **Cancel session** until the session starts; one with **no session** (it named none, or its session is gone) offers **Cancel request** at any time, and the sessions it was holding go back to the requester's package (#545).
 
 ### 9d. Two converging entry points
 
