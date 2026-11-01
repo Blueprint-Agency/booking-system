@@ -282,7 +282,7 @@ A catalogue package an admin gives a member at no charge, with a reason — a co
 _Avoid_: comp, freebie, gift, giveaway, promo package, free grant
 
 **Remove** (a Complimentary Package):
-Taking back a Complimentary Package given by mistake: the package row goes, and every class it paid for that has not been held is cancelled — a `system` cancel, as a Void's is (#350). Only ever a comp, and only while Untouched — a purchase is Refunded, and a comp a member has already used is corrected with a balance or expiry edit instead.
+Taking back a Complimentary Package given by mistake: the package row goes, and every class it paid for that has not been held is cancelled — a `system` cancel, as a Void's is (#350). A private session request it paid for is ended the same way, a `scheduled` one that names no session included (#549). Only ever a comp, and only while Untouched — a purchase is Refunded, and a comp a member has already used is corrected with a balance or expiry edit instead.
 _Avoid_: revoke, delete, cancel, withdraw, claw back
 
 ### Money

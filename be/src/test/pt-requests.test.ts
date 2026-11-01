@@ -4325,6 +4325,12 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     ).client_package_id as string
   }
 
+  // Sessions of the tests below are a day apart, weeks out (inside a package's first
+  // expiry), and take no slot from `far()`: the suite's other sessions walk that
+  // counter's two-hour steps into one another's classes.
+  let compSlots = 0
+  const compSlot = () => new Date(Date.now() + (50 + compSlots++) * DAY)
+
   const removeComp = (who: Member, clientPackageId: string) =>
     harness.app.request(`/api/v1/portal/admin/clients/${who.clientId}/packages/${clientPackageId}/remove`, {
       method: 'POST',
@@ -4348,7 +4354,7 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
       const who = await member(one, `Cora Sessionless ${how}`)
       const comp = await giveComp(who)
       const requestId = await requestOk(one, who, { sessionType: '1on1', clientPackageId: comp })
-      if (how !== 'never') await scheduled(requestId)
+      if (how !== 'never') await scheduled(requestId, { startsAt: compSlot() })
       await withoutSession(requestId, how)
       // A second request on the same comp, still pending, goes with it as it always did.
       const pendingId = await requestOk(one, who, {
@@ -4359,7 +4365,9 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
       // Bystander: another member's scheduled session.
       const other = await member(one, `Cora Bystander ${how}`)
       const otherPackage = await givePt(one, other, '1on1')
-      const otherSession = await scheduled(await requestOk(one, other, { sessionType: '1on1', clientPackageId: otherPackage }))
+      const otherSession = await scheduled(await requestOk(one, other, { sessionType: '1on1', clientPackageId: otherPackage }), {
+        startsAt: compSlot(),
+      })
       const sessionsBefore = await ptSessionCount()
       const cancellationsBefore = (await cancellationsOf(who)).length
 
@@ -4389,7 +4397,7 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     const who = await member(one, 'Cora Unlinked')
     const comp = await giveComp(who)
     const requestId = await requestOk(one, who, { sessionType: '1on1', clientPackageId: comp })
-    const sessionId = await scheduled(requestId)
+    const sessionId = await scheduled(requestId, { startsAt: compSlot() })
     await harness.db.execute(sql`UPDATE pt_requests SET scheduled_pt_session_id = NULL WHERE id = ${requestId}`)
 
     await expectStatus(await removeComp(who, comp), 200)

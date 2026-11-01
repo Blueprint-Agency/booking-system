@@ -33,9 +33,10 @@ import { sendPtRequestExpiredEmails } from '../notifications/send-pt-request-ema
  *               configured PT window + cap returns the session(s), otherwise the
  *               action is rejected outright (hard deadline, mirroring classes).
  *               A scheduled request with no session (it named none, or its
- *               session is gone) is ended by an Admin alone: the debit comes
- *               back as a pending request's does, nothing else is settled. For
- *               anyone else it stays `pt_session_not_found`.
+ *               session is gone) is ended by an Admin, or by a Complimentary
+ *               Remove (`endsSessionless`): the debit comes back as a pending
+ *               request's does, nothing else is settled. For anyone else it
+ *               stays `pt_session_not_found`.
  *               Staff cancel only before the session starts
  *               (`session_already_started` after), and nothing
  *               returns to a Voided package.
@@ -72,6 +73,14 @@ export interface CancelPtRequestInput {
    * lock, and the debit comes back as an expiry refund.
    */
   expired?: boolean
+  /**
+   * A Complimentary package's Remove (`source: 'system'`): a `scheduled`
+   * request with no session is ended as an Admin's cancel of it is, instead of
+   * answering `pt_session_not_found`, and a session that still names the
+   * request is found and cancelled. Every other system cancel (the jobs) leaves
+   * it unset and is still refused.
+   */
+  endsSessionless?: boolean
   /**
    * When set (instructor-initiated cancel), restricts the action to a SCHEDULED
    * session the instructor personally runs. Instructors cannot cancel pending
@@ -243,7 +252,8 @@ async function cancelPtRequestInTx(
         .for('update')
         .limit(1)
     : []
-  if (!session && source === 'admin') {
+  const endsSessionless = source === 'admin' || (source === 'system' && input.endsSessionless === true)
+  if (!session && endsSessionless) {
     // A cleared id does not mean no session: one may still name this request.
     // The Admin's cancel then settles that session like any other, and the
     // request names it again, rather than refunding beside a live booking.
@@ -263,16 +273,19 @@ async function cancelPtRequestInTx(
   if (!session) {
     // An Admin ends it: the credit it holds goes back as a pending request's
     // does, and there is no session, booking or cancellation to settle. A
-    // member's, an Instructor's (it is no session of theirs) and the system's
-    // cancel of it stay refused.
-    if (source !== 'admin') throw new NotFoundError('pt_session_not_found')
+    // member's, an Instructor's (it is no session of theirs) and a job's
+    // cancel of it stay refused. A Complimentary Remove ends it too, as the
+    // studio's machinery: it tells the member nothing, like its other cancels.
+    if (!endsSessionless) throw new NotFoundError('pt_session_not_found')
     const landed = await refundToPackage(cost, 'pt_admin_cancel_refund')
     const returned = landed && req.debitedClientPackageId ? cost : 0
     await tx
       .update(ptRequests)
       .set({ status: 'cancelled_after_scheduled', resolvedAt: clockNow(), resolvedByStaffId, cancelSource: source })
       .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, ptRequestId)))
-    mail.request.push({ clientId: req.clientId, sessionsReturned: returned, ptSessionId: null })
+    if (source !== 'system') {
+      mail.request.push({ clientId: req.clientId, sessionsReturned: returned, ptSessionId: null })
+    }
     return {
       status: 'cancelled_after_scheduled',
       refundedSessions: returned,

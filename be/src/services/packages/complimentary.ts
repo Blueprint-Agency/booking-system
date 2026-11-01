@@ -335,7 +335,9 @@ async function cancelPtRequestsOn(
     // A system cancel: the Remove cancelled them, not a person
     // cancelling a session. The admin who took the package back is still
     // named on the request and the ledger, like every other row it writes.
-    await cancelPtRequest(tenantId, { ptRequestId: id, source: 'system', actorStaffId })
+    // A scheduled one that names no session is ended too, as an Admin's cancel
+    // of it is, rather than refusing the Remove (#549).
+    await cancelPtRequest(tenantId, { ptRequestId: id, source: 'system', actorStaffId, endsSessionless: true })
   }
 }
 
