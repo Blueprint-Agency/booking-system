@@ -372,8 +372,9 @@ retired.**
       `key` as its sole primary key. All five now have a `tenant_id` column, but no second
       tenant can ever own a row in them — so today `acme` would render tenant #1's waiver,
       marketing content and policy. Each needs its primary key / check widened to include
-      `tenant_id` before per-tenant settings mean anything.
-- [ ] Move seeds (`locations.ts`, `waiver.ts`, `email-copy.ts`, `corporate-packages.ts`)
+      `tenant_id` before per-tenant settings mean anything. (`waiver` is since dropped, by
+      migration 0141.)
+- [ ] Move seeds (`locations.ts`, `waiver.ts` (since deleted with its table), `email-copy.ts`, `corporate-packages.ts`)
       to per-tenant provisioning data. Until then `db:seed` finishes with
       `claim-tenant-one.ts`, which claims anything a seeder wrote for tenant #1 — every
       seeder writes an explicit column list that knows nothing about tenancy, and `db:seed`
