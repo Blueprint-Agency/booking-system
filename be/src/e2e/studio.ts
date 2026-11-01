@@ -158,6 +158,9 @@ export type E2eStudio = {
 }
 
 const HOUR = 60 * 60 * 1000
+
+/** The e2e studio's IANA zone (`tenants.timezone`). Whole-hour offsets all year, so "on the hour" in UTC is on the hour here. */
+const E2E_STUDIO_TIMEZONE = 'Australia/Sydney'
 const DAY = 24 * HOUR
 const PACKAGE_CREDITS = 5
 /** Long enough for the journey to book it before it starts, short enough to be inside the window. */
@@ -214,7 +217,11 @@ export async function createE2eStudio({
   if (!client || !portal) throw new Error('FRONTEND_URLS names no client or portal wildcard')
 
   const name = `E2E ${slug.slice(E2E_SLUG_PREFIX.length)}`
-  const [tenant] = await db.insert(schema.tenants).values({ slug, name }).returning()
+  // On a zone that is neither Singapore (the column's default) nor UTC, so a screen
+  // that formats a time in the browser's zone, or in a fixed offset, shows in the
+  // journeys. The browser itself is in a third zone in the journey that proves it
+  // (`e2e/journeys/schedule-a-class.spec.ts`).
+  const [tenant] = await db.insert(schema.tenants).values({ slug, name, timezone: E2E_STUDIO_TIMEZONE }).returning()
   if (!tenant) throw new Error('tenant insert returned no row')
   const seeded = { id: tenant.id, slug, name, timezone: tenant.timezone }
   // What a studio sets for its footer: a tagline, its own words, its legal and
