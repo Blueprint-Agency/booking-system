@@ -314,8 +314,8 @@ export async function previewClassRule(api: Api, classId: string, rule: PackageR
 }
 
 /** Moved onto a time a member on it is booked elsewhere, staff are asked first. */
-export function patchPtSession(api: Api, sessionId: string, input: PtPatch): Promise<unknown> {
-  return withClashConfirm("session", (extra) =>
+export function patchPtSession(api: Api, timezone: string, sessionId: string, input: PtPatch): Promise<unknown> {
+  return withClashConfirm("session", timezone, (extra) =>
     api.patch(`/portal/admin/pt-sessions/sessions/${sessionId}`, { ...input, ...extra }),
   );
 }
@@ -386,13 +386,13 @@ const SCHEDULE_ERROR_COPY: Record<string, string> = {
  * the backend knows WHO is double-booked and by which event, so it composes the
  * sentence and this passes it through.
  */
-export function scheduleErrorMessage(err: unknown, fallback = "Save failed"): string {
+export function scheduleErrorMessage(err: unknown, fallback: string, timezone: string): string {
   if (!(err instanceof ApiError)) return "Network error";
   const refused = permissionRefusal(err);
   if (refused) return refused;
   // A member on it is booked elsewhere then, and staff chose not to go ahead.
   const clash = timeClashOf(err);
-  if (clash) return timeClashRefusal(clash);
+  if (clash) return timeClashRefusal(clash, timezone);
   const body = err.body as { error?: string; message?: string } | null;
   if (typeof body?.message === "string" && body.message) return body.message;
   const known = body?.error ? SCHEDULE_ERROR_COPY[body.error] : undefined;

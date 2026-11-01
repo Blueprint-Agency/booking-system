@@ -8,6 +8,7 @@ import { ClassPassLocationMappings } from "@/components/classpass/location-mappi
 import { ClassPassReview } from "@/components/classpass/review-list";
 import { ClassPassSetupGuide } from "@/components/classpass/setup-guide";
 import { ApiError } from "@/lib/api";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import { useWorkspace } from "@/lib/workspace-context";
 import { formatDateTime } from "@/lib/formatters";
 import {
@@ -30,6 +31,7 @@ import {
  */
 export default function ClassPassPage() {
   const { api, locations } = useWorkspace();
+  const timezone = useStudioZone();
   const [status, setStatus] = useState<ClassPassStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -273,7 +275,7 @@ export default function ClassPassPage() {
           <h2 className="text-base font-semibold text-ink">Import status</h2>
           <p className="mt-0.5 text-xs text-muted">
             {status.last_received_at
-              ? `Last email received ${formatDateTime(status.last_received_at)}. ${total} received in all.`
+              ? `Last email received ${formatDateTime(timezone, status.last_received_at)}. ${total} received in all.`
               : "No email received yet."}
           </p>
         </header>
@@ -291,7 +293,7 @@ export default function ClassPassPage() {
             <ul className="mt-1 space-y-0.5 text-xs text-muted">
               {status.overbooked.map((o) => (
                 <li key={o.booking_id}>
-                  {o.client_name} · {o.class_name} · {formatDateTime(o.starts_at)}
+                  {o.client_name} · {o.class_name} · {formatDateTime(timezone, o.starts_at)}
                 </li>
               ))}
             </ul>
@@ -324,7 +326,7 @@ export default function ClassPassPage() {
                   <tr key={`${d.difference}-${d.class_id ?? d.class_name}-${d.starts_at}-${d.member_name}-${d.booking_id ?? ""}`}>
                     <td className="px-4 py-2 text-sm text-ink">{d.member_name}</td>
                     <td className="whitespace-nowrap px-4 py-2 text-sm text-ink">
-                      {d.class_name} · {formatDateTime(d.starts_at)}
+                      {d.class_name} · {formatDateTime(timezone, d.starts_at)}
                       {!d.class_id && <span className="ml-1 text-xs text-muted">(no matching class)</span>}
                     </td>
                     <td className="whitespace-nowrap px-4 py-2 text-sm text-ink">
@@ -342,7 +344,7 @@ export default function ClassPassPage() {
             <ul className="mt-1 space-y-0.5 text-xs text-muted">
               {status.roster_check.unchecked.map((u) => (
                 <li key={`${u.location_name ?? ""}-${u.received_at}`}>
-                  {u.location_name ?? "No location named"} · received {formatDateTime(u.received_at)}
+                  {u.location_name ?? "No location named"} · received {formatDateTime(timezone, u.received_at)}
                 </li>
               ))}
             </ul>

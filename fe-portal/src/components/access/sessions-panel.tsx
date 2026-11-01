@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Badge, Button } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import { formatDate, formatRelative } from "@/lib/formatters";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import { describeDevice, isHandheld } from "@/lib/user-agent";
 import { useWorkspace } from "@/lib/workspace-context";
 
@@ -43,6 +44,7 @@ export function SessionsPanel({
   refreshKey?: unknown;
 }) {
   const { api } = useWorkspace();
+  const timezone = useStudioZone();
   const [sessions, setSessions] = useState<ApiSession[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -130,7 +132,7 @@ export function SessionsPanel({
                     </div>
                     {/* break-words: an IPv6 address is one unbreakable run. */}
                     <div className="break-words text-xs text-muted">
-                      Active {formatRelative(s.last_seen_at)} · signed in {formatDate(s.signed_in_at)}
+                      Active {formatRelative(s.last_seen_at)} · signed in {formatDate(timezone, s.signed_in_at)}
                       {s.ip ? ` · ${s.ip}` : ""}
                     </div>
                   </div>

@@ -10,6 +10,7 @@ import { permissionRefusal } from "@/lib/access-refusal";
 import { ApiError } from "@/lib/api";
 import { computeEventState } from "@/lib/event-state";
 import { formatDate, formatTime } from "@/lib/formatters";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import { fetchInstructorClass, type InstructorClassDetail } from "@/lib/schedule";
 import { acceptsLine } from "@/lib/package-rule";
 
@@ -80,6 +81,7 @@ export default function InstructorClassPage({ params }: { params: Promise<{ id: 
 
 function ClassPage({ data, onChanged }: { data: InstructorClassDetail; onChanged: () => void }) {
   const { may } = useWorkspace();
+  const timezone = useStudioZone();
   // Add member (and its waitlist offer), Cancel and the Waitlist actions are
   // Manage rosters; the roster and the line are not.
   const managesRosters = may("manage_rosters");
@@ -103,7 +105,7 @@ function ClassPage({ data, onChanged }: { data: InstructorClassDetail; onChanged
           {data.class_type?.name ?? "Class"}
         </h1>
         <p className="mt-1 text-sm text-muted">
-          {[formatDate(data.starts_at), `${formatTime(data.starts_at)} – ${formatTime(data.ends_at)}`, where]
+          {[formatDate(timezone, data.starts_at), `${formatTime(timezone, data.starts_at)} – ${formatTime(timezone, data.ends_at)}`, where]
             .filter(Boolean)
             .join(" · ")}
         </p>

@@ -5,6 +5,7 @@ import { Button, Input, Label } from "@/components/ui";
 import { SeriesPreviewList, blockingDates } from "@/components/schedule/series-preview";
 import { ApiError, type Api } from "@/lib/api";
 import { LATEST_DATE, todayIso } from "@/lib/formatters";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import { lastDateLimit } from "@/lib/repeat-weekly";
 import {
   createSeries,
@@ -66,6 +67,7 @@ export function RepeatRangeFields({
   lastDate: string;
   onLastDateChange: (next: string) => void;
 }) {
+  const timezone = useStudioZone();
   const every = repeatsEvery(firstDate);
   return (
     <>
@@ -81,7 +83,7 @@ export function RepeatRangeFields({
           id="last"
           required
           type="date"
-          min={firstDate || todayIso()}
+          min={firstDate || todayIso(timezone)}
           max={lastDateLimit(firstDate) || LATEST_DATE}
           value={lastDate}
           onChange={(e) => onLastDateChange(e.target.value)}
@@ -108,6 +110,7 @@ export function useSeriesDates(
   role: SeriesRole,
   input: SeriesInput | OwnSeriesInput | string,
 ) {
+  const timezone = useStudioZone();
   const [preview, setPreview] = useState<{ key: string; result: Preview } | null>(null);
   const [skipped, setSkipped] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState<"preview" | "create" | null>(null);
@@ -136,7 +139,7 @@ export function useSeriesDates(
       setSkipped(new Set([...(after?.keep ?? []), ...clashing]));
     } catch (err) {
       setPreview(null);
-      setError(seriesErrorMessage(err, "Preview failed"));
+      setError(seriesErrorMessage(err, "Preview failed", timezone));
     } finally {
       setBusy(null);
     }
@@ -151,7 +154,7 @@ export function useSeriesDates(
       await createSeries(api, role, { ...input, excluded_dates: [...skipped].sort() });
       return true;
     } catch (err) {
-      const notice = seriesErrorMessage(err, "Failed to create classes");
+      const notice = seriesErrorMessage(err, "Failed to create classes", timezone);
       setError(notice);
       setBusy(null);
       // Something changed since the preview (a class booked into the room);

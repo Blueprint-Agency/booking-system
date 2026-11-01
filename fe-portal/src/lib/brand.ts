@@ -51,5 +51,6 @@ export async function getBrand(): Promise<Brand> {
     ogImageUrl: text(settings?.og_image_url),
     theme: settings?.theme ?? {},
     copy: settings?.copy ?? {},
+    timezone: tenant.timezone,
   };
 }

@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { LoadFailure, PageHeader } from "@/components/ui";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
 import { formatDateTime } from "@/lib/formatters";
@@ -13,6 +14,7 @@ import { fetchFeatureFlags, setFeatureFlag, type FeatureFlagState } from "@/lib/
  */
 export default function FeatureFlagsPage() {
   const { api } = useWorkspace();
+  const timezone = useStudioZone();
   const [flags, setFlags] = useState<FeatureFlagState[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
@@ -71,7 +73,7 @@ export default function FeatureFlagsPage() {
                 <div className="text-sm font-semibold text-ink">{f.label}</div>
                 <p className="mt-1 text-sm text-muted">{f.description}</p>
                 {f.updated_at && (
-                  <p className="mt-1 text-xs text-muted">Last changed {formatDateTime(f.updated_at)}</p>
+                  <p className="mt-1 text-xs text-muted">Last changed {formatDateTime(timezone, f.updated_at)}</p>
                 )}
               </div>
               <button

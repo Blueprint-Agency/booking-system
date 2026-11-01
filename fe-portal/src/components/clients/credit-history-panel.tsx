@@ -5,6 +5,7 @@ import { Badge, Select } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import { movementLine, type CreditHistory } from "@/lib/credit-history";
 import { formatDate, formatDateTime } from "@/lib/formatters";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import { useWorkspace } from "@/lib/workspace-context";
 
 interface PackageOption {
@@ -31,6 +32,7 @@ export function CreditHistoryPanel({
   refreshKey: unknown;
 }) {
   const { api } = useWorkspace();
+  const timezone = useStudioZone();
   const [packageId, setPackageId] = useState(packages[0]?.id ?? "");
   const [history, setHistory] = useState<CreditHistory | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -88,7 +90,7 @@ export function CreditHistoryPanel({
               {history.movements.map((m) => {
                 const line = movementLine(m, unit);
                 const booking = m.booking
-                  ? [m.booking.title ?? (m.booking.kind === "pt" ? "Private session" : "Booking"), m.booking.starts_at && formatDateTime(m.booking.starts_at)]
+                  ? [m.booking.title ?? (m.booking.kind === "pt" ? "Private session" : "Booking"), m.booking.starts_at && formatDateTime(timezone, m.booking.starts_at)]
                       .filter(Boolean)
                       .join(" · ")
                   : null;
@@ -107,7 +109,7 @@ export function CreditHistoryPanel({
                       {booking && <div className="break-words text-xs text-muted">{booking}</div>}
                       {m.note && <div className="break-words text-xs text-muted">{m.note}</div>}
                       <div className="text-xs text-muted">
-                        {who} · {formatDateTime(m.at)}
+                        {who} · {formatDateTime(timezone, m.at)}
                       </div>
                     </div>
                     {line.balance !== null && (
@@ -119,7 +121,7 @@ export function CreditHistoryPanel({
             </ul>
           )}
           <p className="border-t border-border px-4 py-2 text-xs text-muted sm:px-5">
-            History from {formatDate(history.history_from, "d MMM yyyy")}
+            History from {formatDate(timezone, history.history_from, "d MMM yyyy")}
           </p>
         </>
       )}

@@ -4,6 +4,8 @@ import { Loader2 } from "lucide-react";
 import { Button, Dialog, DialogFooter, Input, Label, LoadFailure } from "@/components/ui";
 import { answeredElsewhere } from "@/lib/failed-read";
 import { LATEST_DATE, todayIso } from "@/lib/formatters";
+import { atLocalTime } from "@/lib/local-day";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import { ApiError } from "@/lib/api";
 import { refusalMessage } from "@/lib/refusal-message";
 import { useWorkspace } from "@/lib/workspace-context";
@@ -72,11 +74,12 @@ export function ScheduleFromRequestDialog({
   onClose: () => void;
 }) {
   const { api, accessibleLocations } = useWorkspace();
+  const timezone = useStudioZone();
   const [linkedRequest, setLinkedRequest] = useState<ApiPtRequest | null>(null);
   const currentRequest = linkedRequest ?? request;
 
   const first = request.slots[0];
-  const [date, setDate] = useState(slot?.date ?? first?.proposed_date ?? todayIso());
+  const [date, setDate] = useState(slot?.date ?? first?.proposed_date ?? todayIso(timezone));
   const [startTime, setStartTime] = useState(
     slot?.start ?? (first ? ptSlotStart(first) : "09:00"),
   );
@@ -188,8 +191,9 @@ export function ScheduleFromRequestDialog({
       setErr("Pick an instructor, location, and room.");
       return;
     }
-    const startsAt = new Date(`${date}T${startTime}:00`);
-    const endsAt = new Date(`${date}T${endTime}:00`);
+    // Wall times at the studio, whatever zone this browser is in.
+    const startsAt = atLocalTime(timezone, date, startTime);
+    const endsAt = atLocalTime(timezone, date, endTime);
     if (Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime())) {
       setErr("Pick a valid date and time.");
       return;
@@ -202,7 +206,7 @@ export function ScheduleFromRequestDialog({
     setErr(null);
     try {
       // A member booked elsewhere at this time is asked about first.
-      await withClashConfirm("session", (extra) =>
+      await withClashConfirm("session", timezone, (extra) =>
         api.post(`/portal/admin/pt-sessions/${currentRequest.id}/schedule`, {
           instructor_id: instructorId,
           location_id: locationId,
@@ -221,7 +225,7 @@ export function ScheduleFromRequestDialog({
       const code = apiErrorCode(e);
       setErr(
         SCHEDULE_ERROR[code] ??
-          scheduleErrorMessage(e, "Couldn't schedule the session"),
+          scheduleErrorMessage(e, "Couldn't schedule the session", timezone),
       );
     } finally {
       setSaving(false);
@@ -304,7 +308,7 @@ export function ScheduleFromRequestDialog({
             <Label>Date</Label>
             <Input
               type="date"
-              min={todayIso()}
+              min={todayIso(timezone)}
               max={LATEST_DATE}
               value={date}
               onChange={(e) => setDate(e.target.value)}

@@ -34,7 +34,9 @@ import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
 import { computeEventState } from "@/lib/event-state";
 import { LATEST_DATE, formatDate, formatTime, formatDateTime, formatSgd } from "@/lib/formatters";
-import { localDay } from "@/lib/local-day";
+import { atLocalTime, localDay } from "@/lib/local-day";
+import { localClock } from "@/lib/studio-time";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import { WORKSHOP_CANCEL_CONFIRM } from "@/lib/workshop-cancel";
 import {
   CLASS_CANCEL_CONFIRM,
@@ -133,6 +135,7 @@ export default function SessionDetailPage({
 
 function ClassDetail({ id }: { id: string }) {
   const { api } = useWorkspace();
+  const timezone = useStudioZone();
   const [data, setData] = useState<ScheduleClassDetail | null>(null);
   const [instructors, setInstructors] = useState<CatalogInstructor[]>([]);
   const [classTypes, setClassTypes] = useState<CatalogClassType[]>([]);
@@ -198,8 +201,8 @@ function ClassDetail({ id }: { id: string }) {
         state={state}
         title={data.class_type?.name ?? "Class"}
         meta={[
-          formatDate(data.starts_at),
-          `${formatTime(data.starts_at)} – ${formatTime(data.ends_at)}`,
+          formatDate(timezone, data.starts_at),
+          `${formatTime(timezone, data.starts_at)} – ${formatTime(timezone, data.ends_at)}`,
         ]}
       />
 
@@ -212,10 +215,10 @@ function ClassDetail({ id }: { id: string }) {
       <section className="mb-6 rounded-xl border border-border bg-card p-4 shadow-soft sm:p-5">
         <h2 className="mb-4 text-sm font-semibold text-ink">Details</h2>
         <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
-          <DetailField label="Date" value={formatDate(data.starts_at)} />
+          <DetailField label="Date" value={formatDate(timezone, data.starts_at)} />
           <DetailField
             label="Time"
-            value={`${formatTime(data.starts_at)} – ${formatTime(data.ends_at)}`}
+            value={`${formatTime(timezone, data.starts_at)} – ${formatTime(timezone, data.ends_at)}`}
           />
           <DetailField label="Location" value={data.location?.name ?? "—"} />
           <DetailField label="Room" value={data.room?.name ?? "—"} />
@@ -227,7 +230,7 @@ function ClassDetail({ id }: { id: string }) {
           <DetailField
             label="Scheduled by"
             value={data.scheduled_by?.name ?? "—"}
-            sub={`on ${formatDateTime(data.created_at)}`}
+            sub={`on ${formatDateTime(timezone, data.created_at)}`}
           />
           <DetailField label="Accepts" value={ruleSentence(data.package_rule)} />
         </dl>
@@ -236,7 +239,7 @@ function ClassDetail({ id }: { id: string }) {
       {data.series_id && (
         <SeriesPanel
           seriesId={data.series_id}
-          classDate={localDay(data.starts_at)}
+          classDate={localDay(timezone, data.starts_at)}
           onChanged={load}
         />
       )}
@@ -299,6 +302,7 @@ function ClassEditor({
   cancelBusy?: boolean;
 }) {
   const { api } = useWorkspace();
+  const timezone = useStudioZone();
   const disabled = data.lifecycle === "cancelled";
 
   const [classTypeId, setClassTypeId] = useState(data.class_type?.id ?? "");
@@ -314,9 +318,9 @@ function ClassEditor({
   );
   const [locationId, setLocationId] = useState(data.location?.id ?? "");
   const [roomId, setRoomId] = useState(data.room?.id ?? "");
-  const [date, setDate] = useState(localDay(data.starts_at));
-  const [startTime, setStartTime] = useState(toHHMM(data.starts_at));
-  const [endTime, setEndTime] = useState(toHHMM(data.ends_at));
+  const [date, setDate] = useState(localDay(timezone, data.starts_at));
+  const [startTime, setStartTime] = useState(toHHMM(timezone, data.starts_at));
+  const [endTime, setEndTime] = useState(toHHMM(timezone, data.ends_at));
   const [capacity, setCapacity] = useState<Capacity>(capacityOf(data));
   const [packageRule, setPackageRule] = useState<PackageRuleDraft>(draftFromRule(data.package_rule));
   const [saving, setSaving] = useState(false);
@@ -340,18 +344,18 @@ function ClassEditor({
     );
     setLocationId(data.location?.id ?? "");
     setRoomId(data.room?.id ?? "");
-    setDate(localDay(data.starts_at));
-    setStartTime(toHHMM(data.starts_at));
-    setEndTime(toHHMM(data.ends_at));
+    setDate(localDay(timezone, data.starts_at));
+    setStartTime(toHHMM(timezone, data.starts_at));
+    setEndTime(toHHMM(timezone, data.ends_at));
     setPackageRule(draftFromRule(data.package_rule));
-  }, [data]);
+  }, [data, timezone]);
 
   async function handleSave() {
     if (!api) return;
     if (!classTypeId || !mainInstructorId || !locationId || !roomId) return;
     if (!date || !startTime || !endTime) return;
-    const startsAt = new Date(`${date}T${startTime}:00`);
-    const endsAt = new Date(`${date}T${endTime}:00`);
+    const startsAt = atLocalTime(timezone, date, startTime);
+    const endsAt = atLocalTime(timezone, date, endTime);
     if (endsAt <= startsAt) {
       setErr("End time must be after start time.");
       return;
@@ -400,7 +404,7 @@ function ClassEditor({
       await patchClass(api, data.id, patch);
       await onSaved();
     } catch (e) {
-      setErr(scheduleErrorMessage(e));
+      setErr(scheduleErrorMessage(e, "Save failed", timezone));
     } finally {
       setSaving(false);
     }
@@ -417,7 +421,7 @@ function ClassEditor({
       await patchClass(api, data.id, patch);
       await onSaved();
     } catch (e) {
-      setErr(scheduleErrorMessage(e));
+      setErr(scheduleErrorMessage(e, "Save failed", timezone));
     } finally {
       setSaving(false);
     }
@@ -612,6 +616,7 @@ function ClassEditor({
 
 function PtDetail({ id }: { id: string }) {
   const { api } = useWorkspace();
+  const timezone = useStudioZone();
   const [data, setData] = useState<SchedulePtDetail | null>(null);
   const [instructors, setInstructors] = useState<CatalogInstructor[]>([]);
   const [rooms, setRooms] = useState<CatalogRoom[]>([]);
@@ -672,8 +677,8 @@ function PtDetail({ id }: { id: string }) {
   });
   const typeLabel = data.session_type === "2on1" ? "2-on-1" : "1-on-1";
   const meta = [
-    formatDate(data.starts_at),
-    `${formatTime(data.starts_at)} – ${formatTime(data.ends_at)}`,
+    formatDate(timezone, data.starts_at),
+    `${formatTime(timezone, data.starts_at)} – ${formatTime(timezone, data.ends_at)}`,
     data.instructor?.name,
     data.location?.name,
     data.room?.name,
@@ -713,7 +718,7 @@ function PtDetail({ id }: { id: string }) {
         title="Cancel session"
         consequence={ptCancelConfirm(data)}
         onConfirm={cancelWithNote}
-        errorMessage={(err) => sessionActionErrorMessage(err, "Couldn't cancel the session")}
+        errorMessage={(err) => sessionActionErrorMessage(err, "Couldn't cancel the session", timezone)}
       />
 
       {actionError && (
@@ -725,10 +730,10 @@ function PtDetail({ id }: { id: string }) {
       <section className="mb-6 rounded-xl border border-border bg-card p-4 shadow-soft sm:p-5">
         <h2 className="mb-4 text-sm font-semibold text-ink">Details</h2>
         <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
-          <DetailField label="Date" value={formatDate(data.starts_at)} />
+          <DetailField label="Date" value={formatDate(timezone, data.starts_at)} />
           <DetailField
             label="Time"
-            value={`${formatTime(data.starts_at)} – ${formatTime(data.ends_at)}`}
+            value={`${formatTime(timezone, data.starts_at)} – ${formatTime(timezone, data.ends_at)}`}
           />
           <DetailField label="Format" value={typeLabel} />
           <DetailField label="Instructor" value={data.instructor?.name ?? "—"} />
@@ -756,6 +761,7 @@ function PtEditor({
   onSaved: () => void | Promise<void>;
 }) {
   const { api } = useWorkspace();
+  const timezone = useStudioZone();
   const disabled = data.lifecycle === "cancelled";
   const manual = isManual(data);
 
@@ -772,9 +778,9 @@ function PtEditor({
   );
   const [locationId, setLocationId] = useState(data.location?.id ?? "");
   const [roomId, setRoomId] = useState(data.room?.id ?? "");
-  const [date, setDate] = useState(localDay(data.starts_at));
-  const [startTime, setStartTime] = useState(toHHMM(data.starts_at));
-  const [endTime, setEndTime] = useState(toHHMM(data.ends_at));
+  const [date, setDate] = useState(localDay(timezone, data.starts_at));
+  const [startTime, setStartTime] = useState(toHHMM(timezone, data.starts_at));
+  const [endTime, setEndTime] = useState(toHHMM(timezone, data.ends_at));
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const onLeave = useInstructorsOnLeave(date);
@@ -792,17 +798,17 @@ function PtEditor({
     );
     setLocationId(data.location?.id ?? "");
     setRoomId(data.room?.id ?? "");
-    setDate(localDay(data.starts_at));
-    setStartTime(toHHMM(data.starts_at));
-    setEndTime(toHHMM(data.ends_at));
-  }, [data]);
+    setDate(localDay(timezone, data.starts_at));
+    setStartTime(toHHMM(timezone, data.starts_at));
+    setEndTime(toHHMM(timezone, data.ends_at));
+  }, [data, timezone]);
 
   async function handleSave() {
     if (!api) return;
     if (!mainInstructorId || !locationId || !roomId) return;
     if (!date || !startTime || !endTime) return;
-    const startsAt = new Date(`${date}T${startTime}:00`);
-    const endsAt = new Date(`${date}T${endTime}:00`);
+    const startsAt = atLocalTime(timezone, date, startTime);
+    const endsAt = atLocalTime(timezone, date, endTime);
     if (endsAt <= startsAt) {
       setErr("End time must be after start time.");
       return;
@@ -810,7 +816,7 @@ function PtEditor({
     setSaving(true);
     setErr(null);
     try {
-      await patchPtSession(api, data.id, {
+      await patchPtSession(api, timezone, data.id, {
         // KNOWN GAP: upgrading 1on1 -> 2on1 needs a partner, and this screen has
         // no way to name one. The backend accepts an optional `co_client_id` and
         // otherwise falls back to the request's existing co-client — so an
@@ -833,7 +839,7 @@ function PtEditor({
       });
       await onSaved();
     } catch (e) {
-      setErr(scheduleErrorMessage(e));
+      setErr(scheduleErrorMessage(e, "Save failed", timezone));
     } finally {
       setSaving(false);
     }
@@ -979,6 +985,7 @@ function PtEditor({
 
 function WorkshopDetail({ id }: { id: string }) {
   const { api, accessibleLocations } = useWorkspace();
+  const timezone = useStudioZone();
   const [data, setData] = useState<ApiWorkshopDetail | null>(null);
   const [instructors, setInstructors] = useState<CatalogInstructor[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1045,8 +1052,8 @@ function WorkshopDetail({ id }: { id: string }) {
     .join(" & ");
   const dateMeta = first
     ? sortedDays.length === 1
-      ? formatDate(first.starts_at)
-      : `${formatDate(first.starts_at)} – ${formatDate(last!.ends_at)}`
+      ? formatDate(timezone, first.starts_at)
+      : `${formatDate(timezone, first.starts_at)} – ${formatDate(timezone, last!.ends_at)}`
     : "No days scheduled";
 
   return (
@@ -1104,10 +1111,10 @@ function WorkshopDetail({ id }: { id: string }) {
               >
                 <div className="min-w-0">
                   <div className="font-medium text-ink">
-                    Day {d.ord} — {formatDate(d.starts_at)}
+                    Day {d.ord} — {formatDate(timezone, d.starts_at)}
                   </div>
                   <div className="text-xs text-muted">
-                    {formatTime(d.starts_at)} – {formatTime(d.ends_at)}
+                    {formatTime(timezone, d.starts_at)} – {formatTime(timezone, d.ends_at)}
                   </div>
                 </div>
                 <div className="text-xs text-muted">
@@ -1138,7 +1145,7 @@ function WorkshopDetail({ id }: { id: string }) {
                 {t.early_bird_price_sgd && (
                   <p className="mt-1 text-xs text-muted">
                     Early bird {formatSgd(Number(t.early_bird_price_sgd))}
-                    {t.early_bird_cutoff_at && ` until ${formatDate(t.early_bird_cutoff_at)}`}
+                    {t.early_bird_cutoff_at && ` until ${formatDate(timezone, t.early_bird_cutoff_at)}`}
                     {t.early_bird_quota !== null && ` · quota ${t.early_bird_quota}`}
                   </p>
                 )}
@@ -1158,6 +1165,7 @@ function WorkshopDetail({ id }: { id: string }) {
 
 function CorporateDetail({ id }: { id: string }) {
   const { api, accessibleLocations } = useWorkspace();
+  const timezone = useStudioZone();
   const [data, setData] = useState<ScheduleCorporateSession | null>(null);
   const [pkg, setPkg] = useState<ScheduleCorporatePackageBrief | null>(null);
   const [pkgFailed, setPkgFailed] = useState(false);
@@ -1228,8 +1236,8 @@ function CorporateDetail({ id }: { id: string }) {
       : data.location_text) ?? "—";
   const roomName = data.room_id ? rooms.find((r) => r.id === data.room_id)?.name ?? "—" : "—";
   const meta = [
-    formatDate(data.starts_at),
-    `${formatTime(data.starts_at)} – ${formatTime(data.ends_at)}`,
+    formatDate(timezone, data.starts_at),
+    `${formatTime(timezone, data.starts_at)} – ${formatTime(timezone, data.ends_at)}`,
     mainName,
     locationName,
     roomName,
@@ -1303,11 +1311,12 @@ function CorporateEditor({
   onSaved: () => void | Promise<void>;
 }) {
   const { api } = useWorkspace();
+  const timezone = useStudioZone();
   const cancelled = session.lifecycle === "cancelled";
 
-  const initialDate = localDay(session.starts_at);
-  const initialStart = toHHMM(session.starts_at);
-  const initialEnd = toHHMM(session.ends_at);
+  const initialDate = localDay(timezone, session.starts_at);
+  const initialStart = toHHMM(timezone, session.starts_at);
+  const initialEnd = toHHMM(timezone, session.ends_at);
 
   const [clientName, setClientName] = useState(session.client_name);
   const [mainInstructorId, setMainInstructorId] = useState(session.main_instructor_id);
@@ -1330,10 +1339,10 @@ function CorporateEditor({
     setSupportingInstructorIds(session.supporting_instructor_ids);
     setLocationId(session.location_id ?? "");
     setRoomId(session.room_id ?? "");
-    setDate(localDay(session.starts_at));
-    setStartTime(toHHMM(session.starts_at));
-    setEndTime(toHHMM(session.ends_at));
-  }, [session]);
+    setDate(localDay(timezone, session.starts_at));
+    setStartTime(toHHMM(timezone, session.starts_at));
+    setEndTime(toHHMM(timezone, session.ends_at));
+  }, [session, timezone]);
 
   useEffect(() => {
     if (!mainInstructorId) return;
@@ -1352,8 +1361,8 @@ function CorporateEditor({
     if (!api) return;
     if (!clientName.trim() || !mainInstructorId || !locationId || !roomId) return;
     if (!date || !startTime || !endTime) return;
-    const startsAt = new Date(`${date}T${startTime}:00`);
-    const endsAt = new Date(`${date}T${endTime}:00`);
+    const startsAt = atLocalTime(timezone, date, startTime);
+    const endsAt = atLocalTime(timezone, date, endTime);
     if (endsAt <= startsAt) {
       setErr("End time must be after start time.");
       return;
@@ -1372,7 +1381,7 @@ function CorporateEditor({
       });
       await onSaved();
     } catch (e) {
-      setErr(scheduleErrorMessage(e, "Failed"));
+      setErr(scheduleErrorMessage(e, "Failed", timezone));
     } finally {
       setSaving(false);
     }
@@ -1387,7 +1396,7 @@ function CorporateEditor({
       await cancelCorporateSession(api, session.id);
       await onSaved();
     } catch (e) {
-      setErr(scheduleErrorMessage(e, "Failed"));
+      setErr(scheduleErrorMessage(e, "Failed", timezone));
     } finally {
       setCancelBusy(false);
     }
@@ -1575,11 +1584,9 @@ function capacityOf(c: Pick<ScheduleClassDetail, "capacity_online" | "capacity_w
   return { onlineBooking: c.capacity_online, waitlist: c.capacity_waitlist, buffer: c.capacity_buffer };
 }
 
-function toHHMM(iso: string): string {
-  const d = new Date(iso);
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mm = String(d.getMinutes()).padStart(2, "0");
-  return `${hh}:${mm}`;
+/** The studio's wall-clock `HH:MM` of an instant: what the form's time field holds. */
+function toHHMM(timezone: string, iso: string): string {
+  return localClock(timezone, iso);
 }
 
 /* ------------------------------- Shared ------------------------------- */

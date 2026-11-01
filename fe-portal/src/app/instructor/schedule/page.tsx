@@ -20,6 +20,8 @@ import { answeredElsewhere, loadError, type LoadError } from "@/lib/failed-read"
 import { ApiError } from "@/lib/api";
 import { formatDate, formatTime, todayIso } from "@/lib/formatters";
 import { localDay } from "@/lib/local-day";
+import { upcomingWindow } from "@/lib/schedule-grid";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import { waitingTag } from "@/lib/class-waitlist";
 import { ManualPtSessionDialog } from "@/components/schedule/manual-pt-session-dialog";
 import { scheduleErrorMessage } from "@/lib/schedule";
@@ -38,23 +40,9 @@ const KIND_LABEL: Record<ScheduleEntry["kind"], string> = {
   corporate: "Corporate",
 };
 
-function startOfTodayIso(): string {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d.toISOString();
-}
-function plusDaysIso(days: number): string {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  d.setDate(d.getDate() + days);
-  return d.toISOString();
-}
-// Group/compare by LOCAL calendar day so the day headers, grouping, and the
-// "Today" badge all agree — see lib/local-day.ts for the rule.
-const dayKey = localDay;
-
 export default function InstructorSchedulePage() {
   const { api, accessibleLocations, currentStaff, may } = useWorkspace();
+  const timezone = useStudioZone();
   // New class, Repeat weekly and Cancel are Schedule classes; the timetable is not.
   const canSchedule = may("schedule_classes");
   // A manual PT session puts a private session on their calendar: Take PT bookings'.
@@ -76,10 +64,8 @@ export default function InstructorSchedulePage() {
     setError(null);
     try {
       const [sched, rm] = await Promise.all([
-        api.get<{ entries: ScheduleEntry[] }>("/portal/instructor/schedule", {
-          from: startOfTodayIso(),
-          to: plusDaysIso(60),
-        }),
+        // The studio's midnight today, for 60 days: what the heading says.
+        api.get<{ entries: ScheduleEntry[] }>("/portal/instructor/schedule", upcomingWindow(timezone, 60)),
         api.get<{ rooms: Room[] }>("/portal/instructor/catalog/rooms"),
       ]);
       setEntries(sched.entries ?? []);
@@ -90,7 +76,7 @@ export default function InstructorSchedulePage() {
     } finally {
       setLoading(false);
     }
-  }, [api]);
+  }, [api, timezone]);
 
   useEffect(() => {
     void load();
@@ -110,15 +96,17 @@ export default function InstructorSchedulePage() {
   const groups = useMemo(() => {
     const byDay = new Map<string, ScheduleEntry[]>();
     for (const e of entries) {
-      const k = dayKey(e.starts_at);
+      // Group by the STUDIO's calendar day so the day headers, grouping and the
+      // "Today" badge all agree — see lib/local-day.ts for the rule.
+      const k = localDay(timezone, e.starts_at);
       const list = byDay.get(k) ?? [];
       list.push(e);
       byDay.set(k, list);
     }
     return Array.from(byDay.entries()).sort((a, b) => a[0].localeCompare(b[0]));
-  }, [entries]);
+  }, [entries, timezone]);
 
-  const todayKey = todayIso();
+  const todayKey = todayIso(timezone);
   const viewer = { staffId: currentStaff?.id ?? null, canScheduleClasses: canSchedule };
 
   async function submitCancel() {
@@ -135,7 +123,7 @@ export default function InstructorSchedulePage() {
       toast.success(`${cancelling.label} cancelled`);
       await load();
     } catch (err) {
-      setCancelError(scheduleErrorMessage(err, "Failed to cancel"));
+      setCancelError(scheduleErrorMessage(err, "Failed to cancel", timezone));
     } finally {
       setCancelBusy(false);
     }
@@ -207,7 +195,7 @@ export default function InstructorSchedulePage() {
             <section key={day}>
               <div className="mb-2 flex items-center gap-2">
                 <h2 className="text-sm font-semibold text-ink">
-                  {formatDate(items[0].starts_at, "EEEE d MMM")}
+                  {formatDate(timezone, items[0].starts_at, "EEEE d MMM")}
                 </h2>
                 {day === todayKey && (
                   <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-accent">
@@ -240,7 +228,7 @@ export default function InstructorSchedulePage() {
                           </div>
                         )}
                         <div className="break-words text-xs text-muted">
-                          {formatTime(e.starts_at)}–{formatTime(e.ends_at)}
+                          {formatTime(timezone, e.starts_at)}–{formatTime(timezone, e.ends_at)}
                           {e.location_id
                             ? ` · ${locName.get(e.location_id) ?? "Studio"}`
                             : ""}
@@ -295,7 +283,7 @@ export default function InstructorSchedulePage() {
         title="Cancel this class?"
         description={
           cancelling
-            ? `${cancelling.label} · ${formatDate(cancelling.starts_at, "EEE d MMM")} ${formatTime(cancelling.starts_at)}`
+            ? `${cancelling.label} · ${formatDate(timezone, cancelling.starts_at, "EEE d MMM")} ${formatTime(timezone, cancelling.starts_at)}`
             : undefined
         }
       >

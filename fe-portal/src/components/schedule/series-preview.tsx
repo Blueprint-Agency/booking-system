@@ -1,6 +1,7 @@
 "use client";
 import { AlertTriangle } from "lucide-react";
 import { formatDate, formatTime } from "@/lib/formatters";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import type { PreviewDate } from "@/lib/series";
 
 /**
@@ -18,6 +19,7 @@ export function SeriesPreviewList({
   skipped: ReadonlySet<string>;
   onToggle: (date: string) => void;
 }) {
+  const timezone = useStudioZone();
   if (dates.length === 0) {
     return <p className="px-1 py-4 text-sm text-muted">No new dates in that range.</p>;
   }
@@ -36,13 +38,13 @@ export function SeriesPreviewList({
               className="mt-0.5 h-4 w-4 accent-accent"
               checked={!skip}
               onChange={() => onToggle(d.date)}
-              aria-label={`Create a class on ${formatDate(d.starts_at, "EEE d MMM yyyy")}`}
+              aria-label={`Create a class on ${formatDate(timezone, d.starts_at, "EEE d MMM yyyy")}`}
             />
             <div className="min-w-0 flex-1">
               <div className={skip ? "text-muted line-through" : "text-ink"}>
-                <span className="font-medium">{formatDate(d.starts_at, "EEE d MMM yyyy")}</span>{" "}
+                <span className="font-medium">{formatDate(timezone, d.starts_at, "EEE d MMM yyyy")}</span>{" "}
                 <span className="tabular-nums text-muted">
-                  {formatTime(d.starts_at)}–{formatTime(d.ends_at)}
+                  {formatTime(timezone, d.starts_at)}–{formatTime(timezone, d.ends_at)}
                 </span>
               </div>
               {d.clashes.map((c) => (

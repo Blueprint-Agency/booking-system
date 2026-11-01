@@ -21,6 +21,7 @@ import { createContext, useContext, useMemo } from "react";
 // `next/headers` and is server-only, so importing the fallback from there would
 // pull that into the browser bundle and fail the build.
 import { PLATFORM_BRAND, type Brand } from "@/lib/brand-shape";
+import { isKnownZone, requireStudioZone } from "@/lib/studio-time";
 
 const BrandContext = createContext<Brand>(PLATFORM_BRAND);
 
@@ -30,6 +31,38 @@ const BrandContext = createContext<Brand>(PLATFORM_BRAND);
  */
 export function useBrand(): Brand {
   return useContext(BrandContext);
+}
+
+/**
+ * The studio's time zone, the clock every date and time on screen is read on,
+ * and every time typed into the portal means (`lib/studio-time.ts`). Not the
+ * browser's: an admin abroad schedules a 19:00 class at 19:00 at the studio.
+ * Outside a studio (the super portal's own hostname) there is none, and this
+ * throws rather than hand back UTC. A zone this browser does not know never
+ * gets here: `BrandProvider` shows `UnknownZoneNotice` in place of the app.
+ */
+export function useStudioZone(): string {
+  return requireStudioZone(useBrand().timezone);
+}
+
+/**
+ * What stands in for the app when the studio's zone is one this browser does
+ * not know (an old WebView without a newer IANA name): every date formatter
+ * would throw and the screen go blank, so staff are told why instead.
+ */
+function UnknownZoneNotice({ name }: { name: string }) {
+  return (
+    <main className="flex min-h-dvh items-center justify-center px-6 py-16">
+      <div className="max-w-md text-center" role="alert">
+        <p className="text-lg font-bold tracking-tight text-ink">{name}</p>
+        <h1 className="mt-6 text-2xl font-extrabold text-ink">This browser can&apos;t show the studio&apos;s times</h1>
+        <p className="mt-2 text-sm text-muted">
+          The studio&apos;s time zone is newer than this browser knows. Update your browser or open the portal in
+          another one, and times will show as the studio keeps them.
+        </p>
+      </div>
+    </main>
+  );
 }
 
 /**
@@ -61,10 +94,12 @@ export function BrandProvider({
   children: React.ReactNode;
 }) {
   const style = useMemo(() => themeStyle(brand.theme), [brand.theme]);
+  // Asked once, here, before anything below formats a date.
+  const zoneUnknown = useMemo(() => brand.timezone !== null && !isKnownZone(brand.timezone), [brand.timezone]);
   return (
     <BrandContext.Provider value={brand}>
       <div style={style} className="contents">
-        {children}
+        {zoneUnknown ? <UnknownZoneNotice name={brand.name} /> : children}
       </div>
     </BrandContext.Provider>
   );

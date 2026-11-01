@@ -86,8 +86,8 @@ export type StaffBookingPrompt =
  * to the waitlist?", an instructor "Add to the waitlist?". A closed line leaves
  * the plain full-class question.
  */
-export function staffBookingPrompt(err: unknown, role: StaffRole): StaffBookingPrompt {
-  const refusal = staffBookingRefusal(err, role);
+export function staffBookingPrompt(err: unknown, role: StaffRole, timezone: string): StaffBookingPrompt {
+  const refusal = staffBookingRefusal(err, role, timezone);
   if (refusal.kind !== "full") return refusal;
   const open = err instanceof ApiError && (err.body as { waitlist_open?: boolean } | null)?.waitlist_open === true;
   if (!open) return { ...refusal, canWaitlist: false };
@@ -103,11 +103,12 @@ export function staffBookingPrompt(err: unknown, role: StaffRole): StaffBookingP
  */
 export function staffJoinWaitlist(
   api: Api,
+  timezone: string,
   role: StaffRole,
   classId: string,
   clientId: string,
 ): Promise<{ entry_id: string; position: number }> {
-  return withClashConfirm("class", (extra) =>
+  return withClashConfirm("class", timezone, (extra) =>
     api.post(`/portal/${role}/schedule/classes/${classId}/waitlist`, { client_id: clientId, ...extra }),
   );
 }
@@ -120,12 +121,12 @@ const JOIN_REFUSAL_COPY: Record<string, string> = {
 };
 
 /** Why staff couldn't put a member in the line: the member's own join refusals, in staff terms. */
-export function staffJoinRefusal(err: unknown): string {
+export function staffJoinRefusal(err: unknown, timezone: string): string {
   if (!(err instanceof ApiError)) return "Network error";
   const refused = permissionRefusal(err);
   if (refused) return refused;
   const clash = timeClashOf(err);
-  if (clash) return timeClashRefusal(clash);
+  if (clash) return timeClashRefusal(clash, timezone);
   const body = err.body as { error?: string; window_hours?: number } | null;
   if (body?.error === "waitlist_closed") {
     return `This class starts within ${body.window_hours ?? "a few"} hours, so the waitlist has closed.`;
@@ -146,12 +147,13 @@ export function staffJoinRefusal(err: unknown): string {
  */
 export function promoteWaitlistEntry(
   api: Api,
+  timezone: string,
   role: StaffRole,
   classId: string,
   entryId: string,
   overbook = false,
 ): Promise<StaffBookingResult> {
-  return withClashConfirm("class", (extra) =>
+  return withClashConfirm("class", timezone, (extra) =>
     api.post<StaffBookingResult>(`/portal/${role}/schedule/classes/${classId}/waitlist/${entryId}/promote`, {
       ...(overbook ? { overbook: true } : {}),
       ...extra,
@@ -179,12 +181,12 @@ export type AddToClassRefusal =
  * package that can't pay above all — is shown on the row, and the member keeps
  * their place.
  */
-export function addToClassRefusal(err: unknown, role: StaffRole): AddToClassRefusal {
+export function addToClassRefusal(err: unknown, role: StaffRole, timezone: string): AddToClassRefusal {
   const code = err instanceof ApiError ? (err.body as { error?: string } | null)?.error : undefined;
   if (code === "waitlist_entry_not_found") {
     return { kind: "error", message: "This member is no longer on the waitlist." };
   }
-  const refusal = staffBookingRefusal(err, role);
+  const refusal = staffBookingRefusal(err, role, timezone);
   if (refusal.kind === "error") return refusal;
   return role === "admin"
     ? { kind: "full", message: "No seats left. Overbook?", canOverbook: true }

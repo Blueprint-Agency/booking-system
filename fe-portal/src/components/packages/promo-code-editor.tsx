@@ -17,6 +17,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Loader2, Check } from "lucide-react";
 import { Button, PageHeader, Input, Label, Badge } from "@/components/ui";
+import { useStudioZone } from "@/components/brand/brand-provider";
+import { localDay, localDayRange } from "@/lib/local-day";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
 
@@ -59,17 +61,13 @@ function refKey(p: ApiProductRef) {
   return `${p.product_type}:${p.product_id}`;
 }
 
-/** `expires_at` is a timestamp; the admin picks a day, and it runs to the end of it. */
-function toDayInput(iso: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+/** `expires_at` is a timestamp; the admin picks a day, and it runs to the end of it on the studio's clock. */
+function toDayInput(timezone: string, iso: string | null): string {
+  return iso ? localDay(timezone, iso) : "";
 }
 
-function fromDayInput(day: string): string | null {
-  if (!day) return null;
-  const [y, m, d] = day.split("-").map(Number);
-  return new Date(y, m - 1, d, 23, 59, 59, 999).toISOString();
+function fromDayInput(timezone: string, day: string): string | null {
+  return day ? localDayRange(timezone, day).end.toISOString() : null;
 }
 
 function apiMessage(err: unknown): string {
@@ -83,6 +81,7 @@ function apiMessage(err: unknown): string {
 export function PromoCodeEditor({ codeId }: { codeId?: string }) {
   const router = useRouter();
   const { api } = useWorkspace();
+  const timezone = useStudioZone();
   const isNew = !codeId;
 
   const [row, setRow] = useState<ApiPromoCode | null>(null);
@@ -124,7 +123,7 @@ export function PromoCodeEditor({ codeId }: { codeId?: string }) {
         setPercentOff(res.percent_off == null ? "" : String(res.percent_off));
         setAmountOffSgd(res.amount_off_sgd ?? "");
         setMaxRedemptions(res.max_redemptions == null ? "" : String(res.max_redemptions));
-        setExpiresOn(toDayInput(res.expires_at));
+        setExpiresOn(toDayInput(timezone, res.expires_at));
         setAppliesToAll(res.applies_to_all);
         setSelected(new Set(res.products.map(refKey)));
       }
@@ -133,7 +132,7 @@ export function PromoCodeEditor({ codeId }: { codeId?: string }) {
     } finally {
       setLoading(false);
     }
-  }, [api, codeId]);
+  }, [api, codeId, timezone]);
 
   useEffect(() => {
     void load();
@@ -174,7 +173,7 @@ export function PromoCodeEditor({ codeId }: { codeId?: string }) {
           percent_off: kind === "percent" ? Number(percentOff) : null,
           amount_off_sgd: kind === "amount" ? amountOffSgd : null,
           max_redemptions: maxRedemptions ? Number(maxRedemptions) : null,
-          expires_at: fromDayInput(expiresOn),
+          expires_at: fromDayInput(timezone, expiresOn),
           applies_to_all: appliesToAll,
           products: appliesToAll ? [] : productRefs,
         });
@@ -184,7 +183,7 @@ export function PromoCodeEditor({ codeId }: { codeId?: string }) {
       const res = await api.patch<ApiPromoCode>(`/portal/admin/promo-codes/${codeId}`, {
         label: label.trim(),
         max_redemptions: maxRedemptions ? Number(maxRedemptions) : null,
-        expires_at: fromDayInput(expiresOn),
+        expires_at: fromDayInput(timezone, expiresOn),
         applies_to_all: appliesToAll,
         products: appliesToAll ? [] : productRefs,
         // Terms are omitted entirely once someone has redeemed the code — the

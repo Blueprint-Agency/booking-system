@@ -85,13 +85,14 @@ export interface StaffBookingResult {
  */
 export function staffBookClass(
   api: Api,
+  timezone: string,
   role: StaffRole,
   classId: string,
   clientId: string,
   overbook = false,
   clientPackageId: string | null = null,
 ): Promise<StaffBookingResult> {
-  return withClashConfirm("class", (extra) =>
+  return withClashConfirm("class", timezone, (extra) =>
     api.post<StaffBookingResult>(`/portal/${role}/schedule/classes/${classId}/bookings`, {
       client_id: clientId,
       ...(overbook ? { overbook: true } : {}),
@@ -182,7 +183,7 @@ function optionLabel(p: StaffMemberPackage): string {
  * the server says why nothing can. Ineligible packages stay in the list,
  * greyed with their reason, so staff can tell the member why.
  */
-export function packagePick(res: StaffMemberPackages): PackagePick | null {
+export function packagePick(res: StaffMemberPackages, timezone: string): PackagePick | null {
   const eligible = res.packages.filter((p) => p.eligible);
   if (eligible.length < 2) return null;
   return {
@@ -194,7 +195,7 @@ export function packagePick(res: StaffMemberPackages): PackagePick | null {
       note: !p.eligible
         ? refusalNote(p)
         : p.activation_end_if_picked
-          ? `Starts today, runs until ${formatDate(p.activation_end_if_picked, "d MMM yyyy")}`
+          ? `Starts today, runs until ${formatDate(timezone, p.activation_end_if_picked, "d MMM yyyy")}`
           : null,
     })),
   };
@@ -267,13 +268,13 @@ export function staffRefusalCopy(code: string | undefined): string | undefined {
  * an error: an admin may overbook, an instructor may not. Offering the waitlist
  * as well is `staffBookingPrompt` in `./class-waitlist`.
  */
-export function staffBookingRefusal(err: unknown, role: StaffRole): StaffBookingRefusal {
+export function staffBookingRefusal(err: unknown, role: StaffRole, timezone: string): StaffBookingRefusal {
   if (!(err instanceof ApiError)) return { kind: "error", message: "Network error" };
   const refused = permissionRefusal(err);
   if (refused) return { kind: "error", message: refused };
   // Staff were warned of the clash and chose not to book anyway.
   const clash = timeClashOf(err);
-  if (clash) return { kind: "error", message: timeClashRefusal(clash) };
+  if (clash) return { kind: "error", message: timeClashRefusal(clash, timezone) };
   const code = (err.body as { error?: string } | null)?.error;
   if (code === "class_full") {
     return role === "admin"

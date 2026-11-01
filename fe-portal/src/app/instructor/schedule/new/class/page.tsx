@@ -26,6 +26,8 @@ import { LocationRoomFields } from "@/components/schedule/location-room-fields";
 import { useWorkspace } from "@/lib/workspace-context";
 import { useWaitlistsOn } from "@/lib/use-waitlists-on";
 import { LATEST_DATE, todayIso, currentHourTime } from "@/lib/formatters";
+import { atLocalTime } from "@/lib/local-day";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import { PERMISSION_REFUSED, permissionRefusal } from "@/lib/access-refusal";
 import { ApiError } from "@/lib/api";
 import { scheduleErrorMessage } from "@/lib/schedule";
@@ -73,6 +75,7 @@ function BackToSchedule() {
 function InstructorNewClassForm() {
   const router = useRouter();
   const { api, activeLocationId } = useWorkspace();
+  const timezone = useStudioZone();
   const waitlistsOn = useWaitlistsOn("instructor");
 
   const [classTypes, setClassTypes] = useState<ApiClassType[]>([]);
@@ -86,8 +89,8 @@ function InstructorNewClassForm() {
   // With Repeat weekly on, `date` is the series' first date.
   const [date, setDate] = useState("");
   const [lastDate, setLastDate] = useState("");
-  const [startTime, setStartTime] = useState(currentHourTime());
-  const [endTime, setEndTime] = useState(currentHourTime(1));
+  const [startTime, setStartTime] = useState(currentHourTime(timezone));
+  const [endTime, setEndTime] = useState(currentHourTime(timezone, 1));
   const [capacity, setCapacity] = useState<Capacity>({
     waitlist: 0,
     onlineBooking: 18,
@@ -170,8 +173,9 @@ function InstructorNewClassForm() {
     if (!classTypeId || !locationId || !roomId) return;
     if (!date || !startTime || !endTime) return;
 
-    const startsAt = new Date(`${date}T${startTime}:00`);
-    const endsAt = new Date(`${date}T${endTime}:00`);
+    // Wall times at the studio, whatever zone this browser is in.
+    const startsAt = atLocalTime(timezone, date, startTime);
+    const endsAt = atLocalTime(timezone, date, endTime);
     if (endsAt <= startsAt) {
       setSubmitError("End time must be after start time.");
       return;
@@ -199,7 +203,7 @@ function InstructorNewClassForm() {
       });
       router.push("/instructor/schedule");
     } catch (err) {
-      setSubmitError(scheduleErrorMessage(err, "Failed to create class"));
+      setSubmitError(scheduleErrorMessage(err, "Failed to create class", timezone));
       setSubmitting(false);
     }
   }
@@ -260,7 +264,7 @@ function InstructorNewClassForm() {
                 id="d"
                 required
                 type="date"
-                min={todayIso()}
+                min={todayIso(timezone)}
                 max={LATEST_DATE}
                 value={date}
                 onChange={(e) => setDate(e.target.value)}

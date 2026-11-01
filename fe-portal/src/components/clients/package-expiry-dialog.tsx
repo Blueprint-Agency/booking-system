@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { Button, Dialog, DialogFooter, Input, Label } from "@/components/ui";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import { LATEST_DATE, todayIso } from "@/lib/formatters";
 import { expiryDay, expiryInstant } from "@/lib/package-expiry";
 import type { ClientPackage } from "@/types";
@@ -14,7 +15,8 @@ export function PackageExpiryDialog({
   onSave: (newExpiresAt: string | null, reason: string) => void;
   onClose: () => void;
 }) {
-  const [date, setDate] = useState(expiryDay(pkg.expiresAt));
+  const timezone = useStudioZone();
+  const [date, setDate] = useState(expiryDay(timezone, pkg.expiresAt));
   const [reason, setReason] = useState("");
   // A blank expiry means "return this package to Dormant" (spec §8). Every
   // kind starts Dormant and Activates on its first booking, so every kind can
@@ -33,11 +35,11 @@ export function PackageExpiryDialog({
         onSubmit={(e) => {
           e.preventDefault();
           if (!reason.trim()) return;
-          // The last instant of the picked day on the studio's local clock
+          // The last instant of the picked day on the studio's clock
           // (lib/package-expiry.ts). Ends already stamped at 23:59:59 UTC
-          // are not rewritten: that would take eight hours from
-          // members, and reopening one saves the later day in their favour.
-          onSave(expiryInstant(date), reason.trim());
+          // are not rewritten: that would take hours from members, and
+          // reopening one saves the later day in their favour.
+          onSave(expiryInstant(timezone, date), reason.trim());
         }}
       >
         <div className="space-y-1.5">
@@ -45,7 +47,7 @@ export function PackageExpiryDialog({
           <Input
             id="exp-date"
             type="date"
-            min={todayIso()}
+            min={todayIso(timezone)}
             max={LATEST_DATE}
             value={date}
             onChange={(e) => setDate(e.target.value)}

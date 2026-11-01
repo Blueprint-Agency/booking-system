@@ -5,7 +5,8 @@ import { CalendarPlus, CalendarX, Loader2, Pencil, Repeat, Save } from "lucide-r
 import { Badge, Button, Dialog, DialogFooter, Input, Label } from "@/components/ui";
 import { SeriesPreviewList, blockingDates } from "@/components/schedule/series-preview";
 import { useWorkspace } from "@/lib/workspace-context";
-import { LATEST_DATE, formatDate, formatDateTime } from "@/lib/formatters";
+import { LATEST_DATE, formatDateTime, formatPlainDay } from "@/lib/formatters";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import {
   endSeries,
   extendSeries,
@@ -29,8 +30,8 @@ import {
   type PackageRuleDraft,
 } from "@/lib/package-rule";
 
-/** `YYYY-MM-DD` → the same day, as `formatDate` reads an instant. */
-const dayLabel = (date: string) => formatDate(`${date}T12:00:00`, "d MMM yyyy");
+/** `YYYY-MM-DD` → the day it names, which is the same in any zone. */
+const dayLabel = (date: string) => formatPlainDay(date, "d MMM yyyy");
 
 /**
  * The Class Series a class belongs to, on that class's page: what it repeats,
@@ -49,6 +50,7 @@ export function SeriesPanel({
   onChanged: () => void;
 }) {
   const { api } = useWorkspace();
+  const timezone = useStudioZone();
   const [series, setSeries] = useState<Series | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<"extend" | "end" | null>(null);
@@ -61,12 +63,12 @@ export function SeriesPanel({
     let cancelled = false;
     getSeries(api, seriesId).then(
       (s) => !cancelled && setSeries(s),
-      (err) => !cancelled && setError(seriesErrorMessage(err, "Couldn't load the series")),
+      (err) => !cancelled && setError(seriesErrorMessage(err, "Couldn't load the series", timezone)),
     );
     return () => {
       cancelled = true;
     };
-  }, [api, seriesId, version]);
+  }, [api, seriesId, version, timezone]);
 
   const changed = () => {
     setVersion((v) => v + 1);
@@ -160,6 +162,7 @@ function SeriesRuleEditor({
   onSaved: (next: Series) => void;
 }) {
   const { api } = useWorkspace();
+  const timezone = useStudioZone();
   const [draft, setDraft] = useState<PackageRuleDraft>(() => draftFromRule(series.package_rule));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -174,7 +177,7 @@ function SeriesRuleEditor({
     try {
       onSaved(await updateSeriesRule(api, series.id, packageRuleBody(draft)));
     } catch (err) {
-      setError(seriesErrorMessage(err, "Saving the rule failed"));
+      setError(seriesErrorMessage(err, "Saving the rule failed", timezone));
       setBusy(false);
     }
   }
@@ -213,6 +216,7 @@ function ExtendDialog({
   onDone: () => void;
 }) {
   const { api } = useWorkspace();
+  const timezone = useStudioZone();
   const [lastDate, setLastDate] = useState("");
   const [preview, setPreview] = useState<{ lastDate: string; result: Preview } | null>(null);
   const [skipped, setSkipped] = useState<Set<string>>(new Set());
@@ -233,7 +237,7 @@ function ExtendDialog({
       setSkipped(new Set(result.dates.filter((d) => d.clashes.length > 0).map((d) => d.date)));
     } catch (err) {
       setPreview(null);
-      setError(seriesErrorMessage(err, "Preview failed"));
+      setError(seriesErrorMessage(err, "Preview failed", timezone));
     } finally {
       setBusy(false);
     }
@@ -248,7 +252,7 @@ function ExtendDialog({
       onDone();
       onClose();
     } catch (err) {
-      setError(seriesErrorMessage(err, "Extend failed"));
+      setError(seriesErrorMessage(err, "Extend failed", timezone));
       setBusy(false);
     }
   }
@@ -324,6 +328,7 @@ function EndDialog({
   onDone: () => void;
 }) {
   const { api } = useWorkspace();
+  const timezone = useStudioZone();
   const [fromDate, setFromDate] = useState(defaultFrom);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -344,7 +349,7 @@ function EndDialog({
     try {
       setResult(await endSeries(api, series.id, fromDate));
     } catch (err) {
-      setError(seriesErrorMessage(err, "Ending the series failed"));
+      setError(seriesErrorMessage(err, "Ending the series failed", timezone));
     } finally {
       setBusy(false);
     }
@@ -376,7 +381,7 @@ function EndDialog({
                     key={b.class_id}
                     className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 py-2"
                   >
-                    <span>{formatDateTime(b.starts_at)}</span>
+                    <span>{formatDateTime(timezone, b.starts_at)}</span>
                     <span className="flex items-center gap-3">
                       <span className="text-xs text-muted">
                         {b.booked_count} booked
