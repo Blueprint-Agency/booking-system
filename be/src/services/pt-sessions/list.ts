@@ -7,6 +7,7 @@ import { classTypes, locations, rooms } from '../../db/schema/catalog'
 import { ptRequests, ptRequestSlots, ptSessions } from '../../db/schema/schedule'
 import { bookings, cancellations } from '../../db/schema/bookings'
 import { clientPackages } from '../../db/schema/packages'
+import { creditMovements } from '../../db/schema/ledger'
 import type { CancellationSource, PtRequestOrigin, RefundOutcome } from '../../db/enums'
 import {
   pendingRequestEnd,
@@ -123,6 +124,62 @@ function ptCancellation(
   })
 }
 
+/**
+ * A request cancelled after it was scheduled but with no session has no booking
+ * to say whether its debit came back. The credit movement its cancel wrote does:
+ * a `pt_returned` on the debited package, made in the cancel's own
+ * transaction (so within a minute of `resolvedAt`). None means the package was
+ * Voided and took nothing back. Returns the ids of those requests whose credit
+ * came back.
+ */
+async function sessionlessReturns(
+  tenantId: string,
+  rows: {
+    id: string
+    status: string
+    sessionId: string | null
+    requesterClientId: string
+    debitedClientPackageId: string | null
+    resolvedAt: Date | null
+  }[],
+): Promise<Set<string>> {
+  const sessionless = rows.filter(
+    r => r.status === 'cancelled_after_scheduled' && !r.sessionId && r.debitedClientPackageId && r.resolvedAt,
+  )
+  const returned = new Set<string>()
+  if (!sessionless.length) return returned
+  const movements = await db
+    .select({
+      clientId: creditMovements.clientId,
+      clientPackageId: creditMovements.clientPackageId,
+      createdAt: creditMovements.createdAt,
+    })
+    .from(creditMovements)
+    .where(
+      and(
+        eq(creditMovements.tenantId, tenantId),
+        inArray(creditMovements.clientPackageId, [...new Set(sessionless.map(r => r.debitedClientPackageId!))]),
+        eq(creditMovements.cause, 'pt_returned'),
+        isNull(creditMovements.bookingId),
+        sql`${creditMovements.delta} > 0`,
+      ),
+    )
+  for (const r of sessionless) {
+    const at = r.resolvedAt!.getTime()
+    if (
+      movements.some(
+        m =>
+          m.clientPackageId === r.debitedClientPackageId &&
+          m.clientId === r.requesterClientId &&
+          Math.abs(m.createdAt.getTime() - at) <= 60_000,
+      )
+    ) {
+      returned.add(r.id)
+    }
+  }
+  return returned
+}
+
 export async function listClientPtRequests(
   tenantId: string,
   clientId: string,
@@ -151,6 +208,7 @@ export async function listClientPtRequests(
       resolvedByStaffId: ptRequests.resolvedByStaffId,
       cancelSource: ptRequests.cancelSource,
       coClientId: ptRequests.coClientId,
+      debitedClientPackageId: ptRequests.debitedClientPackageId,
       sessionId: ptSessions.id,
       sessionStartsAt: ptSessions.startsAt,
       sessionEndsAt: ptSessions.endsAt,
@@ -271,6 +329,11 @@ export async function listClientPtRequests(
     }
   }
 
+  const returnedWithoutSession = await sessionlessReturns(
+    tenantId,
+    reqRows.map(r => ({ ...r, requesterClientId: r.requesterClientId })),
+  )
+
   return reqRows.map(r => {
     // On the request no longer, yet listed: a seat they held, paid for and
     // left. Theirs, as a requester's is: nobody hosted them.
@@ -283,7 +346,10 @@ export async function listClientPtRequests(
         ? // The debit was the requester's: a partner had nothing to get back.
           role === 'requester' ? 'session_returned' : 'n_a'
         : status === 'cancelled_after_scheduled'
-          ? (booking?.refundOutcome ?? (role === 'requester' ? 'forfeited' : 'n_a'))
+          ? !r.sessionId && !booking
+            ? // No session to hold a booking: what the cancel's own credit movement says.
+              role === 'requester' && returnedWithoutSession.has(r.id) ? 'session_returned' : 'n_a'
+            : (booking?.refundOutcome ?? (role === 'requester' ? 'forfeited' : 'n_a'))
           : null
     const cancellation =
       status === 'cancelled_before_scheduled' || status === 'cancelled_after_scheduled'
@@ -414,6 +480,7 @@ function adminSelect() {
       coClientId: ptRequests.coClientId,
       coClientNameRaw: ptRequests.coClientName,
       coClientEmailRaw: ptRequests.coClientEmail,
+      debitedClientPackageId: ptRequests.debitedClientPackageId,
       sessionId: ptSessions.id,
       sessionStartsAt: ptSessions.startsAt,
       sessionEndsAt: ptSessions.endsAt,
@@ -491,6 +558,11 @@ async function hydrateAdminRows(
     }
   }
 
+  const returnedWithoutSession = await sessionlessReturns(
+    tenantId,
+    rows.map(r => ({ ...r, requesterClientId: r.clientId })),
+  )
+
   return rows.map(r => {
     let coClient: AdminPtRequestView['coClient'] = null
     if (r.sessionType === '2on1') {
@@ -533,7 +605,12 @@ async function hydrateAdminRows(
         r.status === 'cancelled_before_scheduled'
           ? 'session_returned'
           : r.status === 'cancelled_after_scheduled'
-            ? (r.sessionId ? requesterOutcomeBySession.get(r.sessionId) ?? 'forfeited' : 'forfeited')
+            ? r.sessionId
+              ? requesterOutcomeBySession.get(r.sessionId) ?? 'forfeited'
+              : // No session to hold a booking: what the cancel's own credit movement says.
+                returnedWithoutSession.has(r.id)
+                ? 'session_returned'
+                : 'n_a'
             : null,
     }
   })
