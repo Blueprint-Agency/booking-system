@@ -77,8 +77,9 @@ export interface CancelPtRequestInput {
    * A Complimentary package's Remove (`source: 'system'`): a `scheduled`
    * request with no session is ended as an Admin's cancel of it is, instead of
    * answering `pt_session_not_found`, and a session that still names the
-   * request is found and cancelled. Every other system cancel (the jobs) leaves
-   * it unset and is still refused.
+   * request is found and cancelled. Every other system cancel leaves it unset
+   * and is still refused. (No job reaches this: the expiry job only cancels
+   * `pending` requests.)
    */
   endsSessionless?: boolean
   /**
