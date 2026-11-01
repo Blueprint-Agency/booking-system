@@ -15,7 +15,7 @@ const DAY = 24 * HOUR
  * An Unlimited Plan's **Home Location** as the member meets it, over real HTTP:
  * which Location's classes it pays for, what the Cross-Location Add-On
  * changes, and that a Credit Bundle is never spent in its place without the
- * member asking. Then the Inbox item a member's own PT session cancel leaves.
+ * member asking.
  *
  * Written from the LOC and INB rows of the Scenario Inventory
  * (`docs/md/test-scenarios.md`). Fixtures — a class, a package a member holds —
@@ -203,7 +203,6 @@ describe('home location and member cancellations over HTTP', { skip: integration
     const clients = sql`SELECT id FROM clients WHERE email LIKE ${ours}`
     const staff = sql`SELECT id FROM staff_users WHERE email LIKE ${ours}`
     const requests = sql`SELECT id FROM pt_requests WHERE client_id IN (${clients})`
-    await harness.db.execute(sql`DELETE FROM inbox_items WHERE payload->>'clientId' IN (SELECT id::text FROM (${clients}) c)`)
     await harness.db.execute(sql`DELETE FROM audit_log WHERE actor_staff_id IN (${staff})`)
     await harness.db.execute(sql`DELETE FROM cancellations WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM manual_adjustments WHERE client_id IN (${clients})`)

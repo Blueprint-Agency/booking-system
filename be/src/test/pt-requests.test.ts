@@ -397,7 +397,6 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     const sessions = sql`SELECT id FROM pt_sessions WHERE pt_request_id IN (${requests})`
     const bookings = sql`SELECT id FROM bookings WHERE client_id IN (${clients})`
     const run = (q: ReturnType<typeof sql>) => harness.db.execute(q)
-    await run(sql`DELETE FROM inbox_items WHERE payload->>'clientId' IN (SELECT id::text FROM (${clients}) c)`)
     await run(sql`DELETE FROM audit_log WHERE actor_staff_id IN (${staffIds})`)
     await run(sql`DELETE FROM check_ins WHERE booking_id IN (${bookings})`)
     await run(sql`DELETE FROM cancellations WHERE client_id IN (${clients})`)
