@@ -320,6 +320,42 @@ export function ptCancelConfirm(s: Pick<ManualSessionState, "origin">): string {
     : "Cancel this private session? The member who asked for it gets their session back on the package it was paid from, unless that package has been refunded.";
 }
 
+const PENDING_CANCEL_CONSEQUENCE =
+  "Cancel this pending request? The sessions it was holding go back to the requester's package.";
+const SESSIONLESS_CANCEL_CONSEQUENCE =
+  "Cancel this scheduled request? It has no session on the Schedule. The sessions it was holding go back to the requester's package, unless that package has been refunded.";
+
+/** The request as the PT Requests drawer holds it, enough to word its cancel. */
+interface CancellableRequest {
+  status: string;
+  session: { starts_at: string } | null;
+}
+
+/**
+ * What the drawer offers on a scheduled request: Cancel session before its
+ * session starts, nothing once it has, and Cancel request when it has no
+ * session (it named none, or its session is gone).
+ */
+export function scheduledCancelOffer(
+  r: CancellableRequest,
+  now: Date = new Date(),
+): "cancel_session" | "cancel_request" | "started" {
+  if (!r.session) return "cancel_request";
+  return canCancelSession({ lifecycle: "active", starts_at: r.session.starts_at }, now)
+    ? "cancel_session"
+    : "started";
+}
+
+/** The cancel dialog's title and warning for a request. */
+export function ptCancelWording(r: CancellableRequest & { origin?: "member" | "portal" | null }): {
+  title: string;
+  consequence: string;
+} {
+  if (r.status !== "scheduled") return { title: "Cancel request", consequence: PENDING_CANCEL_CONSEQUENCE };
+  if (!r.session) return { title: "Cancel request", consequence: SESSIONLESS_CANCEL_CONSEQUENCE };
+  return { title: "Cancel session", consequence: ptCancelConfirm({ origin: r.origin ?? null }) };
+}
+
 /**
  * Staff may cancel a private session only before it starts: the backend refuses
  * one that is running or has ended unticked (`session_already_started`).

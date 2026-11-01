@@ -9,7 +9,7 @@ import { useWorkspace } from "@/lib/workspace-context";
 import { PtRequestDrawer } from "@/components/pt-requests/pt-request-drawer";
 import { ScheduleFromRequestDialog } from "@/components/pt-requests/schedule-from-request-dialog";
 import { CancelPtDialog } from "@/components/pt-requests/cancel-pt-dialog";
-import { cancelSession, ptCancelConfirm, sessionActionErrorMessage } from "@/lib/pt-manual";
+import { cancelSession, ptCancelWording, sessionActionErrorMessage } from "@/lib/pt-manual";
 import { formatRelative } from "@/lib/formatters";
 import {
   type ApiPtRequest,
@@ -209,12 +209,8 @@ function PtRequestsView() {
         <CancelPtDialog
           open
           onOpenChange={(open) => !open && setCancelFor(null)}
-          title={cancelFor.status === "scheduled" ? "Cancel session" : "Cancel request"}
-          consequence={
-            cancelFor.status === "scheduled"
-              ? ptCancelConfirm(cancelFor)
-              : "Cancel this pending request? The sessions it was holding go back to the requester's package."
-          }
+          title={ptCancelWording(cancelFor).title}
+          consequence={ptCancelWording(cancelFor).consequence}
           onConfirm={(note) => cancelWithNote(cancelFor, note)}
           errorMessage={(err) => sessionActionErrorMessage(err, "Couldn't cancel the request", timezone)}
         />

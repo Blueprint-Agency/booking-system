@@ -10,6 +10,8 @@ import {
   fetchSeatCandidates,
   isManual,
   ptCancelConfirm,
+  ptCancelWording,
+  scheduledCancelOffer,
   retypeBody,
   sessionActionErrorMessage,
   manualSessionBody,
@@ -366,6 +368,25 @@ test("PT-113 PT-150 cancelling a private session says each member is paid back o
     ptCancelConfirm({ origin: "member" }),
     "Cancel this private session? The member who asked for it gets their session back on the package it was paid from, unless that package has been refunded.",
   );
+});
+
+test("PT-184 a scheduled request with no session is offered Cancel request, worded without a session; one with a session keeps Cancel session until it starts", () => {
+  const now = new Date("2031-05-01T08:00:00.000Z");
+  const withSession = (starts_at: string) => ({ status: "scheduled" as const, session: { starts_at } });
+
+  assert.deepStrictEqual(scheduledCancelOffer({ status: "scheduled", session: null }, now), "cancel_request");
+  assert.deepStrictEqual(scheduledCancelOffer(withSession("2031-05-01T09:00:00.000Z"), now), "cancel_session");
+  assert.deepStrictEqual(scheduledCancelOffer(withSession("2031-05-01T07:00:00.000Z"), now), "started");
+
+  assert.deepStrictEqual(ptCancelWording({ status: "pending", session: null }), {
+    title: "Cancel request",
+    consequence: "Cancel this pending request? The sessions it was holding go back to the requester's package.",
+  });
+  const sessionless = ptCancelWording({ status: "scheduled", session: null });
+  assert.strictEqual(sessionless.title, "Cancel request");
+  assert.match(sessionless.consequence, /no session on the Schedule/);
+  assert.match(sessionless.consequence, /go back to the requester's package/);
+  assert.strictEqual(ptCancelWording({ status: "scheduled", session: { starts_at: "2031-05-01T09:00:00.000Z" } }).title, "Cancel session");
 });
 
 test("PT-151 staff are offered Cancel session only before the session starts", () => {
