@@ -50,6 +50,7 @@ import {
   patchCorporateSession,
   patchPtSession,
   previewClassRule,
+  changedTimes,
   scheduleErrorMessage,
   type ClassPatch,
   type ScheduleClassDetail,
@@ -376,8 +377,8 @@ function ClassEditor({
       })),
       location_id: locationId,
       room_id: roomId,
-      starts_at: startsAt.toISOString(),
-      ends_at: endsAt.toISOString(),
+      // The date and times only when edited: see `changedTimes`.
+      ...changedTimes(timezone, data, { date, startTime, endTime }),
       // Only what changed: an imported class can already hold more online
       // bookings than its online seats, and resending that number is refused.
       ...(capacity.onlineBooking !== data.capacity_online
@@ -834,8 +835,7 @@ function PtEditor({
         })),
         location_id: locationId,
         room_id: roomId,
-        starts_at: startsAt.toISOString(),
-        ends_at: endsAt.toISOString(),
+        ...changedTimes(timezone, data, { date, startTime, endTime }),
       });
       await onSaved();
     } catch (e) {
@@ -1376,8 +1376,7 @@ function CorporateEditor({
         supporting_instructor_ids: supportingInstructorIds,
         location_id: locationId,
         room_id: roomId,
-        starts_at: startsAt.toISOString(),
-        ends_at: endsAt.toISOString(),
+        ...changedTimes(timezone, session, { date, startTime, endTime }),
       });
       await onSaved();
     } catch (e) {

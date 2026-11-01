@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert";
-import { CLASS_CANCEL_CONFIRM, scheduleErrorMessage, fetchCorporateSession } from "./schedule";
+import { CLASS_CANCEL_CONFIRM, changedTimes, scheduleErrorMessage, fetchCorporateSession } from "./schedule";
+import { atLocalTime } from "./local-day";
 import { seriesErrorMessage } from "./series";
 import { manualSessionErrorMessage } from "./pt-manual";
 import { ApiError, type Api } from "./api";
@@ -81,6 +82,31 @@ test("PT-145 scheduling, moving or creating a private session after its package'
   assert.strictEqual(manualSessionErrorMessage(withSentence, SG), sentence);
   assert.strictEqual(scheduleErrorMessage(bare, "Couldn't schedule", SG), copy);
   assert.strictEqual(manualSessionErrorMessage(bare, SG), copy);
+});
+
+test("TEN-138 an edit form sends a start or end only when its date or time was changed, so a class held at the second 02:30 of a fall-back day does not move an hour on another edit", () => {
+  const SYDNEY = "Australia/Sydney";
+  // 5 April 2026: Sydney's clocks go back from 03:00 to 02:00, so 02:30 happens twice.
+  // Stored at the second 02:30 (AEST, 16:30 UTC on the 4th), to 03:30 (AEST, 17:30 UTC).
+  const stored = { starts_at: "2026-04-04T16:30:00.000Z", ends_at: "2026-04-04T17:30:00.000Z" };
+  const form = { date: "2026-04-05", startTime: "02:30", endTime: "03:30" };
+  assert.deepStrictEqual(changedTimes(SYDNEY, stored, form), {});
+  // The wall time alone cannot tell the two 02:30s, so the first would be sent if it were re-derived.
+  assert.strictEqual(atLocalTime(SYDNEY, form.date, form.startTime).toISOString(), "2026-04-04T15:30:00.000Z");
+  // Changing one time sends that one.
+  assert.deepStrictEqual(changedTimes(SYDNEY, stored, { ...form, endTime: "04:30" }), {
+    ends_at: "2026-04-04T18:30:00.000Z",
+  });
+  assert.deepStrictEqual(changedTimes(SYDNEY, stored, { ...form, startTime: "03:00" }), {
+    starts_at: "2026-04-04T17:00:00.000Z",
+  });
+  // Changing the date moves both.
+  assert.deepStrictEqual(changedTimes(SYDNEY, stored, { ...form, date: "2026-04-12" }), {
+    starts_at: "2026-04-11T16:30:00.000Z",
+    ends_at: "2026-04-11T17:30:00.000Z",
+  });
+  // A class read at another studio's clock is a different wall time, so it counts as changed there.
+  assert.ok("starts_at" in changedTimes(SG, stored, form));
 });
 
 test("CXL-70 cancelling a class promises no credit back to a refunded package", () => {

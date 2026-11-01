@@ -12,7 +12,7 @@
  *
  * Built on `studio-time.ts`, which owns the daylight-saving rules.
  */
-import { instantAt, localDate } from "./studio-time";
+import { addDays, instantAt, localDate } from "./studio-time";
 
 /** The studio's calendar day (`YYYY-MM-DD`) an instant falls on. Defaults to now. */
 export function localDay(timezone: string, at: Date | string | number = Date.now()): string {
@@ -34,8 +34,13 @@ export function atLocalTime(timezone: string, day: string, time: string): Date {
  * end is found from the day's own last minute, never as start + 24 hours.
  */
 export function localDayRange(timezone: string, day: string): { start: Date; end: Date } {
-  return {
-    start: atLocalTime(timezone, day, "00:00"),
-    end: new Date(instantAt(timezone, day, "23:59") + 59_999),
-  };
+  const next = addDays(day, 1);
+  // The instant before the next midnight, so a day whose last hour happens twice
+  // (clocks falling back at midnight, as in Santiago or Cairo) runs to the end of
+  // the second. The day after 9999-12-31 is year 10000, which has no four-digit
+  // date: that one day is ended at its own last minute instead.
+  const end = /^\d{4}-/.test(next)
+    ? instantAt(timezone, next, "00:00") - 1
+    : instantAt(timezone, day, "23:59") + 59_999;
+  return { start: atLocalTime(timezone, day, "00:00"), end: new Date(end) };
 }
