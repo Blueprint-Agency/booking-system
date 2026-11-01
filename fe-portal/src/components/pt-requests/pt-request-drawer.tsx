@@ -14,7 +14,7 @@ import {
   ptClassTypeName,
   ptSlotTime,
 } from "@/lib/pt-requests";
-import { canCancelSession } from "@/lib/pt-manual";
+import { scheduledCancelOffer } from "@/lib/pt-manual";
 
 export function PtRequestDrawer({
   request,
@@ -33,6 +33,7 @@ export function PtRequestDrawer({
   // Staff put a manual session on the Schedule: the member asked for
   // nothing, so there are no proposed slots, class type, message or binding.
   const manual = request.origin === "portal";
+  const cancelOffer = scheduledCancelOffer(request);
   useEffect(() => {
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -160,16 +161,15 @@ export function PtRequestDrawer({
                 Scheduled on {formatDateTime(timezone, request.resolved_at)}.
               </div>
             )}
-            {request.session &&
-              (canCancelSession({ lifecycle: "active", starts_at: request.session.starts_at }) ? (
-                <Button variant="ghost" onClick={onCancel}>
-                  Cancel session
-                </Button>
-              ) : (
-                <div className="rounded-md bg-paper p-3 text-xs text-muted">
-                  This session has started, so it can no longer be cancelled.
-                </div>
-              ))}
+            {cancelOffer === "started" ? (
+              <div className="rounded-md bg-paper p-3 text-xs text-muted">
+                This session has started, so it can no longer be cancelled.
+              </div>
+            ) : (
+              <Button variant="ghost" onClick={onCancel}>
+                {cancelOffer === "cancel_session" ? "Cancel session" : "Cancel request"}
+              </Button>
+            )}
           </div>
         )}
         {(request.status === "cancelled_before_scheduled" ||
