@@ -228,20 +228,38 @@ async function cancelPtRequestInTx(
 
   // A scheduled request can have no session: it named none, or the id was
   // cleared when the session it named was found gone (migration 0140, a
-  // restore). There is nothing to look up then.
-  const [session] = req.scheduledPtSessionId
+  // restore).
+  const sessionColumns = {
+    id: ptSessions.id,
+    startsAt: ptSessions.startsAt,
+    lifecycle: ptSessions.lifecycle,
+    instructorId: ptSessions.instructorId,
+  }
+  let [session] = req.scheduledPtSessionId
     ? await tx
-        .select({
-          id: ptSessions.id,
-          startsAt: ptSessions.startsAt,
-          lifecycle: ptSessions.lifecycle,
-          instructorId: ptSessions.instructorId,
-        })
+        .select(sessionColumns)
         .from(ptSessions)
         .where(and(eq(ptSessions.tenantId, tenantId), eq(ptSessions.id, req.scheduledPtSessionId)))
         .for('update')
         .limit(1)
     : []
+  if (!session && source === 'admin') {
+    // A cleared id does not mean no session: one may still name this request.
+    // The Admin's cancel then settles that session like any other, and the
+    // request names it again, rather than refunding beside a live booking.
+    ;[session] = await tx
+      .select(sessionColumns)
+      .from(ptSessions)
+      .where(and(eq(ptSessions.tenantId, tenantId), eq(ptSessions.ptRequestId, ptRequestId)))
+      .for('update')
+      .limit(1)
+    if (session) {
+      await tx
+        .update(ptRequests)
+        .set({ scheduledPtSessionId: session.id })
+        .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, ptRequestId)))
+    }
+  }
   if (!session) {
     // An Admin ends it: the credit it holds goes back as a pending request's
     // does, and there is no session, booking or cancellation to settle. A
