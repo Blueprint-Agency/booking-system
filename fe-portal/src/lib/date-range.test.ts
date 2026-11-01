@@ -65,6 +65,11 @@ test("TEN-127 a period's days become the studio's midnights, so Sydney's day is 
     from: "2026-10-02T14:00:00.000Z",
     to: "2026-10-05T12:59:59.999Z",
   });
+  // A day whose last hour happens twice (Santiago's clocks fall back at midnight) runs to the end of the second.
+  assert.equal(
+    rangeToParams("America/Santiago", { from: "2026-04-04", to: "2026-04-04" }).to,
+    "2026-04-05T03:59:59.999Z",
+  );
   // All time sends no period.
   assert.deepEqual(rangeToParams(SYDNEY, null), { from: undefined, to: undefined });
 });

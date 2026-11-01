@@ -54,6 +54,8 @@ test("TEN-128 a package picked to expire on a day ends at that day's last instan
   // The last instant of a day on a 23-hour daylight-saving day is an hour sooner than 24 hours on.
   assert.strictEqual(expiryInstant(SYDNEY, "2026-10-04"), "2026-10-04T12:59:59.999Z");
   assert.strictEqual(expiryInstant(SYDNEY, "2026-10-03"), "2026-10-03T13:59:59.999Z");
+  // Where the clocks fall back at midnight the day's last hour happens twice, and the package runs to the end of the second.
+  assert.strictEqual(expiryInstant("America/Santiago", "2026-04-04"), "2026-04-05T03:59:59.999Z");
   // Reopening a Sydney package and saving without a change keeps its end.
   assert.strictEqual(expiryInstant(SYDNEY, expiryDay(SYDNEY, sydney)), sydney);
 });

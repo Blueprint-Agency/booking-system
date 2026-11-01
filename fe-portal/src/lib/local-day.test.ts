@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { atLocalTime, localDay, localDayRange } from "./local-day";
+import { addDays } from "./studio-time";
 
 const SYDNEY = "Australia/Sydney";
 const SINGAPORE = "Asia/Singapore";
@@ -43,6 +44,26 @@ test("TEN-123 a calendar day, the instants a day picked in a date field spans, a
   assert.equal(localDay(SYDNEY, end), "2026-08-12");
   assert.equal(localDay(SYDNEY, start.getTime() - 1), "2026-08-11");
   assert.equal(localDay(SYDNEY, end.getTime() + 1), "2026-08-13");
+});
+
+test("TEN-123 a day's range ends one millisecond before the next midnight, including where the clocks fall back at midnight and the last hour happens twice", () => {
+  // Santiago (4 April 2026), Cairo (29 October) and Beirut (24 October) put the
+  // clocks back at midnight, so the day has 25 hours and its last hour is repeated.
+  for (const [zone, day] of [
+    ["America/Santiago", "2026-04-04"],
+    ["Africa/Cairo", "2026-10-29"],
+    ["Asia/Beirut", "2026-10-24"],
+  ] as const) {
+    const { start, end } = localDayRange(zone, day);
+    const next = atLocalTime(zone, addDays(day, 1), "00:00");
+    assert.equal(end.getTime() + 1, next.getTime(), `${zone} ends the instant before the next midnight`);
+    assert.equal((next.getTime() - start.getTime()) / 3_600_000, 25, `${zone} ${day} has 25 hours`);
+    assert.equal(localDay(zone, end), day, zone);
+    assert.equal(localDay(zone, next), addDays(day, 1), zone);
+  }
+  assert.equal(localDayRange("America/Santiago", "2026-04-04").end.toISOString(), "2026-04-05T03:59:59.999Z");
+  assert.equal(localDayRange("Africa/Cairo", "2026-10-29").end.toISOString(), "2026-10-29T21:59:59.999Z");
+  assert.equal(localDayRange("Asia/Beirut", "2026-10-24").end.toISOString(), "2026-10-24T21:59:59.999Z");
 });
 
 test("TEN-123 a day's range on a Sydney daylight-saving day ends at that day's own last instant", () => {
