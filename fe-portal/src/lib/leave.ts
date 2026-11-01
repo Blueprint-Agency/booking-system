@@ -3,7 +3,7 @@
 // leave calendar. Presentation only: nothing here decides anything. Every rule
 // (balance, backdating, clashes, half-day boundary) lives in the backend.
 
-import { formatDate } from "./formatters";
+import { formatPlainDay } from "./formatters";
 import { permissionRefusal } from "./access-refusal";
 import { ApiError } from "./api";
 
@@ -92,7 +92,7 @@ export function supportingDocumentAction(
   return STATUSES_TAKING_A_DOCUMENT.includes(request.status) ? "attach" : null;
 }
 
-/** Half days split the day at 1pm Singapore time — the same boundary the
+/** Half days split the day at 1pm on the studio's clock — the same boundary the
  *  backend enforces when it decides what a booking clashes with. */
 export const LEAVE_HALF_DAY_SUFFIX: Record<HalfDay, string> = {
   none: "",
@@ -123,7 +123,7 @@ export function instructorOptionLabel(
 
 /** A plain `YYYY-MM-DD` — never parsed as an instant, so no timezone shifting. */
 function formatLeaveDay(day: string): string {
-  return formatDate(`${day}T00:00:00`, "d MMM yyyy");
+  return formatPlainDay(day, "d MMM yyyy");
 }
 
 export function formatLeaveDayRange(from: string, to: string): string {

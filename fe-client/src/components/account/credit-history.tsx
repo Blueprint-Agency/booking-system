@@ -4,7 +4,9 @@ import { useId, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { useApi } from "@/lib/api";
 import { movementText, type CreditHistory } from "@/lib/credit-history";
-import { cn, formatDate, formatExpiryDate } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { formatDate, formatExpiryDate } from "@/lib/studio-time";
+import { useStudioZone } from "@/components/brand/brand-provider";
 
 /**
  * "Credit history" on a package in My packages: where its credits (or
@@ -13,6 +15,7 @@ import { cn, formatDate, formatExpiryDate } from "@/lib/utils";
  * after each. Read when opened, not with the page.
  */
 export function CreditHistoryDisclosure({ packageId, unit }: { packageId: string; unit: "credit" | "session" }) {
+  const tz = useStudioZone();
   const api = useApi();
   const [open, setOpen] = useState(false);
   const [history, setHistory] = useState<CreditHistory | null>(null);
@@ -59,7 +62,7 @@ export function CreditHistoryDisclosure({ packageId, unit }: { packageId: string
                   const what = m.booking ? (m.booking.title ?? (m.booking.kind === "pt" ? "Private session" : "Booking")) : null;
                   return (
                     <li key={m.id} className="flex items-start gap-3 py-2 text-sm">
-                      <span className="w-24 shrink-0 text-xs text-muted tabular-nums">{formatDate(m.at)}</span>
+                      <span className="w-24 shrink-0 text-xs text-muted tabular-nums">{formatDate(tz, m.at)}</span>
                       <span className="min-w-0 flex-1">
                         {what && <span className="block break-words text-ink">{what}</span>}
                         <span className={cn("block break-words", what ? "text-xs text-muted" : "text-ink")}>{text}</span>
@@ -72,7 +75,7 @@ export function CreditHistoryDisclosure({ packageId, unit }: { packageId: string
                 })}
               </ul>
             )}
-            <p className="pb-2 pt-1 text-xs text-muted">History from {formatExpiryDate(history.history_from)}</p>
+            <p className="pb-2 pt-1 text-xs text-muted">History from {formatExpiryDate(tz, history.history_from)}</p>
           </>
         )}
       </div>

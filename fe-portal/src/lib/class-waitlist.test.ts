@@ -12,6 +12,9 @@ import {
 } from "./class-waitlist";
 import { FEATURE_FLAGS } from "./feature-flags";
 
+// The studio's zone, which the clash sentences read their times in.
+const SG = "Asia/Singapore";
+
 test("WTL-17 a waiting member who could pay names the package that would", () => {
   assert.strictEqual(
     paymentStatusLine({ status: "pending", package_name: "10-Class Pack" }),
@@ -49,6 +52,7 @@ test("WTL-22 a full class with an open line asks an admin to overbook or add to 
   const prompt = staffBookingPrompt(
     new ApiError(409, { error: "class_full", waitlist_open: true, waiting: 1, capacity_waitlist: 5 }),
     "admin",
+    SG,
   );
   assert.deepStrictEqual(prompt, {
     kind: "full",
@@ -59,7 +63,7 @@ test("WTL-22 a full class with an open line asks an admin to overbook or add to 
 });
 
 test("WTL-22 an instructor is offered the waitlist and no overbook", () => {
-  const prompt = staffBookingPrompt(new ApiError(409, { error: "class_full", waitlist_open: true }), "instructor");
+  const prompt = staffBookingPrompt(new ApiError(409, { error: "class_full", waitlist_open: true }), "instructor", SG);
   assert.deepStrictEqual(prompt, {
     kind: "full",
     message: "No seats left. Add to the waitlist?",
@@ -70,17 +74,17 @@ test("WTL-22 an instructor is offered the waitlist and no overbook", () => {
 
 test("a full class whose line is closed offers no waitlist", () => {
   assert.deepStrictEqual(
-    staffBookingPrompt(new ApiError(409, { error: "class_full", waitlist_open: false }), "admin"),
+    staffBookingPrompt(new ApiError(409, { error: "class_full", waitlist_open: false }), "admin", SG),
     { kind: "full", message: "No seats left. Overbook?", canOverbook: true, canWaitlist: false },
   );
   assert.deepStrictEqual(
-    staffBookingPrompt(new ApiError(409, { error: "class_full", waitlist_open: false }), "instructor"),
+    staffBookingPrompt(new ApiError(409, { error: "class_full", waitlist_open: false }), "instructor", SG),
     { kind: "full", message: "No seats left.", canOverbook: false, canWaitlist: false },
   );
 });
 
 test("any other booking refusal is passed through as an error", () => {
-  assert.deepStrictEqual(staffBookingPrompt(new ApiError(409, { error: "already_booked" }), "admin"), {
+  assert.deepStrictEqual(staffBookingPrompt(new ApiError(409, { error: "already_booked" }), "admin", SG), {
     kind: "error",
     message: "This member is already booked on this class.",
   });
@@ -88,45 +92,45 @@ test("any other booking refusal is passed through as an error", () => {
 
 test("WTL-22 a refused Add to waitlist says why", () => {
   assert.strictEqual(
-    staffJoinRefusal(new ApiError(409, { error: "waitlist_full" })),
+    staffJoinRefusal(new ApiError(409, { error: "waitlist_full" }), SG),
     "The waitlist for this class is full.",
   );
   assert.strictEqual(
-    staffJoinRefusal(new ApiError(409, { error: "waitlist_closed", window_hours: 24 })),
+    staffJoinRefusal(new ApiError(409, { error: "waitlist_closed", window_hours: 24 }), SG),
     "This class starts within 24 hours, so the waitlist has closed.",
   );
   assert.strictEqual(
-    staffJoinRefusal(new ApiError(409, { error: "already_waitlisted" })),
+    staffJoinRefusal(new ApiError(409, { error: "already_waitlisted" }), SG),
     "This member is already on the waitlist.",
   );
   assert.strictEqual(
-    staffJoinRefusal(new ApiError(409, { error: "insufficient_credits" })),
+    staffJoinRefusal(new ApiError(409, { error: "insufficient_credits" }), SG),
     "This member has no package that can pay for this class.",
   );
-  assert.strictEqual(staffJoinRefusal(new ApiError(500, null)), "Couldn't add the member to the waitlist (HTTP 500).");
+  assert.strictEqual(staffJoinRefusal(new ApiError(500, null), SG), "Couldn't add the member to the waitlist (HTTP 500).");
 });
 
 test("WTL-18 Add to class for a member who can't pay shows the selection reason on the row", () => {
-  assert.deepStrictEqual(addToClassRefusal(new ApiError(409, { error: "insufficient_credits" }), "admin"), {
+  assert.deepStrictEqual(addToClassRefusal(new ApiError(409, { error: "insufficient_credits" }), "admin", SG), {
     kind: "error",
     message: "This member has no package that can pay for this class.",
   });
 });
 
 test("WTL-19 Add to class into a full room asks an admin to overbook, and tells an instructor no", () => {
-  assert.deepStrictEqual(addToClassRefusal(new ApiError(409, { error: "class_full" }), "admin"), {
+  assert.deepStrictEqual(addToClassRefusal(new ApiError(409, { error: "class_full" }), "admin", SG), {
     kind: "full",
     message: "No seats left. Overbook?",
     canOverbook: true,
   });
-  assert.deepStrictEqual(addToClassRefusal(new ApiError(409, { error: "class_full" }), "instructor"), {
+  assert.deepStrictEqual(addToClassRefusal(new ApiError(409, { error: "class_full" }), "instructor", SG), {
     kind: "error",
     message: "No seats left.",
   });
 });
 
 test("a waitlist row that has already gone reads so", () => {
-  assert.deepStrictEqual(addToClassRefusal(new ApiError(404, { error: "waitlist_entry_not_found" }), "admin"), {
+  assert.deepStrictEqual(addToClassRefusal(new ApiError(404, { error: "waitlist_entry_not_found" }), "admin", SG), {
     kind: "error",
     message: "This member is no longer on the waitlist.",
   });

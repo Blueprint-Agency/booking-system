@@ -10,6 +10,8 @@ import {
   fetchSeatCandidates,
   isManual,
   ptCancelConfirm,
+  ptCancelWording,
+  scheduledCancelOffer,
   retypeBody,
   sessionActionErrorMessage,
   manualSessionBody,
@@ -23,20 +25,9 @@ import {
 } from "./pt-manual";
 
 // The dates these tests read are instants that fall on Singapore calendar days,
-// and the page words them in the zone the browser is in. The tests that read a
-// date run in Singapore, so the day they name is the same wherever the runner
-// is. The zone is set inside the test and restored after it, so it can't leak
-// into other files when they share a process.
-const inSingapore = (run: () => void | Promise<void>) => async (): Promise<void> => {
-  const zone = process.env.TZ;
-  process.env.TZ = "Asia/Singapore";
-  try {
-    await run();
-  } finally {
-    if (zone === undefined) delete process.env.TZ;
-    else process.env.TZ = zone;
-  }
-};
+// and the page words them on the studio's clock, which is passed in: the
+// runner's own zone is irrelevant.
+const SG = "Asia/Singapore";
 
 const cand = (over: Partial<SeatCandidate>): SeatCandidate => ({
   id: "p",
@@ -58,7 +49,7 @@ test("PT-105 one Eligible package is pre-selected with no select; none says why 
   const one = seatChoice({
     default_client_package_id: "a",
     packages: [cand({ id: "a" }), cand({ id: "b", eligible: false, reason: "insufficient_pt_credit" })],
-  });
+  }, SG);
   assert.strictEqual(one.choosable, false);
   assert.strictEqual(one.defaultId, "a");
   assert.strictEqual(one.refusal, null);
@@ -66,15 +57,15 @@ test("PT-105 one Eligible package is pre-selected with no select; none says why 
   const none = seatChoice({
     default_client_package_id: null,
     packages: [cand({ id: "b", eligible: false, reason: "package_expired" })],
-  });
+  }, SG);
   assert.strictEqual(none.defaultId, null);
   assert.strictEqual(none.refusal, "This member has no PT package that can pay for this session.");
 
-  const empty = seatChoice({ default_client_package_id: null, packages: [] });
+  const empty = seatChoice({ default_client_package_id: null, packages: [] }, SG);
   assert.strictEqual(empty.refusal, "This member holds no PT package.");
 });
 
-test("PT-105 more than one Eligible package offers a select naming each, Ineligible ones greyed with their reason", inSingapore(() => {
+test("PT-105 more than one Eligible package offers a select naming each, Ineligible ones greyed with their reason", () => {
   const choice = seatChoice({
     default_client_package_id: "run",
     packages: [
@@ -92,7 +83,7 @@ test("PT-105 more than one Eligible package offers a select naming each, Ineligi
       cand({ id: "empty", sessions_left: 0, eligible: false, reason: "insufficient_pt_credit" }),
       cand({ id: "theirs", eligible: false, reason: "bound_to_other_instructor", bound_instructor: { id: "i2", name: "Robin" } }),
     ],
-  });
+  }, SG);
   assert.strictEqual(choice.choosable, true);
   assert.strictEqual(choice.defaultId, "run");
   assert.deepStrictEqual(
@@ -114,7 +105,7 @@ test("PT-105 more than one Eligible package offers a select naming each, Ineligi
       ],
     ],
   );
-}));
+});
 
 test("PT-105 a 1on1 seats one member and a 2on1 two", () => {
   assert.strictEqual(seatLimit("1on1"), 1);
@@ -158,6 +149,7 @@ const FIELDS = {
   startTime: "09:00",
   endTime: "10:00",
   pay: "",
+  timezone: SG,
 };
 
 test("PT-107 saving sends each member with their package, and override only when staff accepted a warning", () => {
@@ -168,7 +160,9 @@ test("PT-107 saving sends each member with their package, and override only when
   assert.strictEqual(plain.instructor_id, "i1");
   assert.strictEqual(plain.instructor_pay_sgd, null);
   assert.strictEqual(plain.session_type, "2on1");
-  assert.strictEqual(plain.starts_at, new Date("2031-04-02T09:00:00").toISOString());
+  // 09:00 on the studio's clock: 01:00 UTC in Singapore.
+  assert.strictEqual(plain.starts_at, "2031-04-02T01:00:00.000Z");
+  assert.strictEqual(plain.ends_at, "2031-04-02T02:00:00.000Z");
 
   const accepted = manualSessionBody(
     FIELDS,
@@ -178,6 +172,27 @@ test("PT-107 saving sends each member with their package, and override only when
   assert.ok(typeof accepted !== "string");
   assert.strictEqual(accepted.override, true);
   assert.strictEqual(accepted.members.length, 2);
+});
+
+test("TEN-136 a private session's date and times are wall times at the studio, so Sydney's 18:00 is not Singapore's, and one on a daylight-saving day keeps its hour", () => {
+  const sydney = manualSessionBody({ ...FIELDS, date: "2031-04-02", startTime: "18:00", endTime: "19:00", timezone: "Australia/Sydney" }, [seat({})], "admin");
+  assert.ok(typeof sydney !== "string");
+  // 18:00 AEDT (UTC+11, daylight saving runs to 6 April) on 2 April 2031 is 07:00 UTC; 19:00 is 08:00 UTC.
+  assert.strictEqual(sydney.starts_at, "2031-04-02T07:00:00.000Z");
+  assert.strictEqual(sydney.ends_at, "2031-04-02T08:00:00.000Z");
+  const singapore = manualSessionBody({ ...FIELDS, date: "2031-04-02", startTime: "18:00", endTime: "19:00", timezone: SG }, [seat({})], "admin");
+  assert.ok(typeof singapore !== "string");
+  assert.strictEqual(singapore.starts_at, "2031-04-02T10:00:00.000Z");
+
+  // The same wall time, the day the clocks go back in Sydney (6 April 2031) and the day before: an hour apart in UTC.
+  assert.strictEqual(sessionStartIso("Australia/Sydney", "2031-04-05", "18:00"), "2031-04-05T07:00:00.000Z");
+  assert.strictEqual(sessionStartIso("Australia/Sydney", "2031-04-06", "18:00"), "2031-04-06T08:00:00.000Z");
+  // Typed text that is no time is no instant, and the form says so.
+  assert.strictEqual(sessionStartIso(SG, "2031-04-05", ""), null);
+  assert.strictEqual(
+    manualSessionBody({ ...FIELDS, startTime: "", timezone: "Australia/Sydney" }, [seat({})], "admin"),
+    "Pick a valid date and time.",
+  );
 });
 
 test("PT-107 the instructor's save names no instructor and no pay: the route runs it as them, an admin prices it", () => {
@@ -232,22 +247,22 @@ test("PT-107 saving is refused, as the class form is, without a location, room, 
 
 test("PT-107 a refused create is worded from its code; a clash passes the backend's own sentence through", () => {
   assert.strictEqual(
-    manualSessionErrorMessage(new ApiError(409, { error: "insufficient_pt_credit" })),
+    manualSessionErrorMessage(new ApiError(409, { error: "insufficient_pt_credit" }), SG),
     "That package has no sessions left.",
   );
   assert.strictEqual(
-    manualSessionErrorMessage(new ApiError(403, { error: "bound_to_other_instructor" })),
+    manualSessionErrorMessage(new ApiError(403, { error: "bound_to_other_instructor" }), SG),
     "That package is bound to another instructor. Ask an admin to add this member.",
   );
   assert.strictEqual(
-    manualSessionErrorMessage(new ApiError(409, { error: "schedule_conflict", message: "Studio A is booked by Flow." })),
+    manualSessionErrorMessage(new ApiError(409, { error: "schedule_conflict", message: "Studio A is booked by Flow." }), SG),
     "Studio A is booked by Flow.",
   );
   assert.strictEqual(
-    manualSessionErrorMessage(new ApiError(400, { error: "room_location_mismatch" })),
+    manualSessionErrorMessage(new ApiError(400, { error: "room_location_mismatch" }), SG),
     "That room belongs to a different location.",
   );
-  assert.strictEqual(manualSessionErrorMessage(new ApiError(500, null)), "Couldn't create the session (HTTP 500).");
+  assert.strictEqual(manualSessionErrorMessage(new ApiError(500, null), SG), "Couldn't create the session (HTTP 500).");
 });
 
 /* ── after it exists: the detail page ── */
@@ -311,7 +326,7 @@ test("PT-112 a downgrade sends only the type; an upgrade needs the partner, who 
 });
 
 test("PT-113 a refused remove, add, type change or cancel is worded from its code", () => {
-  const says = (status: number, error: string) => sessionActionErrorMessage(new ApiError(status, { error }), "Couldn't remove them");
+  const says = (status: number, error: string) => sessionActionErrorMessage(new ApiError(status, { error }), "Couldn't remove them", SG);
   assert.strictEqual(says(409, "booking_attended"), "That member has checked in, so their seat can't be given back.");
   assert.strictEqual(says(409, "session_ended"), "This session has ended, so its members can't change.");
   assert.strictEqual(says(409, "session_cancelled"), "This session has been cancelled.");
@@ -329,17 +344,17 @@ test("PT-113 a refused remove, add, type change or cancel is worded from its cod
   // The seat rule's refusals read as they do on create.
   assert.strictEqual(says(409, "insufficient_pt_credit"), "That package has no sessions left.");
   assert.strictEqual(says(500, "boom"), "Couldn't remove them (HTTP 500).");
-  assert.strictEqual(sessionActionErrorMessage(new Error("offline"), "Couldn't remove them"), "Network error");
+  assert.strictEqual(sessionActionErrorMessage(new Error("offline"), "Couldn't remove them", SG), "Network error");
 });
 
 test("PT-163 a type change the server refuses because the session has started shows its sentence, where a refused cancel keeps the cancel wording", () => {
   const sentence = "This session has already started, so its type can no longer change.";
   assert.strictEqual(
-    sessionActionErrorMessage(new ApiError(422, { error: "session_already_started", message: sentence }), "Couldn't change the type"),
+    sessionActionErrorMessage(new ApiError(422, { error: "session_already_started", message: sentence }), "Couldn't change the type", SG),
     sentence,
   );
   assert.strictEqual(
-    sessionActionErrorMessage(new ApiError(422, { error: "session_already_started" }), "Couldn't cancel"),
+    sessionActionErrorMessage(new ApiError(422, { error: "session_already_started" }), "Couldn't cancel", SG),
     "This session has already started, so it can no longer be cancelled.",
   );
 });
@@ -353,6 +368,25 @@ test("PT-113 PT-150 cancelling a private session says each member is paid back o
     ptCancelConfirm({ origin: "member" }),
     "Cancel this private session? The member who asked for it gets their session back on the package it was paid from, unless that package has been refunded.",
   );
+});
+
+test("PT-184 a scheduled request with no session is offered Cancel request, worded without a session; one with a session keeps Cancel session until it starts", () => {
+  const now = new Date("2031-05-01T08:00:00.000Z");
+  const withSession = (starts_at: string) => ({ status: "scheduled" as const, session: { starts_at } });
+
+  assert.deepStrictEqual(scheduledCancelOffer({ status: "scheduled", session: null }, now), "cancel_request");
+  assert.deepStrictEqual(scheduledCancelOffer(withSession("2031-05-01T09:00:00.000Z"), now), "cancel_session");
+  assert.deepStrictEqual(scheduledCancelOffer(withSession("2031-05-01T07:00:00.000Z"), now), "started");
+
+  assert.deepStrictEqual(ptCancelWording({ status: "pending", session: null }), {
+    title: "Cancel request",
+    consequence: "Cancel this pending request? The sessions it was holding go back to the requester's package.",
+  });
+  const sessionless = ptCancelWording({ status: "scheduled", session: null });
+  assert.strictEqual(sessionless.title, "Cancel request");
+  assert.match(sessionless.consequence, /no session on the Schedule/);
+  assert.match(sessionless.consequence, /go back to the requester's package/);
+  assert.strictEqual(ptCancelWording({ status: "scheduled", session: { starts_at: "2031-05-01T09:00:00.000Z" } }).title, "Cancel session");
 });
 
 test("PT-151 staff are offered Cancel session only before the session starts", () => {
@@ -369,10 +403,11 @@ test("PT-151 staff are offered Cancel session only before the session starts", (
   );
 });
 
-test("PT-159 the package read sends the chosen start, and a package that ends before it is greyed with its end", inSingapore(async () => {
-  const startsAt = sessionStartIso("2031-05-02", "09:00");
-  assert.strictEqual(startsAt, new Date("2031-05-02T09:00:00").toISOString());
-  assert.strictEqual(sessionStartIso("", "09:00"), null);
+test("PT-159 the package read sends the chosen start, and a package that ends before it is greyed with its end", async () => {
+  const startsAt = sessionStartIso(SG, "2031-05-02", "09:00");
+  // 09:00 on the studio's clock is 01:00 UTC in Singapore, whatever the runner's zone.
+  assert.strictEqual(startsAt, "2031-05-02T01:00:00.000Z");
+  assert.strictEqual(sessionStartIso(SG, "", "09:00"), null);
 
   const asked: [string, unknown][] = [];
   const api = {
@@ -404,7 +439,7 @@ test("PT-159 the package read sends the chosen start, and a package that ends be
       }),
       cand({ id: "long", expires_at: null, activation_end_if_picked: "2031-07-29T04:00:00.000Z" }),
     ],
-  });
+  }, SG);
   assert.strictEqual(choice.defaultId, "long");
   assert.strictEqual(choice.choosable, false);
   assert.deepStrictEqual(
@@ -415,4 +450,4 @@ test("PT-159 the package read sends the chosen start, and a package that ends be
       ["long", false, "Starts today, runs until 29 Jul 2031"],
     ],
   );
-}));
+});

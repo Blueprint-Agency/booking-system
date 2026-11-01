@@ -7,6 +7,7 @@ import { useAttention } from "@/components/attention/attention-provider";
 import { requestParam } from "@/lib/attention";
 import { PageHeader, Badge, LoadFailure, Pagination, usePaged } from "@/components/ui";
 import { answeredElsewhere } from "@/lib/failed-read";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import { useWorkspace } from "@/lib/workspace-context";
 import { scheduleErrorMessage } from "@/lib/schedule";
 import { CorporateRequestDrawer } from "@/components/corporate-requests/corporate-request-drawer";
@@ -92,6 +93,7 @@ export default function CorporateRequestsPage() {
 
 function CorporateRequestsView() {
   const { api } = useWorkspace();
+  const timezone = useStudioZone();
   // The bell's count follows what this page resolves, without waiting for the next poll.
   const { refresh: refreshAttention } = useAttention();
   const search = useSearchParams();
@@ -121,11 +123,11 @@ function CorporateRequestsView() {
       // The previous tab's rows are not this tab's: none are kept. A `401` or
       // maintenance is answered by the sign-in and the maintenance screen.
       setRequests([]);
-      if (!answeredElsewhere(err)) setError(scheduleErrorMessage(err, "Failed"));
+      if (!answeredElsewhere(err)) setError(scheduleErrorMessage(err, "Failed", timezone));
     } finally {
       setLoading(false);
     }
-  }, [api, tab]);
+  }, [api, tab, timezone]);
 
   useEffect(() => {
     void load();
@@ -172,7 +174,7 @@ function CorporateRequestsView() {
       refreshAttention();
     } catch (err) {
       // A refused action keeps its reason; `error` is for a list that failed to load.
-      setActionError(scheduleErrorMessage(err, "Failed"));
+      setActionError(scheduleErrorMessage(err, "Failed", timezone));
     } finally {
       setActionBusy(false);
     }
@@ -249,7 +251,7 @@ function CorporateRequestsView() {
                       <div className="break-words text-xs text-muted">
                         {r.package.name}
                         {r.session
-                          ? ` · ${formatDateTime(r.session.startsAt)}`
+                          ? ` · ${formatDateTime(timezone, r.session.startsAt)}`
                           : ""}
                       </div>
                     </div>

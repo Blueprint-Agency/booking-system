@@ -33,6 +33,8 @@ import {
 import { useWorkspace } from "@/lib/workspace-context";
 import { useWaitlistsOn } from "@/lib/use-waitlists-on";
 import { LATEST_DATE, todayIso, currentHourTime } from "@/lib/formatters";
+import { atLocalTime } from "@/lib/local-day";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import { ApiError } from "@/lib/api";
 import { scheduleErrorMessage, slotFromParams } from "@/lib/schedule";
 import { PAY_OPTIONAL_HINT, payOrNull } from "@/lib/pay";
@@ -58,6 +60,7 @@ export default function NewClassPage() {
 function NewClassForm() {
   const router = useRouter();
   const { api, activeLocationId } = useWorkspace();
+  const timezone = useStudioZone();
   const waitlistsOn = useWaitlistsOn("admin");
   // Picking a slot on the timetable links here with that slot, so the form
   // opens on the day and time the admin already chose. The retired series
@@ -80,8 +83,8 @@ function NewClassForm() {
   // With Repeat weekly on, `date` is the series' first date.
   const [date, setDate] = useState(slot?.date ?? "");
   const [lastDate, setLastDate] = useState("");
-  const [startTime, setStartTime] = useState(slot?.start ?? currentHourTime());
-  const [endTime, setEndTime] = useState(slot?.end ?? currentHourTime(1));
+  const [startTime, setStartTime] = useState(slot?.start ?? currentHourTime(timezone));
+  const [endTime, setEndTime] = useState(slot?.end ?? currentHourTime(timezone, 1));
   const [capacity, setCapacity] = useState<Capacity>({
     waitlist: 0,
     onlineBooking: 18,
@@ -181,8 +184,9 @@ function NewClassForm() {
     if (!date || !startTime || !endTime) return;
     void difficulty;
 
-    const startsAt = new Date(`${date}T${startTime}:00`);
-    const endsAt = new Date(`${date}T${endTime}:00`);
+    // Wall times at the studio, whatever zone this browser is in.
+    const startsAt = atLocalTime(timezone, date, startTime);
+    const endsAt = atLocalTime(timezone, date, endTime);
     if (endsAt <= startsAt) {
       setSubmitError("End time must be after start time.");
       return;
@@ -216,7 +220,7 @@ function NewClassForm() {
       });
       router.push("/admin/schedule");
     } catch (err) {
-      setSubmitError(scheduleErrorMessage(err, "Failed to create class"));
+      setSubmitError(scheduleErrorMessage(err, "Failed to create class", timezone));
       setSubmitting(false);
     }
   }
@@ -353,7 +357,7 @@ function NewClassForm() {
                 id="d"
                 required
                 type="date"
-                min={todayIso()}
+                min={todayIso(timezone)}
                 max={LATEST_DATE}
                 value={date}
                 onChange={(e) => setDate(e.target.value)}

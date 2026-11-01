@@ -8,6 +8,7 @@ import { ApiError, type Api } from "@/lib/api";
 import type { ErrorCode } from "@/lib/error-codes";
 import type { PackageOption, StaffRole } from "@/lib/class-seats";
 import { formatDate } from "@/lib/formatters";
+import { atLocalTime } from "@/lib/local-day";
 import { payOrNull } from "@/lib/pay";
 import { scheduleErrorMessage } from "@/lib/schedule";
 import { withClashConfirm } from "@/lib/time-clash";
@@ -73,17 +74,26 @@ export function fetchSeatCandidates(
       });
 }
 
-/** The form's date and start time as the instant the create call sends, or null while either is unset. */
-export function sessionStartIso(date: string, startTime: string): string | null {
+/**
+ * The form's date and start time as the instant the create call sends, or null
+ * while either is unset. The wall time is the studio's (`timezone`), whatever
+ * zone the browser is in.
+ */
+export function sessionStartIso(timezone: string, date: string, startTime: string): string | null {
   if (!date || !startTime) return null;
-  const at = new Date(`${date}T${startTime}:00`);
+  const at = atLocalTime(timezone, date, startTime);
   return Number.isNaN(at.getTime()) ? null : at.toISOString();
 }
 
 /** A member booked elsewhere at the session's time is asked about first (`./time-clash`). */
-export function createManualSession(api: Api, role: StaffRole, body: ManualSessionBody): Promise<unknown> {
+export function createManualSession(
+  api: Api,
+  timezone: string,
+  role: StaffRole,
+  body: ManualSessionBody,
+): Promise<unknown> {
   const path = role === "admin" ? "/portal/admin/pt-sessions/manual" : "/portal/instructor/pt-requests/manual";
-  return withClashConfirm("session", (extra) => api.post(path, { ...body, ...extra }));
+  return withClashConfirm("session", timezone, (extra) => api.post(path, { ...body, ...extra }));
 }
 
 /** How many members a session of this type seats. */
@@ -108,22 +118,22 @@ const REFUSAL_NOTE: Record<SeatRefusal, string> = {
 };
 
 /** Why a greyed package can't pay; one that ends too soon names its end. */
-function refusalNote(p: SeatCandidate): string {
+function refusalNote(timezone: string, p: SeatCandidate): string {
   if (p.reason === "package_expires_before_session") {
-    if (p.expires_at) return `Ends ${formatDate(p.expires_at, "d MMM yyyy")}, before this session`;
+    if (p.expires_at) return `Ends ${formatDate(timezone, p.expires_at, "d MMM yyyy")}, before this session`;
     if (p.activation_end_if_picked) {
-      return `Would run until ${formatDate(p.activation_end_if_picked, "d MMM yyyy")}, before this session`;
+      return `Would run until ${formatDate(timezone, p.activation_end_if_picked, "d MMM yyyy")}, before this session`;
     }
   }
   return p.reason ? REFUSAL_NOTE[p.reason] : "Can't pay for this session";
 }
 
-function optionLabel(p: SeatCandidate): string {
+function optionLabel(timezone: string, p: SeatCandidate): string {
   const parts = [p.name ?? "PT package"];
   if (p.sessions_left !== null) parts.push(`${p.sessions_left} ${p.sessions_left === 1 ? "session" : "sessions"} left`);
   if (p.session_type) parts.push(sessionTypeLabel(p.session_type));
   if (p.bound_instructor) parts.push(`bound to ${p.bound_instructor.name}`);
-  if (p.expires_at) parts.push(`ends ${formatDate(p.expires_at, "d MMM yyyy")}`);
+  if (p.expires_at) parts.push(`ends ${formatDate(timezone, p.expires_at, "d MMM yyyy")}`);
   return parts.join(" · ");
 }
 
@@ -142,7 +152,7 @@ export interface SeatChoice {
  * than one can pay, Ineligible ones listed greyed with their reason so staff
  * can tell the member why, and a Dormant one saying when it would run until.
  */
-export function seatChoice(res: SeatCandidates): SeatChoice {
+export function seatChoice(res: SeatCandidates, timezone: string): SeatChoice {
   const eligible = res.packages.filter((p) => p.eligible);
   const defaultId = res.default_client_package_id ?? eligible[0]?.id ?? null;
   return {
@@ -156,12 +166,12 @@ export function seatChoice(res: SeatCandidates): SeatChoice {
           : null,
     options: res.packages.map((p) => ({
       id: p.id,
-      label: optionLabel(p),
+      label: optionLabel(timezone, p),
       disabled: !p.eligible,
       note: !p.eligible
-        ? refusalNote(p)
+        ? refusalNote(timezone, p)
         : p.activation_end_if_picked
-          ? `Starts today, runs until ${formatDate(p.activation_end_if_picked, "d MMM yyyy")}`
+          ? `Starts today, runs until ${formatDate(timezone, p.activation_end_if_picked, "d MMM yyyy")}`
           : null,
     })),
   };
@@ -208,6 +218,8 @@ export interface ManualSessionFields {
   endTime: string;
   /** The pay field's text; ignored on the instructor route. */
   pay: string;
+  /** The studio's IANA zone: the date and times above are wall times there, whatever the browser's zone. */
+  timezone: string;
 }
 
 export interface ManualSessionBody {
@@ -237,8 +249,8 @@ export function manualSessionBody(
   if (!f.locationId || !f.roomId) return "Pick a location and room.";
   if (role === "admin" && !f.instructorId) return "Pick an instructor.";
   if (!f.date) return "Pick a date.";
-  const startsAt = new Date(`${f.date}T${f.startTime}:00`);
-  const endsAt = new Date(`${f.date}T${f.endTime}:00`);
+  const startsAt = atLocalTime(f.timezone, f.date, f.startTime);
+  const endsAt = atLocalTime(f.timezone, f.date, f.endTime);
   if (Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime())) return "Pick a valid date and time.";
   if (endsAt <= startsAt) return "End time must be after start time.";
   const pay = role === "admin" ? payOrNull(f.pay) : null;
@@ -306,6 +318,42 @@ export function ptCancelConfirm(s: Pick<ManualSessionState, "origin">): string {
   return isManual(s)
     ? "Cancel this private session? Each member gets their session back on the package it was paid from, unless that package has been refunded."
     : "Cancel this private session? The member who asked for it gets their session back on the package it was paid from, unless that package has been refunded.";
+}
+
+const PENDING_CANCEL_CONSEQUENCE =
+  "Cancel this pending request? The sessions it was holding go back to the requester's package.";
+const SESSIONLESS_CANCEL_CONSEQUENCE =
+  "Cancel this scheduled request? It has no session on the Schedule. The sessions it was holding go back to the requester's package, unless that package has been refunded.";
+
+/** The request as the PT Requests drawer holds it, enough to word its cancel. */
+interface CancellableRequest {
+  status: string;
+  session: { starts_at: string } | null;
+}
+
+/**
+ * What the drawer offers on a scheduled request: Cancel session before its
+ * session starts, nothing once it has, and Cancel request when it has no
+ * session (it named none, or its session is gone).
+ */
+export function scheduledCancelOffer(
+  r: CancellableRequest,
+  now: Date = new Date(),
+): "cancel_session" | "cancel_request" | "started" {
+  if (!r.session) return "cancel_request";
+  return canCancelSession({ lifecycle: "active", starts_at: r.session.starts_at }, now)
+    ? "cancel_session"
+    : "started";
+}
+
+/** The cancel dialog's title and warning for a request. */
+export function ptCancelWording(r: CancellableRequest & { origin?: "member" | "portal" | null }): {
+  title: string;
+  consequence: string;
+} {
+  if (r.status !== "scheduled") return { title: "Cancel request", consequence: PENDING_CANCEL_CONSEQUENCE };
+  if (!r.session) return { title: "Cancel request", consequence: SESSIONLESS_CANCEL_CONSEQUENCE };
+  return { title: "Cancel session", consequence: ptCancelConfirm({ origin: r.origin ?? null }) };
 }
 
 /**
@@ -376,16 +424,22 @@ export function retypeBody(to: PtSessionType, partner: ManualSeat | null): Retyp
   };
 }
 
-export function addSessionMember(api: Api, role: StaffRole, sessionId: string, body: AddMemberBody): Promise<unknown> {
-  return withClashConfirm("session", (extra) => api.post(`${sessionsPath(role)}/${sessionId}/members`, { ...body, ...extra }));
+export function addSessionMember(
+  api: Api,
+  timezone: string,
+  role: StaffRole,
+  sessionId: string,
+  body: AddMemberBody,
+): Promise<unknown> {
+  return withClashConfirm("session", timezone, (extra) => api.post(`${sessionsPath(role)}/${sessionId}/members`, { ...body, ...extra }));
 }
 
 export function removeSessionMember(api: Api, role: StaffRole, sessionId: string, clientId: string): Promise<unknown> {
   return api.del(`${sessionsPath(role)}/${sessionId}/members/${clientId}`);
 }
 
-export function retypeSession(api: Api, sessionId: string, body: RetypeBody): Promise<unknown> {
-  return withClashConfirm("session", (extra) =>
+export function retypeSession(api: Api, timezone: string, sessionId: string, body: RetypeBody): Promise<unknown> {
+  return withClashConfirm("session", timezone, (extra) =>
     api.patch(`/portal/admin/pt-sessions/sessions/${sessionId}`, { ...body, ...extra }),
   );
 }
@@ -429,7 +483,7 @@ const SESSION_ACTION_COPY: Partial<Record<ErrorCode, string>> = {
 };
 
 /** A refused action on an existing session; the seat rule's codes read as on create. */
-export function sessionActionErrorMessage(err: unknown, fallback: string): string {
+export function sessionActionErrorMessage(err: unknown, fallback: string, timezone: string): string {
   const code = err instanceof ApiError ? errorCode(err) : undefined;
   // A started session refuses a cancel and a type change alike. The type
   // change's refusal carries its own sentence, which names what was tried; the
@@ -438,7 +492,7 @@ export function sessionActionErrorMessage(err: unknown, fallback: string): strin
     const sentence = (err.body as { message?: unknown } | null)?.message;
     if (typeof sentence === "string" && sentence) return sentence;
   }
-  return (code && (SESSION_ACTION_COPY[code] ?? CREATE_ERROR_COPY[code])) || scheduleErrorMessage(err, fallback);
+  return (code && (SESSION_ACTION_COPY[code] ?? CREATE_ERROR_COPY[code])) || scheduleErrorMessage(err, fallback, timezone);
 }
 
 // A refused create, in staff terms. A room or instructor clash is not here: it
@@ -468,9 +522,9 @@ function errorCode(err: ApiError): ErrorCode | undefined {
   return (err.body as { error?: string } | null)?.error as ErrorCode | undefined;
 }
 
-export function manualSessionErrorMessage(err: unknown): string {
+export function manualSessionErrorMessage(err: unknown, timezone: string): string {
   const code = err instanceof ApiError ? errorCode(err) : undefined;
-  return (code && CREATE_ERROR_COPY[code]) || scheduleErrorMessage(err, "Couldn't create the session");
+  return (code && CREATE_ERROR_COPY[code]) || scheduleErrorMessage(err, "Couldn't create the session", timezone);
 }
 
 /** Why the member's packages can't be read at all (another studio's, deleted, blocked). */

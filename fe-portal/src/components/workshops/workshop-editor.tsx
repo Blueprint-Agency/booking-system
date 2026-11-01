@@ -2,7 +2,6 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Save, Ban, Loader2 } from "lucide-react";
-import { format } from "date-fns";
 import { toast } from "sonner";
 import { Button, Input, Label, LoadFailure, PageHeader, Badge } from "@/components/ui";
 import { answeredElsewhere } from "@/lib/failed-read";
@@ -19,7 +18,8 @@ import {
   type CatalogLocation,
   type CatalogRoom,
 } from "@/lib/catalog";
-import { atLocalTime, localDay } from "@/lib/local-day";
+import { useStudioZone } from "@/components/brand/brand-provider";
+import { dayFromApi, dayToApi, inferMode } from "@/lib/workshop-form";
 import type { Slot } from "@/lib/schedule";
 import { workshopSaveError } from "@/lib/workshop-save-error";
 import { PAY_OPTIONAL_HINT, payOrNull } from "@/lib/pay";
@@ -77,19 +77,8 @@ interface ApiWorkshopDetail {
   promotions?: ApiPromotion[];
 }
 
-function inferMode(days: WorkshopDay[]): Mode {
-  if (days.length <= 1) return "range";
-  const sorted = [...days].sort((a, b) => a.date.localeCompare(b.date));
-  for (let i = 1; i < sorted.length; i++) {
-    const prev = new Date(sorted[i - 1].date + "T00:00:00");
-    const cur = new Date(sorted[i].date + "T00:00:00");
-    const diffDays = Math.round((cur.getTime() - prev.getTime()) / 86_400_000);
-    if (diffDays !== 1) return "individual";
-  }
-  return "range";
-}
-
 function scheduleBody(
+  timezone: string,
   stored: { days: WorkshopDay[]; tiers: WorkshopTier[] },
   days: WorkshopDay[],
   tiers: WorkshopTier[],
@@ -103,8 +92,7 @@ function scheduleBody(
         id: storedDayIds.has(d.id) ? d.id : undefined,
         ref: d.id,
         room_id: d.roomId,
-        starts_at: atLocalTime(d.date, d.startTime).toISOString(),
-        ends_at: atLocalTime(d.date, d.endTime).toISOString(),
+        ...dayToApi(timezone, d),
         capacity_online: d.capacity.onlineBooking,
         capacity_waitlist: d.capacity.waitlist,
         capacity_buffer: d.capacity.buffer,
@@ -122,7 +110,7 @@ function scheduleBody(
   };
 }
 
-function fromApiWorkshop(d: ApiWorkshopDetail): Workshop {
+function fromApiWorkshop(d: ApiWorkshopDetail, timezone: string): Workshop {
   const mainInstructorId = d.main_instructor_id ?? d.instructor_ids[0] ?? "";
   const supportingInstructorIds =
     d.supporting_instructor_ids ??
@@ -147,15 +135,11 @@ function fromApiWorkshop(d: ApiWorkshopDetail): Workshop {
       .slice()
       .sort((a, b) => a.ord - b.ord)
       .map((day) => {
-        const start = new Date(day.starts_at);
-        const end = new Date(day.ends_at);
-        // dayToApi writes wall-clock time as a local-zone Date, so read it back
-        // in the browser's local zone too.
+        // `dayToApi` writes wall-clock time as the studio's, so it is read
+        // back on the studio's clock too, whatever zone this browser is in.
         return {
           id: day.id,
-          date: localDay(start),
-          startTime: format(start, "HH:mm"),
-          endTime: format(end, "HH:mm"),
+          ...dayFromApi(timezone, day.starts_at, day.ends_at),
           roomId: day.room_id ?? "",
           capacity: {
             waitlist: day.capacity_waitlist,
@@ -187,6 +171,7 @@ function fromApiWorkshop(d: ApiWorkshopDetail): Workshop {
 
 async function createWorkshop(
   api: Api,
+  timezone: string,
   args: {
     name: string;
     locationId: string;
@@ -208,7 +193,7 @@ async function createWorkshop(
     main_instructor_pay_sgd: args.mainInstructorPaySgd,
     supporting_instructors: args.supportingInstructors,
     image_r2_keys: [],
-    ...scheduleBody({ days: [], tiers: [] }, args.days, args.tiers),
+    ...scheduleBody(timezone, { days: [], tiers: [] }, args.days, args.tiers),
     promotions: args.promotions.map(promotionToApiPayload),
   });
   return created.id;
@@ -227,6 +212,7 @@ export function WorkshopEditor({
   onCancel: () => void;
 }) {
   const { api } = useWorkspace();
+  const timezone = useStudioZone();
   const [catalog, setCatalog] = useState<Catalog>({
     locations: [],
     instructors: [],
@@ -377,13 +363,13 @@ export function WorkshopEditor({
             instructor_id: iid,
             pay_sgd: payOrNull(supportingPay[iid] ?? ""),
           })),
-          ...scheduleBody(initial, days, prunedTiers),
+          ...scheduleBody(timezone, initial, days, prunedTiers),
           promotions: promotions.map(promotionToApiPayload),
         });
         toast.success("Workshop saved.");
         onSave(initial.id);
       } else {
-        const id = await createWorkshop(api, {
+        const id = await createWorkshop(api, timezone, {
           name: name.trim(),
           locationId,
           descriptionHtml,
@@ -401,7 +387,7 @@ export function WorkshopEditor({
         onSave(id);
       }
     } catch (err) {
-      const msg = workshopSaveError(err);
+      const msg = workshopSaveError(err, timezone);
       setError(msg);
       toast.error(msg);
     } finally {

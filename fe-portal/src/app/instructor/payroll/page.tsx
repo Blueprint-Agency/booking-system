@@ -3,11 +3,9 @@ import { useCallback, useEffect, useState } from "react";
 import { AlertCircle, Loader2, Wallet } from "lucide-react";
 import { EmptyState, LoadFailure, PageHeader } from "@/components/ui";
 import { answeredElsewhere, loadError, type LoadError } from "@/lib/failed-read";
-import {
-  DateRangeFilter,
-  presetRange,
-  type DateRange,
-} from "@/components/date-range-filter";
+import { DateRangeFilter } from "@/components/date-range-filter";
+import { useStudioZone } from "@/components/brand/brand-provider";
+import { presetRange, type DateRange } from "@/lib/date-range";
 import { useWorkspace } from "@/lib/workspace-context";
 import { formatDate, formatDuration, formatSgd } from "@/lib/formatters";
 import {
@@ -20,7 +18,8 @@ import { cn } from "@/lib/utils";
 
 export default function InstructorPayrollPage() {
   const { api } = useWorkspace();
-  const [range, setRange] = useState<DateRange>(() => presetRange("month"));
+  const timezone = useStudioZone();
+  const [range, setRange] = useState<DateRange>(() => presetRange(timezone, "month"));
   const [data, setData] = useState<ApiInstructorPayrollResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<LoadError | null>(null);
@@ -33,14 +32,14 @@ export default function InstructorPayrollPage() {
     // sitting above a loading table is a total for a period you can't see.
     setData(null);
     try {
-      setData(await fetchInstructorPayroll(api, range));
+      setData(await fetchInstructorPayroll(api, timezone, range));
     } catch (err) {
       // A `401` or maintenance is answered by the sign-in and the maintenance screen.
       if (!answeredElsewhere(err)) setError(loadError(err));
     } finally {
       setLoading(false);
     }
-  }, [api, range]);
+  }, [api, timezone, range]);
 
   useEffect(() => {
     void load();
@@ -114,7 +113,7 @@ export default function InstructorPayrollPage() {
                   <PayCell pay={row.instructor_pay_sgd} className="shrink-0" />
                 </div>
                 <div className="mt-1 text-xs text-muted">
-                  {formatDate(row.starts_at)} · <RowDuration row={row} />
+                  {formatDate(timezone, row.starts_at)} · <RowDuration row={row} />
                 </div>
               </li>
             ))}
@@ -135,7 +134,7 @@ export default function InstructorPayrollPage() {
                     <span className="text-ink">{row.label}</span>
                     {row.kind === "pt" && <PrivateChip row={row} className="ml-2" />}
                   </td>
-                  <td className="px-3 py-2.5 text-muted">{formatDate(row.starts_at)}</td>
+                  <td className="px-3 py-2.5 text-muted">{formatDate(timezone, row.starts_at)}</td>
                   <td className="px-3 py-2.5 text-muted">
                     <RowDuration row={row} />
                   </td>
@@ -167,10 +166,11 @@ function PrivateChip({ row, className }: { row: ApiPayrollRow; className?: strin
 
 /** A workshop's "duration" is its whole span of dates, not a length of time. */
 function RowDuration({ row }: { row: ApiPayrollRow }) {
+  const timezone = useStudioZone();
   return (
     <>
       {row.kind === "workshop"
-        ? `${formatDate(row.starts_at)} – ${formatDate(row.ends_at)}`
+        ? `${formatDate(timezone, row.starts_at)} – ${formatDate(timezone, row.ends_at)}`
         : formatDuration(row.starts_at, row.ends_at)}
     </>
   );

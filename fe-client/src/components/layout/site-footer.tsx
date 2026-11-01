@@ -6,6 +6,7 @@ import { useBrand } from "@/components/brand/brand-provider";
 import { publicApi } from "@/lib/api";
 import { useLocations } from "@/lib/classes";
 import { useCachedResource } from "@/lib/resource-cache";
+import { localDate } from "@/lib/studio-time";
 import { footerLinks, type FooterLink } from "@/lib/site-footer";
 import { ROOT_DOMAIN, tenantSlugFromHost } from "@/lib/tenant-host";
 
@@ -40,7 +41,8 @@ function StudioFooter() {
   const { data: marketing } = useCachedResource("public:marketing", getMarketing, { optional: true });
   const { legal, social } = footerLinks(brand.copy);
   const footerText = marketing?.footer_text?.trim() || null;
-  const year = new Date().getFullYear();
+  // The year on the studio's clock; no studio, no clock, and so no year.
+  const year = brand.timezone ? localDate(brand.timezone, Date.now()).slice(0, 4) : null;
 
   return (
     <footer className="border-t border-border bg-paper">
@@ -94,7 +96,7 @@ function StudioFooter() {
 
         <div className="mt-8 flex flex-col-reverse gap-3 border-t border-border pt-5 text-xs text-muted sm:flex-row sm:items-center sm:justify-between">
           <p>
-            © {year} {brand.name}
+            © {year ? `${year} ` : ""}{brand.name}
           </p>
           {legal.length > 0 && <FooterLinks links={legal} className="gap-5" />}
         </div>

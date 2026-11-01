@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { Button, EmptyState, Input, LoadFailure, PageHeader, Pagination, Select } from "@/components/ui";
 import { DateRangeFilter } from "@/components/date-range-filter";
 import { ReceiptStatusBadge as StatusBadge } from "@/components/receipts/receipt-status-badge";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
 import { downloadFile } from "@/lib/download";
@@ -52,6 +53,7 @@ export default function ReceiptsPageRoute() {
 
 function ReceiptsList() {
   const { api } = useWorkspace();
+  const timezone = useStudioZone();
   const searchParams = useSearchParams();
   // Read once: afterwards the list owns its position and writes it back.
   const [state, setState] = useState<ReceiptsState>(() => readReceiptsState(searchParams.toString()));
@@ -221,7 +223,7 @@ function ReceiptsList() {
                     <div className="mt-1 truncate text-sm text-ink">{r.item}</div>
                     <div className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-muted">
                       <span className="truncate">{buyerOf(r)}</span>
-                      <span>{formatDate(r.issued_at, "d MMM yyyy")}</span>
+                      <span>{formatDate(timezone, r.issued_at, "d MMM yyyy")}</span>
                     </div>
                   </Link>
                 </li>
@@ -252,7 +254,7 @@ function ReceiptsList() {
                           {r.number}
                         </Link>
                       </td>
-                      <td className="whitespace-nowrap px-5 py-3 text-sm text-muted">{formatDate(r.issued_at, "d MMM yyyy")}</td>
+                      <td className="whitespace-nowrap px-5 py-3 text-sm text-muted">{formatDate(timezone, r.issued_at, "d MMM yyyy")}</td>
                       <td className="max-w-[16rem] px-5 py-3">
                         <div className="truncate text-sm text-ink">{r.buyer_name ?? "Deleted member"}</div>
                         {r.buyer_email && (

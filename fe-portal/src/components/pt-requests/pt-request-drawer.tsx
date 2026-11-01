@@ -4,6 +4,7 @@ import Link from "next/link";
 import { X } from "lucide-react";
 import { Avatar, Badge, Button } from "@/components/ui";
 import { formatDateTime, formatRelative } from "@/lib/formatters";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import {
   type ApiPtRequest,
   PT_STATUS_TONE,
@@ -13,7 +14,7 @@ import {
   ptClassTypeName,
   ptSlotTime,
 } from "@/lib/pt-requests";
-import { canCancelSession } from "@/lib/pt-manual";
+import { scheduledCancelOffer } from "@/lib/pt-manual";
 
 export function PtRequestDrawer({
   request,
@@ -26,11 +27,13 @@ export function PtRequestDrawer({
   onCancel: () => void;
   onClose: () => void;
 }) {
+  const timezone = useStudioZone();
   const partnerNeedsAccount =
     request.session_type === "2on1" && !request.co_client?.clientId;
   // Staff put a manual session on the Schedule: the member asked for
   // nothing, so there are no proposed slots, class type, message or binding.
   const manual = request.origin === "portal";
+  const cancelOffer = scheduledCancelOffer(request);
   useEffect(() => {
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -116,8 +119,8 @@ export function PtRequestDrawer({
           {request.session && (
             <Row label="Scheduled session">
               <div className="text-ink">
-                {formatDateTime(request.session.starts_at)} –{" "}
-                {formatDateTime(request.session.ends_at)}
+                {formatDateTime(timezone, request.session.starts_at)} –{" "}
+                {formatDateTime(timezone, request.session.ends_at)}
               </div>
               <div className="text-xs text-muted">
                 {[request.session.instructor_name, request.session.room_name]
@@ -155,19 +158,18 @@ export function PtRequestDrawer({
           <div className="mt-6 space-y-3">
             {request.resolved_at && (
               <div className="rounded-md bg-paper p-3 text-xs text-muted">
-                Scheduled on {formatDateTime(request.resolved_at)}.
+                Scheduled on {formatDateTime(timezone, request.resolved_at)}.
               </div>
             )}
-            {request.session &&
-              (canCancelSession({ lifecycle: "active", starts_at: request.session.starts_at }) ? (
-                <Button variant="ghost" onClick={onCancel}>
-                  Cancel session
-                </Button>
-              ) : (
-                <div className="rounded-md bg-paper p-3 text-xs text-muted">
-                  This session has started, so it can no longer be cancelled.
-                </div>
-              ))}
+            {cancelOffer === "started" ? (
+              <div className="rounded-md bg-paper p-3 text-xs text-muted">
+                This session has started, so it can no longer be cancelled.
+              </div>
+            ) : (
+              <Button variant="ghost" onClick={onCancel}>
+                {cancelOffer === "cancel_session" ? "Cancel session" : "Cancel request"}
+              </Button>
+            )}
           </div>
         )}
         {(request.status === "cancelled_before_scheduled" ||
@@ -175,7 +177,7 @@ export function PtRequestDrawer({
           request.status === "attended") &&
           request.resolved_at && (
             <div className="mt-6 rounded-md bg-paper p-3 text-xs text-muted">
-              {ptStatusLabel(request)} on {formatDateTime(request.resolved_at)}.
+              {ptStatusLabel(request)} on {formatDateTime(timezone, request.resolved_at)}.
             </div>
           )}
       </div>

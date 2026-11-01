@@ -13,7 +13,7 @@
 // always has, so `payrollErrorMessage`/`payrollNeedsReload` are imported from
 // ./payroll rather than restated.
 import type { Api } from "@/lib/api";
-import { rangeToParams, type DateRange } from "@/components/date-range-filter";
+import { rangeToParams, type DateRange } from "@/lib/date-range";
 import { atLocalTime } from "@/lib/local-day";
 
 export {
@@ -232,17 +232,18 @@ export function financeSearch(state: { needsPay: boolean; range: DateRange }): s
 }
 
 /** Empty strings mean "no filter" — that is what a picker's "All" option is. */
-const toParams = (f: FinanceFilters) => ({
+const toParams = (timezone: string, f: FinanceFilters) => ({
   type: f.type || undefined,
   q: f.q?.trim() || undefined,
   location: f.location || undefined,
   needs_pay: f.needsPay ? "true" : undefined,
-  ...rangeToParams(f.range),
+  ...rangeToParams(timezone, f.range),
   ...(f.method ? { method: f.method } : {}),
 });
 
-export function fetchFinance(api: Api, filters: FinanceFilters): Promise<FinanceResponse> {
-  return api.get<FinanceResponse>("/portal/admin/finance", toParams(filters));
+/** `timezone` is the studio's: the period's days become its midnights. */
+export function fetchFinance(api: Api, timezone: string, filters: FinanceFilters): Promise<FinanceResponse> {
+  return api.get<FinanceResponse>("/portal/admin/finance", toParams(timezone, filters));
 }
 
 /* -------------------------------- Overview -------------------------------- */
@@ -300,8 +301,8 @@ export interface FinanceOverview {
  * is not an overview, and a reader who scrolled past the filters would have no
  * way to tell that the number above them had moved.
  */
-export function fetchFinanceOverview(api: Api, range: DateRange): Promise<FinanceOverview> {
-  return api.get<FinanceOverview>("/portal/admin/finance/overview", rangeToParams(range));
+export function fetchFinanceOverview(api: Api, timezone: string, range: DateRange): Promise<FinanceOverview> {
+  return api.get<FinanceOverview>("/portal/admin/finance/overview", rangeToParams(timezone, range));
 }
 
 /**
@@ -311,8 +312,8 @@ export function fetchFinanceOverview(api: Api, range: DateRange): Promise<Financ
  * as a string. Going through the same authenticated client matters: a plain
  * `<a href>` would carry no bearer token.
  */
-export async function downloadFinanceCsv(api: Api, filters: FinanceFilters): Promise<void> {
-  const csv = await api.get<string>("/portal/admin/finance/export", toParams(filters));
+export async function downloadFinanceCsv(api: Api, timezone: string, filters: FinanceFilters): Promise<void> {
+  const csv = await api.get<string>("/portal/admin/finance/export", toParams(timezone, filters));
   const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
   const a = document.createElement("a");
   a.href = url;
@@ -345,16 +346,16 @@ export function saveInstructorPay(
   });
 }
 
-/** `day` is a YYYY-MM-DD from a date input; the API wants a local-midnight instant. */
+/** `day` is a YYYY-MM-DD from a date input; the API wants the studio's midnight of it, as an instant. */
 export function createManualEntry(
   api: Api,
-  entry: { instructorId: string; amountSgd: number; label: string; day: string },
+  entry: { instructorId: string; amountSgd: number; label: string; day: string; timezone: string },
 ): Promise<unknown> {
   return api.post("/portal/admin/finance/manual", {
     instructor_id: entry.instructorId,
     amount_sgd: entry.amountSgd,
     label: entry.label,
-    entry_date: atLocalTime(entry.day, "00:00").toISOString(),
+    entry_date: atLocalTime(entry.timezone, entry.day, "00:00").toISOString(),
   });
 }
 

@@ -4,14 +4,16 @@ import { Button, Label } from "@/components/ui";
 import { LATEST_DATE, todayIso } from "@/lib/formatters";
 import { localDay, localDayRange } from "@/lib/local-day";
 import { overlappingPromotionIds } from "@/lib/promotions";
+import { addDays } from "@/lib/studio-time";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import type { Promotion, PromotionMode } from "@/types";
 
 const QUICK_PERCENTS = [10, 25, 50];
 
-// A promotion runs for whole local days: from local midnight on its first day
-// through the last instant of its last day.
-const startsOn = (day: string) => localDayRange(day).start.toISOString();
-const endsOn = (day: string) => localDayRange(day).end.toISOString();
+// A promotion runs for whole studio days: from the studio's midnight on its
+// first day through the last instant of its last day.
+const startsOn = (timezone: string, day: string) => localDayRange(timezone, day).start.toISOString();
+const endsOn = (timezone: string, day: string) => localDayRange(timezone, day).end.toISOString();
 
 export function PromotionsEditor({
   basePriceSgd,
@@ -22,10 +24,10 @@ export function PromotionsEditor({
   value: Promotion[];
   onChange: (next: Promotion[]) => void;
 }) {
+  const timezone = useStudioZone();
   function add() {
-    const today = new Date();
-    const start = localDay(today);
-    const end = localDay(new Date(today.getTime() + 14 * 86400_000));
+    const start = todayIso(timezone);
+    const end = addDays(start, 14);
     onChange([
       ...value,
       {
@@ -34,8 +36,8 @@ export function PromotionsEditor({
         mode: "percent",
         percent: 10,
         priceSgd: null,
-        startsAt: startsOn(start),
-        endsAt: endsOn(end),
+        startsAt: startsOn(timezone, start),
+        endsAt: endsOn(timezone, end),
       },
     ]);
   }
@@ -162,15 +164,15 @@ export function PromotionsEditor({
               <Label className="text-xs">Starts</Label>
               <input
                 type="date"
-                min={todayIso()}
+                min={todayIso(timezone)}
                 max={LATEST_DATE}
-                value={localDay(p.startsAt)}
+                value={localDay(timezone, p.startsAt)}
                 onChange={(e) => {
                   const start = e.target.value;
                   if (!start) return; // cleared field — keep the last valid day
-                  const patch: Partial<Promotion> = { startsAt: startsOn(start) };
+                  const patch: Partial<Promotion> = { startsAt: startsOn(timezone, start) };
                   // Keep end on/after start.
-                  if (localDay(p.endsAt) < start) patch.endsAt = endsOn(start);
+                  if (localDay(timezone, p.endsAt) < start) patch.endsAt = endsOn(timezone, start);
                   update(p.id, patch);
                 }}
                 className="w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm"
@@ -180,11 +182,11 @@ export function PromotionsEditor({
               <Label className="text-xs">Ends</Label>
               <input
                 type="date"
-                min={localDay(p.startsAt) || todayIso()}
+                min={localDay(timezone, p.startsAt) || todayIso(timezone)}
                 max={LATEST_DATE}
-                value={localDay(p.endsAt)}
+                value={localDay(timezone, p.endsAt)}
                 onChange={(e) =>
-                  e.target.value && update(p.id, { endsAt: endsOn(e.target.value) })
+                  e.target.value && update(p.id, { endsAt: endsOn(timezone, e.target.value) })
                 }
                 className="w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm"
               />

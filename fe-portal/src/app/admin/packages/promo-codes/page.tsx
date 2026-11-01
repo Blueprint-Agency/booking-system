@@ -9,6 +9,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { Plus, Loader2 } from "lucide-react";
 import { Button, PageHeader, Badge, EmptyState, Pagination, usePaged } from "@/components/ui";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
 import { formatSgd, formatDate } from "@/lib/formatters";
@@ -28,6 +29,7 @@ function claimed(c: ApiPromoCode) {
 
 export default function PromoCodesListPage() {
   const { api } = useWorkspace();
+  const timezone = useStudioZone();
   const [codes, setCodes] = useState<ApiPromoCode[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -91,7 +93,7 @@ export default function PromoCodesListPage() {
                     <div className="break-words font-medium text-ink">{c.code}</div>
                     <div className="mt-1 break-words text-xs text-muted">
                       {c.label} · {c.applies_to_all ? "Everything" : `${c.products.length} product${c.products.length === 1 ? "" : "s"}`}
-                      {c.expires_at ? ` · Expires ${formatDate(c.expires_at)}` : " · Never expires"}
+                      {c.expires_at ? ` · Expires ${formatDate(timezone, c.expires_at)}` : " · Never expires"}
                     </div>
                     {/* The columns hidden on a narrow screen, folded under the
                         code rather than dropped. */}

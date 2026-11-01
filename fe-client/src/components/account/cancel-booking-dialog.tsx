@@ -6,8 +6,6 @@ import { Portal } from "@/components/ui/portal";
 import type { ApiBooking } from "@/components/account/class-bookings";
 import { apiErrorCode as errCode, useApi } from "@/lib/api";
 import { ERROR_CODES } from "@/lib/error-codes";
-import { formatDate } from "@/lib/utils";
-import { formatClassTime } from "@/lib/classes";
 import { useClientPackages } from "@/lib/use-client-packages";
 import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import { useFocusTrap } from "@/lib/use-focus-trap";
@@ -19,6 +17,8 @@ import {
   isLate,
   type CancelPreview,
 } from "@/lib/cancellation-copy";
+import { formatClassTime, formatDate } from "@/lib/studio-time";
+import { useStudioZone } from "@/components/brand/brand-provider";
 
 /** What the member is told once the dialog closes, and what the list should do. */
 export interface CancelOutcome {
@@ -49,6 +49,7 @@ export function CancelBookingDialog({
   onDone: (outcome: CancelOutcome) => void;
   onClose: () => void;
 }) {
+  const tz = useStudioZone();
   const api = useApi();
   const { refetch: refetchPackages } = useClientPackages();
   const [cancelling, setCancelling] = useState(false);
@@ -122,7 +123,7 @@ export function CancelBookingDialog({
         >
           <h3 id="cancel-booking-title" className="text-lg font-bold text-ink">Cancel this booking?</h3>
           <p className="mt-1 text-sm text-muted">
-            {booking.name} · {formatDate(booking.starts_at)} · {formatClassTime(booking.starts_at)}
+            {booking.name} · {formatDate(tz, booking.starts_at)} · {formatClassTime(tz, booking.starts_at)}
           </p>
           <div
             className={

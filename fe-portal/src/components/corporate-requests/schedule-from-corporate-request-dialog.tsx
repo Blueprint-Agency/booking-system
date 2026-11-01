@@ -8,6 +8,8 @@ import {
   useInstructorsOnLeave,
 } from "@/components/schedule/instructor-leave";
 import { todayIso, currentHourTime } from "@/lib/formatters";
+import { atLocalTime } from "@/lib/local-day";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import { cn } from "@/lib/utils";
 import { useWorkspace } from "@/lib/workspace-context";
 import { scheduleErrorMessage, type Slot } from "@/lib/schedule";
@@ -39,14 +41,15 @@ export function ScheduleFromCorporateRequestDialog({
   onScheduled: () => void;
 }) {
   const { api, activeLocationId } = useWorkspace();
+  const timezone = useStudioZone();
 
   const [instructors, setInstructors] = useState<CatalogInstructor[]>([]);
   const [rooms, setRooms] = useState<CatalogRoom[]>([]);
   const [catalogError, setCatalogError] = useState<string | null>(null);
 
   const [date, setDate] = useState(slot?.date ?? "");
-  const [startTime, setStartTime] = useState(slot?.start ?? currentHourTime());
-  const [endTime, setEndTime] = useState(slot?.end ?? currentHourTime(1));
+  const [startTime, setStartTime] = useState(slot?.start ?? currentHourTime(timezone));
+  const [endTime, setEndTime] = useState(slot?.end ?? currentHourTime(timezone, 1));
   const [mainInstructorId, setMainInstructorId] = useState("");
   const [supportingInstructorIds, setSupportingInstructorIds] = useState<
     string[]
@@ -120,8 +123,9 @@ export function ScheduleFromCorporateRequestDialog({
     if (!mainInstructorId || !locationReady) return;
     if (!date || !startTime || !endTime) return;
 
-    const startsAt = new Date(`${date}T${startTime}:00`);
-    const endsAt = new Date(`${date}T${endTime}:00`);
+    // Wall times at the studio, whatever zone this browser is in.
+    const startsAt = atLocalTime(timezone, date, startTime);
+    const endsAt = atLocalTime(timezone, date, endTime);
     if (endsAt <= startsAt) {
       setSubmitError("End time must be after start time.");
       return;
@@ -148,7 +152,7 @@ export function ScheduleFromCorporateRequestDialog({
       );
       onScheduled();
     } catch (err) {
-      setSubmitError(scheduleErrorMessage(err, "Failed"));
+      setSubmitError(scheduleErrorMessage(err, "Failed", timezone));
       setSubmitting(false);
     }
   }
@@ -178,7 +182,7 @@ export function ScheduleFromCorporateRequestDialog({
             <Label>Date</Label>
             <Input
               type="date"
-              min={todayIso()}
+              min={todayIso(timezone)}
               value={date}
               onChange={(e) => setDate(e.target.value)}
             />

@@ -8,6 +8,8 @@ import { useWorkspace } from "@/lib/workspace-context";
 import { answeredElsewhere, loadError, type LoadError } from "@/lib/failed-read";
 import { ApiError } from "@/lib/api";
 import { LATEST_DATE, formatRelative } from "@/lib/formatters";
+import { atLocalTime } from "@/lib/local-day";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import { scheduleErrorMessage } from "@/lib/schedule";
 import { withClashConfirm } from "@/lib/time-clash";
 import { toast } from "sonner";
@@ -213,6 +215,7 @@ function ScheduleForm({
   onScheduled: () => void;
 }) {
   const { api } = useWorkspace();
+  const timezone = useStudioZone();
   const first = request.slots[0];
   const [roomId, setRoomId] = useState("");
   const [date, setDate] = useState(first?.proposed_date ?? "");
@@ -231,8 +234,9 @@ function ScheduleForm({
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!api || !canSubmit) return;
-    const startsAt = new Date(`${date}T${startTime}:00`);
-    const endsAt = new Date(`${date}T${endTime}:00`);
+    // Wall times at the studio, whatever zone this browser is in.
+    const startsAt = atLocalTime(timezone, date, startTime);
+    const endsAt = atLocalTime(timezone, date, endTime);
     if (endsAt <= startsAt) {
       setErr("End time must be after start time.");
       return;
@@ -241,7 +245,7 @@ function ScheduleForm({
     setErr(null);
     try {
       // A member booked elsewhere at this time is asked about first.
-      await withClashConfirm("session", (extra) =>
+      await withClashConfirm("session", timezone, (extra) =>
         api.post(`/portal/instructor/pt-requests/${request.id}/schedule`, {
           location_id: request.location.id,
           room_id: roomId,
@@ -266,7 +270,7 @@ function ScheduleForm({
         setErr("The 2-on-1 partner needs a member account before this can be scheduled.");
       // A clash names the room or instructor and the event in the way — that
       // sentence comes from the backend, so pass it straight through.
-      else setErr(scheduleErrorMessage(e2, "Couldn't schedule"));
+      else setErr(scheduleErrorMessage(e2, "Couldn't schedule", timezone));
       setSubmitting(false);
     }
   }

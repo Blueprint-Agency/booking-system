@@ -6,6 +6,7 @@ import { Badge, Button, LoadFailure, Select } from "@/components/ui";
 import { ApiError, type Api } from "@/lib/api";
 import { answeredElsewhere } from "@/lib/failed-read";
 import { formatDateTime } from "@/lib/formatters";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import {
   CLASSPASS_SENDER,
   gmailConfirmationHref,
@@ -57,6 +58,7 @@ export function ClassPassSetupGuide({
   /** Bumped by the page when the review list may have changed. */
   reviewRevision: number;
 }) {
+  const timezone = useStudioZone();
   const guide = setupGuide(status.setup);
   const current = guide.steps.find((s) => s.state === "current")?.key ?? null;
   const [open, setOpen] = useState(false);
@@ -125,7 +127,7 @@ export function ClassPassSetupGuide({
         </ol>
         <p className="text-xs text-muted">
           {status.gmail_confirmation_at
-            ? `Gmail’s confirmation arrived ${formatDateTime(status.gmail_confirmation_at)}.`
+            ? `Gmail’s confirmation arrived ${formatDateTime(timezone, status.gmail_confirmation_at)}.`
             : "Waiting for Gmail’s confirmation…"}
         </p>
       </>

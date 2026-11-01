@@ -29,6 +29,7 @@ import { tierEffectivePrice, type ApiWorkshopDetail, type ApiWorkshopTier } from
 import type { ApiClassPackage, ApiPtPackage } from "@/lib/packages";
 import type { ApiCorporatePackage } from "@/lib/corporate";
 import { corporateRequestSentHref } from "@/lib/corporate-return";
+import { useStudioZone } from "@/components/brand/brand-provider";
 
 // Any catalogue entry the checkout can hold; all are snake_case wire shapes.
 type PackageInfo =
@@ -62,6 +63,7 @@ function subtitleForPackage(pkg: PackageInfo): string {
 }
 
 function CheckoutContent() {
+  const tz = useStudioZone();
   const router = useRouter();
   const searchParams = useSearchParams();
   const { isSignedIn, isLoaded } = useMemberSession();
@@ -301,7 +303,7 @@ function CheckoutContent() {
           // it is the only side that knows the balance — so print it rather
           // than deriving a second, quieter version of the same rule.
           setCheckoutError(
-            checkoutErrorMessage(data, "Could not start checkout. Please try again."),
+            checkoutErrorMessage(data, "Could not start checkout. Please try again.", tz),
           );
         }
         setRedirecting(false);

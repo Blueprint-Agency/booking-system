@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import { Save, Info, Loader2, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button, Input, Label, PageHeader } from "@/components/ui";
+import { useStudioZone } from "@/components/brand/brand-provider";
+import { formatDateTime } from "@/lib/formatters";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
 import { ptBookingWindowProblem } from "@/lib/pt-requests";
@@ -117,6 +119,7 @@ function diffGlobal(saved: PolicyState, draft: PolicyState) {
 
 export default function PolicyPage() {
   const { api } = useWorkspace();
+  const timezone = useStudioZone();
   const [policy, setPolicy] = useState<PolicyState>(emptyPolicy);
   const [draft, setDraft] = useState<PolicyState>(emptyPolicy);
   const [loading, setLoading] = useState(true);
@@ -712,7 +715,7 @@ export default function PolicyPage() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <span className="text-xs text-muted">
             {policy.updatedAt
-              ? `Last updated ${new Date(policy.updatedAt).toLocaleString()}`
+              ? `Last updated ${formatDateTime(timezone, policy.updatedAt)}`
               : "Not yet saved."}
           </span>
           <div className="flex gap-2">

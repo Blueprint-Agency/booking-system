@@ -11,6 +11,7 @@ import {
   Pagination,
   usePaged,
 } from "@/components/ui";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
 import { formatSgd, formatDate } from "@/lib/formatters";
@@ -30,6 +31,7 @@ export default function CorporatePackagesListPage() {
   // Corporate packages are admin-only and not visible to members. We list all
   // rows (active + archived) so admins can manage the full catalog.
   const { api } = useWorkspace();
+  const timezone = useStudioZone();
   const [packages, setPackages] = useState<ApiCorporatePackage[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -97,7 +99,7 @@ export default function CorporatePackagesListPage() {
                       <span className="text-ink sm:hidden">
                         {formatSgd(Number(p.price_sgd))} ·{" "}
                       </span>
-                      Created {formatDate(p.created_at)}
+                      Created {formatDate(timezone, p.created_at)}
                     </div>
                   </div>
                   <div className="hidden sm:block min-w-[110px] text-right text-sm text-ink">

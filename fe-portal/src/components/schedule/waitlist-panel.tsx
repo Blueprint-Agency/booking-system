@@ -11,6 +11,7 @@ import { Loader2 } from "lucide-react";
 import { Badge, Button } from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
 import { formatDateTime } from "@/lib/formatters";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import type { StaffRole } from "@/lib/class-seats";
 import {
   addToClassRefusal,
@@ -105,6 +106,7 @@ function WaitlistEntry({
   onChanged: () => void;
 }) {
   const { api } = useWorkspace();
+  const timezone = useStudioZone();
   const [busy, setBusy] = useState<"add" | "remove" | null>(null);
   const [refusal, setRefusal] = useState<AddToClassRefusal | null>(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
@@ -115,10 +117,10 @@ function WaitlistEntry({
     setBusy("add");
     setRefusal(null);
     try {
-      await promoteWaitlistEntry(api, role, classId, row.entry_id, overbook);
+      await promoteWaitlistEntry(api, timezone, role, classId, row.entry_id, overbook);
       onChanged();
     } catch (e) {
-      setRefusal(addToClassRefusal(e, role));
+      setRefusal(addToClassRefusal(e, role, timezone));
     } finally {
       setBusy(null);
     }
@@ -133,7 +135,7 @@ function WaitlistEntry({
       onChanged();
     } catch (e) {
       // Only the wording is shared with Add to class; a failed Remove never asks to overbook.
-      setRefusal({ kind: "error", message: addToClassRefusal(e, role).message });
+      setRefusal({ kind: "error", message: addToClassRefusal(e, role, timezone).message });
       setConfirmRemove(false);
     } finally {
       setBusy(null);
@@ -155,7 +157,7 @@ function WaitlistEntry({
             ) : (
               <span className="text-ink">{row.client.name}</span>
             )}
-            <div className="text-xs text-muted">Joined {formatDateTime(row.joined_at)}</div>
+            <div className="text-xs text-muted">Joined {formatDateTime(timezone, row.joined_at)}</div>
           </div>
         </div>
         <Badge tone={canPay ? "neutral" : "warning"}>{paymentStatusLine(row.payment_status)}</Badge>

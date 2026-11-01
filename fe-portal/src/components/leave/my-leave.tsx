@@ -23,6 +23,7 @@ import { requestParam } from "@/lib/attention";
 import { cn } from "@/lib/utils";
 import { openSignedUrl } from "@/lib/api";
 import { LATEST_DATE, todayIso } from "@/lib/formatters";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import {
   formatLeaveDayRange,
   leaveErrorMessage,
@@ -65,6 +66,7 @@ interface ApiLeaveResponse {
 
 export function MyLeave() {
   const { api } = useWorkspace();
+  const timezone = useStudioZone();
   const [data, setData] = useState<ApiLeaveResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -217,7 +219,7 @@ export function MyLeave() {
 
   // "Not started" mirrors the backend rule: a cancel is only offered for leave
   // that begins after today. The server refuses it either way.
-  const notStarted = (r: ApiOwnLeaveRequest) => r.start_date > todayIso();
+  const notStarted = (r: ApiOwnLeaveRequest) => r.start_date > todayIso(timezone);
   const canTransition = (r: ApiOwnLeaveRequest) =>
     r.status === "pending" || (r.status === "approved" && notStarted(r));
 

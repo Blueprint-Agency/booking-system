@@ -46,6 +46,16 @@ Locations are workspaces. Surfaces are partitioned as follows:
 - `/admin/profile` (#468) shows the admin's name, email and role, read-only (an admin edits their own details from the Staff page), and the **Picture** field. The instructor's profile page carries the same Picture field above their bio.
 - **Picture field.** Upload (or Change) picks a photo; the browser opens it in a framing dialog, where the staff member drags it and zooms (up to 4×) until the circle shows what they want. **Use picture** draws the framed square onto a 512×512 JPEG in the browser and uploads it to `POST /portal/profile/photo`; the server only checks type and size. **Remove** calls `DELETE /portal/profile/photo` and the initials come back. A refusal shows the API's own sentence. The topbar picture changes at once. The field only ever acts on the caller's own picture: no portal control changes anyone else's.
 
+### The studio's clock
+
+Every date and time in the staff portal, and every time an admin or instructor types into it, is read on **the studio's time zone** (`tenants.timezone`), never the browser's. An admin travelling abroad, or a Platform administrator acting as the studio, who schedules a 19:00 class makes a 19:00 class at the studio, and the instructor and the member read it at 19:00. The zone arrives with the slug lookup the proxy already makes, through the brand object the root layout provides (`useStudioZone`); no new endpoint or header. Three modules in `fe-portal/src/lib` take it as an argument and are the only way a date reaches the screen: `studio-time.ts` (the rules), `formatters.ts` (printing) and `local-day.ts` (the day an instant falls on, and the instants a day spans).
+
+- **A day** is the half-open window from the studio's midnight to the next midnight, so 23 or 25 hours on a daylight-saving change. The schedule's day, week and month views, the instructor's 60-day list, the leave calendar and every date-range filter (Finance, Teaching log, Receipts) open and end on the studio's midnights, and "Today", "This week" and "This month" are the studio's.
+- **A typed wall time** (a class, a private session, a workshop day, an early-bird cutoff, a corporate session) is the studio's wall clock, turned into an instant through the zone's rules on that date: one in a spring-forward gap lands an hour later, one that occurs twice takes its first occurrence. A picked day (a package's expiry, a promotion, a promo code's last day, a manual finance entry) runs to the studio's midnight or the last instant of the studio's day.
+- **A plain date** (a leave day, a birthday, a series' first date) names a day, not a moment, and reads as that day in every zone.
+- **No studio, no clock.** The super portal's own hostname has no zone and reading one is an error, never UTC; a zone this browser does not know shows a notice in place of the app rather than a blank screen.
+- **How long ago** ("Active 3 hours ago") is elapsed time and the same on any clock.
+
 ### Sidebar structure
 
 **Visual layout** (top to bottom):
@@ -474,7 +484,7 @@ PT Requests carry a `location_id` chosen by the client at request time. The `/ad
   - **Location + Room**: required; room must belong to the chosen location.
   - **2on1 + partner is not yet a member** → admin is prompted to create the partner's client account first (via a "+ Create partner" inline action) before submit; the scheduler refuses to save until `co_client_id` is populated.
   - `<CapacityFields />` defaults from session type (`1on1` → `online_booking: 1, buffer: 0, waitlist: 0`; `2on1` → `online_booking: 2`).
-- **Cancel** (admin) is a single-confirm action — no decline note. Branches on current status (see §9e).
+- **Cancel** (admin) is a single-confirm action — no decline note. Branches on current status (see §9e). A `scheduled` request with a session offers **Cancel session** until the session starts; one with **no session** (it named none, or its session is gone) offers **Cancel request** at any time, and the sessions it was holding go back to the requester's package (#545).
 
 ### 9d. Two converging entry points
 

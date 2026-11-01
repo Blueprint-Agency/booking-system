@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Lock } from "lucide-react";
 import { ChangePasswordCard } from "@/components/account/change-password-card";
+import { SavedCardsCard } from "@/components/account/saved-cards-card";
 import { AccountPageHeader } from "@/components/account/account-page-header";
 import { ProfilePictureCard } from "@/components/account/profile-picture-card";
 import { Select } from "@/components/ui/select";
@@ -260,6 +261,8 @@ export default function ProfilePage() {
             </div>
           </section>
         </form>
+
+        <SavedCardsCard />
 
         <ChangePasswordCard />
       </div>

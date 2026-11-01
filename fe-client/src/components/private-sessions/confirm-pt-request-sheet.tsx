@@ -15,7 +15,8 @@ import {
   SHEET_TEXT,
   SHEET_TITLE,
 } from "@/components/ui/styles";
-import { cn, formatDate } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { formatPlainDate } from "@/lib/studio-time";
 import { formatSlotTime } from "@/lib/pt-sessions";
 import { sessionTypeLabel, sessionsWord, type PtPickRow } from "@/lib/pt-package-picker";
 import type { LivePackage } from "@/lib/use-client-packages";
@@ -31,9 +32,13 @@ export interface PtRequestSummary {
   partnerName: string | null;
 }
 
-/** `2026-10-01` + `09:00` → "Thu, 1 Oct · 9:00 am". Noon UTC keeps the day the member picked. */
+/**
+ * `2026-10-01` + `09:00` → "Thu, 1 Oct · 9:00 am". The date and the time are
+ * the studio's wall clock as the member picked them, so there is no zone to
+ * convert between.
+ */
 export function slotLabel(s: { proposedDate: string; startTime: string }): string {
-  return `${formatDate(`${s.proposedDate}T12:00:00Z`)} · ${formatSlotTime(s.startTime)}`;
+  return `${formatPlainDate(s.proposedDate)} · ${formatSlotTime(s.startTime)}`;
 }
 
 /**

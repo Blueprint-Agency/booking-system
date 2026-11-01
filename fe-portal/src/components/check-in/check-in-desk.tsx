@@ -43,7 +43,8 @@ import {
   type ScanResult,
   type SessionPhase,
 } from "@/lib/check-in";
-import { formatDate, formatTime } from "@/lib/formatters";
+import { formatPlainDay, formatTime } from "@/lib/formatters";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import { localDay } from "@/lib/local-day";
 import { untickConfirmCopy } from "@/lib/untick-confirm";
 import { useWorkspace } from "@/lib/workspace-context";
@@ -91,17 +92,17 @@ const PHASE_BADGE: Record<SessionPhase, { label: string; tone: "neutral" | "acce
   ended: { label: "Ended", tone: "neutral" },
 };
 
-function sessionLine(s: Pick<CheckInSession, "starts_at" | "ends_at">) {
-  return `${formatTime(s.starts_at)}–${formatTime(s.ends_at)}`;
+function sessionLine(timezone: string, s: Pick<CheckInSession, "starts_at" | "ends_at">) {
+  return `${formatTime(timezone, s.starts_at)}–${formatTime(timezone, s.ends_at)}`;
 }
 
 function attendedCount(s: CheckInSession) {
   return s.roster.filter((r) => r.check_in_state === "attended").length;
 }
 
-function scanBanner(res: ScanResult): Banner {
+function scanBanner(timezone: string, res: ScanResult): Banner {
   const where = res.session.location?.name;
-  const detail = [res.session.name, formatTime(res.session.starts_at), where].filter(Boolean).join(" · ");
+  const detail = [res.session.name, formatTime(timezone, res.session.starts_at), where].filter(Boolean).join(" · ");
   const key = sessionKey(res.session);
   return res.outcome === "checked_in"
     ? {
@@ -153,6 +154,7 @@ function CheckInDeskFromLink({ audience }: { audience: CheckInAudience }) {
 
 function Desk({ audience, params }: { audience: CheckInAudience; params: DeskParams }) {
   const { api, accessibleLocations, activeLocationId } = useWorkspace();
+  const timezone = useStudioZone();
   const base = checkInBase(audience);
 
   // The admin desk follows the workspace switcher's location (the one filter
@@ -163,7 +165,7 @@ function Desk({ audience, params }: { audience: CheckInAudience; params: DeskPar
   // A link may name another day and a session on it (an overdue check-in); the
   // wrapper remounts this desk when the link changes.
   const { date: linkDate, session: linkSession } = params;
-  const otherDay = linkDate !== null && linkDate !== localDay();
+  const otherDay = linkDate !== null && linkDate !== localDay(timezone);
 
   const [view, setView] = useState<View>(linkSession ? "rosters" : "scan");
   const [day, setDay] = useState<CheckInDay | null>(null);
@@ -249,7 +251,7 @@ function Desk({ audience, params }: { audience: CheckInAudience; params: DeskPar
       setScanning(true);
       try {
         const res = await api.post<ScanResult>(`${base}/scan`, body);
-        setBanner(scanBanner(res));
+        setBanner(scanBanner(timezone, res));
         setPickedKey(sessionKey(res.session));
         void load({ quiet: true });
         return true;
@@ -261,7 +263,7 @@ function Desk({ audience, params }: { audience: CheckInAudience; params: DeskPar
         setScanning(false);
       }
     },
-    [api, base, load],
+    [api, base, load, timezone],
   );
 
   const onQrToken = useCallback(
@@ -361,7 +363,7 @@ function Desk({ audience, params }: { audience: CheckInAudience; params: DeskPar
       {otherDay && linkDate && (
         <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-card px-4 py-3 text-sm shadow-soft">
           <span>
-            Showing {formatDate(`${linkDate}T00:00:00`)}, not today. You can still tick members in.
+            Showing {formatPlainDay(linkDate)}, not today. You can still tick members in.
           </span>
           <Link
             href={deskHref(`/${audience}/check-in`, {})}
@@ -636,6 +638,7 @@ function ResultBanner({
 
 /** The session members are arriving for, under the code box: how full the door is, one tap from its roster. */
 function AtTheDoor({ session, now, onOpen }: { session: CheckInSession; now: Date; onOpen: () => void }) {
+  const timezone = useStudioZone();
   const phase = PHASE_BADGE[sessionPhase(session, now)];
   const attended = attendedCount(session);
   return (
@@ -646,7 +649,7 @@ function AtTheDoor({ session, now, onOpen }: { session: CheckInSession; now: Dat
       </div>
       <p className="truncate font-medium text-ink">{session.name}</p>
       <p className="truncate text-xs text-muted">
-        {sessionLine(session)}
+        {sessionLine(timezone, session)}
         {session.instructor ? ` · ${session.instructor.name}` : ""}
       </p>
       <Progress attended={attended} total={session.roster.length} className="mt-3" />
@@ -704,7 +707,7 @@ function SessionRail({
     >
       <div className="mb-2 md:mb-0 md:border-b md:border-border md:px-4 md:py-3">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">
-          {day ? `${otherDay ? "" : "Today · "}${formatDate(`${day.date}T00:00:00`)}` : otherDay ? "Sessions" : "Today"}
+          {day ? `${otherDay ? "" : "Today · "}${formatPlainDay(day.date)}` : otherDay ? "Sessions" : "Today"}
         </h2>
         {day && (
           <p className="mt-0.5 text-xs text-muted">
@@ -734,10 +737,11 @@ function SessionRail({
 }
 
 function NowLine({ now }: { now: Date }) {
+  const timezone = useStudioZone();
   return (
     <li role="presentation" className="hidden items-center gap-2 px-2 py-1 md:flex" data-testid="check-in-now-line">
       <span className="text-[11px] font-semibold uppercase tracking-wider text-error tabular-nums">
-        Now {formatTime(now.toISOString())}
+        Now {formatTime(timezone, now.toISOString())}
       </span>
       <span className="h-px flex-1 bg-error/50" />
     </li>
@@ -759,6 +763,7 @@ function SessionRailItem({
   nowLine: Date | null;
   onPick: () => void;
 }) {
+  const timezone = useStudioZone();
   const attended = attendedCount(s);
   const total = s.roster.length;
   const waiting = s.waitlist?.length ?? 0;
@@ -786,8 +791,8 @@ function SessionRailItem({
             <span aria-hidden="true" className="absolute inset-y-2 left-0 hidden w-0.5 rounded-full bg-accent md:block" />
           )}
           <span className="w-14 shrink-0 tabular-nums">
-            <span className="block text-sm font-semibold text-ink">{formatTime(s.starts_at)}</span>
-            <span className="block text-[11px] text-muted">{formatTime(s.ends_at)}</span>
+            <span className="block text-sm font-semibold text-ink">{formatTime(timezone, s.starts_at)}</span>
+            <span className="block text-[11px] text-muted">{formatTime(timezone, s.ends_at)}</span>
           </span>
           <span className="min-w-0 flex-1">
             <span className="flex items-center gap-1.5">
@@ -841,6 +846,7 @@ function Roster({
   error: string | null;
   onMark: (row: CheckInRosterRow, attended: boolean) => void;
 }) {
+  const timezone = useStudioZone();
   const [query, setQuery] = useState("");
   const rows = [...session.roster].sort((a, b) => a.name.localeCompare(b.name));
   const shown = rows.filter((r) => rosterRowMatches(r, query));
@@ -867,7 +873,7 @@ function Roster({
           </div>
           <h3 className="break-words text-lg font-semibold text-ink">{session.name}</h3>
           <p className="mt-0.5 text-sm text-muted">
-            {sessionLine(session)}
+            {sessionLine(timezone, session)}
             {session.instructor ? ` · ${session.instructor.name}` : ""}
             {where ? ` · ${where}` : ""}
           </p>
@@ -877,7 +883,7 @@ function Roster({
 
       {notOpen && (
         <p className="mx-4 mt-3 rounded-md bg-paper px-3 py-2 text-xs text-muted sm:mx-5">
-          Check-in opens at {formatTime(session.check_in_opens_at)}.
+          Check-in opens at {formatTime(timezone, session.check_in_opens_at)}.
         </p>
       )}
       {error && (
@@ -1027,6 +1033,7 @@ function RosterRow({
   locked: boolean;
   onMark: (row: CheckInRosterRow, attended: boolean) => void;
 }) {
+  const timezone = useStudioZone();
   const state = row.check_in_state;
   return (
     <li
@@ -1061,7 +1068,7 @@ function RosterRow({
             {state === "attended" && (
               <Badge tone="sage">
                 <Check className="mr-1 h-3 w-3" />
-                {row.checked_in_at ? `In ${formatTime(row.checked_in_at)}` : "Attended"}
+                {row.checked_in_at ? `In ${formatTime(timezone, row.checked_in_at)}` : "Attended"}
                 {row.method && row.method !== "manual" ? ` · ${row.method.toUpperCase()}` : ""}
               </Badge>
             )}

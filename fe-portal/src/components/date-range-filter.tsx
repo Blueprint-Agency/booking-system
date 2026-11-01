@@ -1,29 +1,18 @@
 "use client";
 
 import { useState } from "react";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import { dropDrafts, noDrafts, shownDay, typeDay } from "@/lib/date-range-draft";
+import { presetRange, sameRange, type DateRange, type PresetKey } from "@/lib/date-range";
 import { EARLIEST_DATE, LATEST_DATE } from "@/lib/formatters";
-import { localDay, localDayRange } from "@/lib/local-day";
 
 /**
  * Preset + custom date-range filter, shared by the admin and instructor payroll
  * pages. Range is held as YYYY-MM-DD strings (what <input type="date"> speaks);
- * `null` means "all time". Call rangeToParams() to get the ISO from/to the API
- * expects.
+ * `null` means "all time". Every preset ("Today", "This week") is read on the
+ * studio's clock, not the browser's, and `rangeToParams()` (`lib/date-range.ts`)
+ * turns the days into the studio's midnights the API expects.
  */
-
-export type DateRange = { from: string; to: string } | null;
-
-export type PresetKey =
-  | "today"
-  | "week"
-  | "7d"
-  | "14d"
-  | "30d"
-  | "month"
-  | "lastmonth"
-  | "year"
-  | "all";
 
 const PRESETS: { key: PresetKey; label: string }[] = [
   { key: "today", label: "Today" },
@@ -37,62 +26,6 @@ const PRESETS: { key: PresetKey; label: string }[] = [
   { key: "all", label: "All time" },
 ];
 
-export function presetRange(key: PresetKey): DateRange {
-  const now = new Date();
-  const today = localDay(now);
-  switch (key) {
-    case "today":
-      return { from: today, to: today };
-    case "week": {
-      // Weeks start Monday — the studio's timetable does, and a Sunday start
-      // would put a Sunday class in "last week" the morning after it ran.
-      const start = new Date(now);
-      start.setDate(now.getDate() - ((now.getDay() + 6) % 7));
-      return { from: localDay(start), to: today };
-    }
-    case "7d":
-    case "14d":
-    case "30d": {
-      const n = key === "7d" ? 7 : key === "14d" ? 14 : 30;
-      const start = new Date(now);
-      start.setDate(now.getDate() - (n - 1));
-      return { from: localDay(start), to: today };
-    }
-    case "month":
-      // Payroll is past-only, so ending "today" rather than end-of-month is
-      // equivalent and reads more honestly.
-      return { from: localDay(new Date(now.getFullYear(), now.getMonth(), 1)), to: today };
-    case "lastmonth":
-      // A closed month, so it runs to its own last day rather than to today —
-      // day 0 of this month IS the last day of last month.
-      return {
-        from: localDay(new Date(now.getFullYear(), now.getMonth() - 1, 1)),
-        to: localDay(new Date(now.getFullYear(), now.getMonth(), 0)),
-      };
-    case "year":
-      return { from: localDay(new Date(now.getFullYear(), 0, 1)), to: today };
-    case "all":
-      return null;
-  }
-}
-
-/** Local-midnight → ISO instants for the API's `from`/`to` query params. */
-export function rangeToParams(r: DateRange): {
-  from: string | undefined;
-  to: string | undefined;
-} {
-  if (!r) return { from: undefined, to: undefined };
-  return {
-    from: localDayRange(r.from).start.toISOString(),
-    to: localDayRange(r.to).end.toISOString(),
-  };
-}
-
-function sameRange(a: DateRange, b: DateRange): boolean {
-  if (a === null || b === null) return a === b;
-  return a.from === b.from && a.to === b.to;
-}
-
 export function DateRangeFilter({
   value,
   onChange,
@@ -100,8 +33,9 @@ export function DateRangeFilter({
   value: DateRange;
   onChange: (r: DateRange) => void;
 }) {
+  const timezone = useStudioZone();
   // Derived, not stored — no preset/custom state to drift out of sync.
-  const activeKey = PRESETS.find((p) => sameRange(presetRange(p.key), value))?.key;
+  const activeKey = PRESETS.find((p) => sameRange(presetRange(timezone, p.key), value))?.key;
   const isCustom = !activeKey;
 
   // The date inputs are disclosed, not permanent: showing two empty dd/mm/yyyy
@@ -134,7 +68,7 @@ export function DateRangeFilter({
               onClick={() => {
                 setCustomOpen(false);
                 setDrafts(dropDrafts(value));
-                onChange(presetRange(p.key));
+                onChange(presetRange(timezone, p.key));
               }}
               className={`min-h-9 rounded-full px-3 py-1.5 font-medium transition sm:min-h-0 ${
                 active

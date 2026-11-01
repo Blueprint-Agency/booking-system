@@ -12,6 +12,7 @@ import Link from "next/link";
 import { Loader2, Plus, UserMinus } from "lucide-react";
 import { Badge, Button } from "@/components/ui";
 import { AddSeatForm } from "@/components/schedule/pt-seat";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import { useWorkspace } from "@/lib/workspace-context";
 import { computeEventState } from "@/lib/event-state";
 import type { StaffRole } from "@/lib/class-seats";
@@ -40,6 +41,7 @@ export function PtSessionMembers({
   onChanged: () => void | Promise<void>;
 }) {
   const { api, may } = useWorkspace();
+  const timezone = useStudioZone();
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
@@ -61,7 +63,7 @@ export function PtSessionMembers({
       await action();
       await onChanged();
     } catch (e) {
-      setErr(sessionActionErrorMessage(e, fallback));
+      setErr(sessionActionErrorMessage(e, fallback, timezone));
     } finally {
       setBusy(null);
     }
@@ -75,7 +77,7 @@ export function PtSessionMembers({
 
   function downgrade() {
     if (!api || !confirm(downgradeConfirm(data.clients))) return;
-    void run("retype", () => retypeSession(api, data.id, { session_type: "1on1" }), "Couldn't change the type");
+    void run("retype", () => retypeSession(api, timezone, data.id, { session_type: "1on1" }), "Couldn't change the type");
   }
 
   const retypeControl =
@@ -172,7 +174,7 @@ export function PtSessionMembers({
             submitLabel="Change to 2-on-1"
             hint="Add the partner who joins. They pay one session from their own package; nobody else's balance moves."
             build={(seat) => retypeBody("2on1", seat)}
-            send={(body) => retypeSession(api, data.id, body)}
+            send={(body) => retypeSession(api, timezone, data.id, body)}
             onDone={async () => {
               setUpgrading(false);
               await onChanged();
@@ -193,7 +195,7 @@ export function PtSessionMembers({
               exclude={onIt}
               submitLabel="Add member"
               build={addMemberBody}
-              send={(body) => addSessionMember(api, role, data.id, body)}
+              send={(body) => addSessionMember(api, timezone, role, data.id, body)}
               onDone={async () => {
                 setAdding(false);
                 await onChanged();

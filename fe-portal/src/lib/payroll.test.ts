@@ -22,7 +22,7 @@ function spyApi(seen: { path?: string; query?: unknown }): Api {
 // one, an instructor could ask for somebody else's pay.
 test("the instructor read carries no instructor_id", async () => {
   const seen: { path?: string; query?: unknown } = {};
-  await fetchInstructorPayroll(spyApi(seen), { from: "2026-03-01", to: "2026-03-31" });
+  await fetchInstructorPayroll(spyApi(seen), "Asia/Singapore", { from: "2026-03-01", to: "2026-03-31" });
   assert.strictEqual(seen.path, "/portal/instructor/payroll");
   assert.ok(!Object.keys(seen.query as object).includes("instructor_id"));
 });

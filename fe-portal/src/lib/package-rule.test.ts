@@ -147,11 +147,15 @@ test("PKR-14 a rule change that cancels bookings says how many, in the singular 
 
 test("PKR-15 the rule's own refusals read as sentences on the scheduling forms", () => {
   assert.equal(
-    scheduleErrorMessage(new ApiError(400, { error: "package_rule_empty" })),
+    scheduleErrorMessage(new ApiError(400, { error: "package_rule_empty" }), "Save failed", "Asia/Singapore"),
     '"Only these" needs at least one package. Tick at least one package, or choose All group packages.',
   );
   assert.equal(
-    scheduleErrorMessage(new ApiError(400, { error: "package_rule_invalid_package", package_ids: ["x"] })),
+    scheduleErrorMessage(
+      new ApiError(400, { error: "package_rule_invalid_package", package_ids: ["x"] }),
+      "Save failed",
+      "Asia/Singapore",
+    ),
     "One of those packages is no longer one of the studio's class packages. Reload and pick again.",
   );
 });
@@ -159,10 +163,10 @@ test("PKR-15 the rule's own refusals read as sentences on the scheduling forms",
 test("PKR-15 not_accepted: staff booking, waitlist join and Add to class say the class takes none of the member's packages", () => {
   const refused = new ApiError(409, { error: "not_accepted" });
   const copy = "This class doesn't accept any of this member's packages.";
-  assert.deepEqual(staffBookingRefusal(refused, "admin"), { kind: "error", message: copy });
-  assert.deepEqual(staffBookingRefusal(refused, "instructor"), { kind: "error", message: copy });
-  assert.equal(staffJoinRefusal(refused), copy);
-  assert.deepEqual(addToClassRefusal(refused, "admin"), { kind: "error", message: copy });
+  assert.deepEqual(staffBookingRefusal(refused, "admin", "Asia/Singapore"), { kind: "error", message: copy });
+  assert.deepEqual(staffBookingRefusal(refused, "instructor", "Asia/Singapore"), { kind: "error", message: copy });
+  assert.equal(staffJoinRefusal(refused, "Asia/Singapore"), copy);
+  assert.deepEqual(addToClassRefusal(refused, "admin", "Asia/Singapore"), { kind: "error", message: copy });
 });
 
 test("PKR-15 not_accepted: a waiting member whose packages the class doesn't take says so on their row", () => {

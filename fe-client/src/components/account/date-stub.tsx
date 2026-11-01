@@ -1,9 +1,12 @@
-import { cn } from "@/lib/utils";
+"use client";
 
-/** Weekday, day and month of an instant, in studio time (as `formatDate`). */
-function parts(iso: string) {
-  const fmt = (opts: Intl.DateTimeFormatOptions) =>
-    new Date(iso).toLocaleDateString("en-SG", { ...opts, timeZone: "Asia/Singapore" });
+import { cn } from "@/lib/utils";
+import { zoneFormat } from "@/lib/studio-time";
+import { useStudioZone } from "@/components/brand/brand-provider";
+
+/** Weekday, day and month of an instant, on the studio's clock (as `formatDate`). */
+function parts(iso: string, timezone: string) {
+  const fmt = (opts: Intl.DateTimeFormatOptions) => zoneFormat(timezone, "en-SG", opts).format(new Date(iso));
   return {
     weekday: fmt({ weekday: "short" }),
     day: fmt({ day: "numeric" }),
@@ -27,7 +30,8 @@ export function DateStub({
   tone?: "default" | "accent" | "muted";
   className?: string;
 }) {
-  const p = iso ? parts(iso) : null;
+  const tz = useStudioZone();
+  const p = iso ? parts(iso, tz) : null;
   return (
     <div
       aria-hidden

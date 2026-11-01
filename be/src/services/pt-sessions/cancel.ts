@@ -32,6 +32,10 @@ import { sendPtRequestExpiredEmails } from '../notifications/send-pt-request-ema
  *               through evaluateCancellation(kind='pt') so a cancel within the
  *               configured PT window + cap returns the session(s), otherwise the
  *               action is rejected outright (hard deadline, mirroring classes).
+ *               A scheduled request with no session (it named none, or its
+ *               session is gone) is ended by an Admin alone: the debit comes
+ *               back as a pending request's does, nothing else is settled. For
+ *               anyone else it stays `pt_session_not_found`.
  *               Staff cancel only before the session starts
  *               (`session_already_started` after), and nothing
  *               returns to a Voided package.
@@ -222,28 +226,59 @@ async function cancelPtRequestInTx(
   // ---- scheduled → cancelled_after_scheduled (cascade) ------------------
   if (req.status !== 'scheduled') throw new ConflictError('cannot_cancel')
 
-  // A scheduled request whose session id was cleared (migration 0140 clears one
-  // that named no session; an older archive's restore does the same) has no
-  // session to cancel.
-  if (!req.scheduledPtSessionId) throw new NotFoundError('pt_session_not_found')
-
-  const [session] = await tx
-    .select({
-      id: ptSessions.id,
-      startsAt: ptSessions.startsAt,
-      lifecycle: ptSessions.lifecycle,
-      instructorId: ptSessions.instructorId,
-    })
-    .from(ptSessions)
-    .where(
-      and(
-        eq(ptSessions.tenantId, tenantId),
-        eq(ptSessions.id, req.scheduledPtSessionId),
-      ),
-    )
-    .for('update')
-    .limit(1)
-  if (!session) throw new NotFoundError('pt_session_not_found')
+  // A scheduled request can have no session: it named none, or the id was
+  // cleared when the session it named was found gone (migration 0140, a
+  // restore).
+  const sessionColumns = {
+    id: ptSessions.id,
+    startsAt: ptSessions.startsAt,
+    lifecycle: ptSessions.lifecycle,
+    instructorId: ptSessions.instructorId,
+  }
+  let [session] = req.scheduledPtSessionId
+    ? await tx
+        .select(sessionColumns)
+        .from(ptSessions)
+        .where(and(eq(ptSessions.tenantId, tenantId), eq(ptSessions.id, req.scheduledPtSessionId)))
+        .for('update')
+        .limit(1)
+    : []
+  if (!session && source === 'admin') {
+    // A cleared id does not mean no session: one may still name this request.
+    // The Admin's cancel then settles that session like any other, and the
+    // request names it again, rather than refunding beside a live booking.
+    ;[session] = await tx
+      .select(sessionColumns)
+      .from(ptSessions)
+      .where(and(eq(ptSessions.tenantId, tenantId), eq(ptSessions.ptRequestId, ptRequestId)))
+      .for('update')
+      .limit(1)
+    if (session) {
+      await tx
+        .update(ptRequests)
+        .set({ scheduledPtSessionId: session.id })
+        .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, ptRequestId)))
+    }
+  }
+  if (!session) {
+    // An Admin ends it: the credit it holds goes back as a pending request's
+    // does, and there is no session, booking or cancellation to settle. A
+    // member's, an Instructor's (it is no session of theirs) and the system's
+    // cancel of it stay refused.
+    if (source !== 'admin') throw new NotFoundError('pt_session_not_found')
+    const landed = await refundToPackage(cost, 'pt_admin_cancel_refund')
+    const returned = landed && req.debitedClientPackageId ? cost : 0
+    await tx
+      .update(ptRequests)
+      .set({ status: 'cancelled_after_scheduled', resolvedAt: clockNow(), resolvedByStaffId, cancelSource: source })
+      .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, ptRequestId)))
+    mail.request.push({ clientId: req.clientId, sessionsReturned: returned, ptSessionId: null })
+    return {
+      status: 'cancelled_after_scheduled',
+      refundedSessions: returned,
+      refundOutcome: returned > 0 ? 'session_returned' : 'n_a',
+    }
+  }
 
   // Ownership guard for instructor-initiated cancels.
   if (input.requireOwnInstructorId && session.instructorId !== input.requireOwnInstructorId) {
