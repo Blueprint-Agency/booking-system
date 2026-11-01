@@ -40,6 +40,7 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
   let ptPackagesSvc!: typeof import('../services/packages/pt-packages')
   let purchaseSvc!: typeof import('../services/packages/purchase')
   let jobs!: typeof import('../jobs')
+  let cancelSvc!: typeof import('../services/pt-sessions/cancel')
 
   type Place = { locationId: string; roomId: string }
   type Studio = {
@@ -359,6 +360,7 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     classPackagesSvc = inTenantContext(await import('../services/packages/class-packages'))
     ptPackagesSvc = inTenantContext(await import('../services/packages/pt-packages'))
     purchaseSvc = inTenantContext(await import('../services/packages/purchase'))
+    cancelSvc = inTenantContext(await import('../services/pt-sessions/cancel'))
     jobs = await import('../jobs')
 
     one = await studio(harness.tenants.one)
@@ -4305,6 +4307,135 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
       .from(schema.ptRequests)
       .where(sql`${schema.ptRequests.id} IN (${ids})`)
     assert.deepEqual(statuses.map(r => r.status), ['cancelled_before_scheduled', 'cancelled_before_scheduled'])
+  })
+
+  // ── Removing a Complimentary package that paid for a sessionless request (#549) ──
+
+  /** A Complimentary PT package given to `who` through the portal, as an Admin gives one. */
+  async function giveComp(who: Member): Promise<string> {
+    return (
+      await expectStatus(
+        await harness.app.request(`/api/v1/portal/admin/clients/${who.clientId}/packages/issue`, {
+          method: 'POST',
+          headers: { ...adminAtOne.headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ package_kind: 'pt', package_id: one.pt['1on1'], reason: 'Given by mistake' }),
+        }),
+        201,
+      )
+    ).client_package_id as string
+  }
+
+  // Sessions of the tests below are a day apart, weeks out (inside a package's first
+  // expiry), and take no slot from `far()`: the suite's other sessions walk that
+  // counter's two-hour steps into one another's classes.
+  let compSlots = 0
+  const compSlot = () => new Date(Date.now() + (50 + compSlots++) * DAY)
+
+  const removeComp = (who: Member, clientPackageId: string) =>
+    harness.app.request(`/api/v1/portal/admin/clients/${who.clientId}/packages/${clientPackageId}/remove`, {
+      method: 'POST',
+      headers: { ...adminAtOne.headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason: 'Given to the wrong member' }),
+    })
+
+  const ptCancelMails = (who: Member) =>
+    harness.db
+      .select()
+      .from(schema.emailLog)
+      .where(
+        and(
+          eq(schema.emailLog.recipientEmail, who.email),
+          sql`${schema.emailLog.templateSlug} IN ('admin_cancel_pt', 'pt_request_cancelled', 'pt_cancelled_session_returned')`,
+        ),
+      )
+
+  test('PKG-56 an Admin removing a Complimentary package that paid for a scheduled request with no session ends that request cancelled_after_scheduled as a system cancel naming the Admin, touching no session, booking or cancellation and telling the member nothing, and the package is gone', async () => {
+    for (const how of ['never', 'cleared'] as const) {
+      const who = await member(one, `Cora Sessionless ${how}`)
+      const comp = await giveComp(who)
+      const requestId = await requestOk(one, who, { sessionType: '1on1', clientPackageId: comp })
+      if (how !== 'never') await scheduled(requestId, { startsAt: compSlot() })
+      await withoutSession(requestId, how)
+      // A second request on the same comp, still pending, goes with it as it always did.
+      const pendingId = await requestOk(one, who, {
+        sessionType: '1on1',
+        clientPackageId: comp,
+        slots: [{ proposedDate, startTime: '11:00', endTime: '12:00' }],
+      })
+      // Bystander: another member's scheduled session.
+      const other = await member(one, `Cora Bystander ${how}`)
+      const otherPackage = await givePt(one, other, '1on1')
+      const otherSession = await scheduled(await requestOk(one, other, { sessionType: '1on1', clientPackageId: otherPackage }), {
+        startsAt: compSlot(),
+      })
+      const sessionsBefore = await ptSessionCount()
+      const cancellationsBefore = (await cancellationsOf(who)).length
+
+      await expectStatus(await removeComp(who, comp), 200)
+
+      const row = await requestRow(requestId)
+      assert.equal(row.status, 'cancelled_after_scheduled', how)
+      assert.equal(row.cancelSource, 'system', how)
+      assert.equal(row.resolvedByStaffId, adminAtOne.staffId, `${how}: the Admin who took the package back is named`)
+      assert.ok(row.resolvedAt, how)
+      assert.equal(row.scheduledPtSessionId, null, how)
+      assert.equal((await requestRow(pendingId)).status, 'cancelled_before_scheduled', how)
+      assert.deepEqual(
+        await harness.db.select().from(schema.clientPackages).where(eq(schema.clientPackages.id, comp)),
+        [],
+        `${how}: the package is removed`,
+      )
+      assert.equal(await ptSessionCount(), sessionsBefore, how)
+      assert.equal((await cancellationsOf(who)).length, cancellationsBefore, `${how}: no cancellations row`)
+      assert.equal((await sessionRow(otherSession)).lifecycle, 'active', how)
+      assert.equal(await sessionsLeft(otherPackage), 9, how)
+      assert.deepEqual(await ptCancelMails(who), [], `${how}: a Remove tells the member nothing, as for its other PT cancels`)
+    }
+  })
+
+  test('PKG-57 an Admin removing a Complimentary package whose scheduled request lost its session id while its session still names the request cancels that session the normal way as a system cancel: the booking is cancelled, no live session is left, and the request names the session again', async () => {
+    const who = await member(one, 'Cora Unlinked')
+    const comp = await giveComp(who)
+    const requestId = await requestOk(one, who, { sessionType: '1on1', clientPackageId: comp })
+    const sessionId = await scheduled(requestId, { startsAt: compSlot() })
+    await harness.db.execute(sql`UPDATE pt_requests SET scheduled_pt_session_id = NULL WHERE id = ${requestId}`)
+
+    await expectStatus(await removeComp(who, comp), 200)
+
+    const row = await requestRow(requestId)
+    assert.equal(row.status, 'cancelled_after_scheduled')
+    assert.equal(row.cancelSource, 'system')
+    assert.equal(row.resolvedByStaffId, adminAtOne.staffId)
+    assert.equal(row.scheduledPtSessionId, sessionId, 'the request names its session again')
+    assert.equal((await sessionRow(sessionId)).lifecycle, 'cancelled')
+    assert.equal((await bookingOf(sessionId, who))?.state, 'cancelled')
+    assert.deepEqual(
+      (await cancellationsOf(who)).map(c => [c.source, c.cancelledByStaffId]),
+      [['system', null]],
+    )
+    assert.deepEqual(
+      await harness.db.select().from(schema.clientPackages).where(eq(schema.clientPackages.id, comp)),
+      [],
+      'the package is removed',
+    )
+    assert.deepEqual(await ptCancelMails(who), [])
+  })
+
+  test('PKG-58 a system cancel that is not a Complimentary Remove, called for a scheduled request with no session, is still refused 404 pt_session_not_found and changes nothing', async () => {
+    const who = await member(one, 'Cora Job')
+    const packageId = await givePt(one, who, '1on1')
+    const requestId = await requestOk(one, who, { sessionType: '1on1', clientPackageId: packageId })
+    await withoutSession(requestId, 'never')
+    const movements = (await movementsOn(packageId)).length
+
+    await assert.rejects(
+      cancelSvc.cancelPtRequest(one.id, { ptRequestId: requestId, source: 'system', actorStaffId: adminAtOne.staffId }),
+      (err: any) => err.status === 404 && err.code === 'pt_session_not_found',
+    )
+
+    assert.equal((await requestRow(requestId)).status, 'scheduled')
+    assert.equal(await sessionsLeft(packageId), 9)
+    assert.equal((await movementsOn(packageId)).length, movements)
   })
 
   test('CUS-26 a pending private session request cancelled by removing its Complimentary Package reads Automatic on the profile, not as the admin’s cancel', async () => {
