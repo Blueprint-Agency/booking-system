@@ -1253,6 +1253,144 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     }
   })
 
+  // ── A scheduled request with no session (#545) ──────────────────────────
+
+  /**
+   * A request `scheduled` with no session behind it, the two ways one is found:
+   * `never`, a request marked scheduled that named no session; `cleared`, one
+   * whose session is gone and whose session id was cleared (migration 0140, a
+   * restore). The member's debit stays on the package, as it was.
+   */
+  async function withoutSession(requestId: string, how: 'never' | 'cleared'): Promise<void> {
+    if (how === 'cleared') {
+      const sessionId = (await requestRow(requestId)).scheduledPtSessionId
+      assert.ok(sessionId, 'the request was scheduled before its session went')
+      await harness.db.execute(sql`UPDATE client_packages SET activated_by_pt_session_id = NULL WHERE activated_by_pt_session_id = ${sessionId}`)
+      await harness.db.execute(sql`UPDATE pt_requests SET scheduled_pt_session_id = NULL WHERE id = ${requestId}`)
+      await harness.db.execute(sql`DELETE FROM bookings WHERE pt_session_id = ${sessionId}`)
+      await harness.db.execute(sql`DELETE FROM pt_session_clients WHERE pt_session_id = ${sessionId}`)
+      await harness.db.execute(sql`DELETE FROM pt_session_supporting_instructors WHERE pt_session_id = ${sessionId}`)
+      await harness.db.execute(sql`DELETE FROM pt_sessions WHERE id = ${sessionId}`)
+      return
+    }
+    await harness.db
+      .update(schema.ptRequests)
+      .set({ status: 'scheduled', resolvedAt: new Date(), scheduledPtSessionId: null })
+      .where(eq(schema.ptRequests.id, requestId))
+  }
+
+  test('PT-181 an Admin cancels a scheduled request that has no session, whether it named none or its session is gone: it ends cancelled_after_scheduled, the held credit goes back to its package with a movement and an audit row, and nothing else moves', async () => {
+    for (const how of ['never', 'cleared'] as const) {
+      const who = await member(one, `Sid Sessionless ${how}`)
+      const packageId = await givePt(one, who, '1on1')
+      const requestId = await requestOk(one, who, { sessionType: '1on1', clientPackageId: packageId })
+      if (how === 'cleared') await scheduled(requestId)
+      await withoutSession(requestId, how)
+      assert.equal(await sessionsLeft(packageId), 9, how)
+      // Bystanders: another member's scheduled session, and a package of the same member.
+      const other = await member(one, `Sid Bystander ${how}`)
+      const otherPackage = await givePt(one, other, '1on1')
+      const otherRequest = await requestOk(one, other, { sessionType: '1on1', clientPackageId: otherPackage })
+      const otherSession = await scheduled(otherRequest)
+      const otherMovements = (await movementsOn(otherPackage)).length
+      const sessionsBefore = await ptSessionCount()
+      const movements = (await movementsOn(packageId)).length
+
+      const res = await expectStatus(await adminCancel(adminAtOne, requestId), 200)
+
+      assert.equal(res.result.status, 'cancelled_after_scheduled', how)
+      assert.equal(res.result.refundedSessions, 1, how)
+      assert.equal(res.result.refundOutcome, 'session_returned', how)
+      assert.equal(res.pt_request.status, 'cancelled_after_scheduled', how)
+      const row = await requestRow(requestId)
+      assert.equal(row.status, 'cancelled_after_scheduled', how)
+      assert.equal(row.cancelSource, 'admin', how)
+      assert.equal(row.resolvedByStaffId, adminAtOne.staffId, how)
+      assert.ok(row.resolvedAt, how)
+      assert.equal(await sessionsLeft(packageId), 10, how)
+      const after = await movementsOn(packageId)
+      assert.equal(after.length, movements + 1, how)
+      const returned = after.find(m => m.delta === 1 && m.actor === 'admin')
+      assert.ok(returned, `${how}: the credit came back as a staff movement`)
+      assert.equal(returned.actedByStaffId, adminAtOne.staffId, how)
+      assert.equal(returned.clientId, who.clientId, how)
+      assert.equal(returned.balanceAfter, 10, how)
+      const audits = await harness.db
+        .select()
+        .from(schema.auditLog)
+        .where(and(eq(schema.auditLog.targetTable, 'pt_requests'), eq(schema.auditLog.targetId, requestId)))
+      assert.ok(audits.length >= 1, `${how}: the cancel is on the audit trail`)
+      // Nothing else moved.
+      assert.equal(await ptSessionCount(), sessionsBefore, how)
+      assert.equal((await requestRow(otherRequest)).status, 'scheduled', how)
+      assert.equal((await sessionRow(otherSession)).lifecycle, 'active', how)
+      assert.equal(await sessionsLeft(otherPackage), 9, how)
+      assert.equal((await movementsOn(otherPackage)).length, otherMovements, how)
+
+      // Again: refused as any ended request's cancel is, with nothing returned twice.
+      const again = await expectStatus(await adminCancel(adminAtOne, requestId), 200)
+      assert.equal(again.result.status, 'noop', how)
+      assert.equal(await sessionsLeft(packageId), 10, how)
+      assert.equal((await movementsOn(packageId)).length, movements + 1, how)
+    }
+  })
+
+  test('PT-182 an Admin cancelling a scheduled 2on1 request that has no session gets both sessions back, and one whose package was refunded returns nothing', async () => {
+    const who = await member(one, 'Sid Pair')
+    const partner = await member(one, 'Sid Pair Partner')
+    const pairPackage = await givePt(one, who, '2on1')
+    const pairRequest = await requestOk(one, who, {
+      sessionType: '2on1',
+      clientPackageId: pairPackage,
+      partner: { kind: 'existing', coClientId: partner.clientId },
+    })
+    await withoutSession(pairRequest, 'never')
+    assert.equal(await sessionsLeft(pairPackage), 8)
+
+    const res = await expectStatus(await adminCancel(adminAtOne, pairRequest), 200)
+
+    assert.equal(res.result.refundedSessions, 2)
+    assert.equal((await requestRow(pairRequest)).status, 'cancelled_after_scheduled')
+    assert.equal(await sessionsLeft(pairPackage), 10)
+
+    const voided = await member(one, 'Sid Voided')
+    const voidedPackage = await givePt(one, voided, '1on1')
+    const voidedRequest = await requestOk(one, voided, { sessionType: '1on1', clientPackageId: voidedPackage })
+    await withoutSession(voidedRequest, 'never')
+    await voidPackage(voided, voidedPackage)
+    const movements = (await movementsOn(voidedPackage)).length
+
+    const refused = await expectStatus(await adminCancel(adminAtOne, voidedRequest), 200)
+
+    assert.equal(refused.result.refundOutcome, 'n_a')
+    assert.equal((await requestRow(voidedRequest)).status, 'cancelled_after_scheduled')
+    assert.equal(await sessionsLeft(voidedPackage), 9)
+    assert.equal((await movementsOn(voidedPackage)).length, movements)
+  })
+
+  test('PT-183 a member (or an Instructor) cancelling a scheduled request that has no session is answered as before, 404 pt_session_not_found: the request stays scheduled and nothing is returned', async () => {
+    for (const how of ['never', 'cleared'] as const) {
+      const who = await member(one, `Sid Own ${how}`)
+      const packageId = await givePt(one, who, '1on1')
+      const requestId = await requestOk(one, who, { sessionType: '1on1', clientPackageId: packageId })
+      if (how === 'cleared') await scheduled(requestId)
+      await withoutSession(requestId, how)
+      const movements = (await movementsOn(packageId)).length
+
+      for (const [label, cancel] of [
+        ['the member', () => memberCancel(who, requestId)],
+        ['an Instructor', () => instructorCancel(coachA, requestId)],
+      ] as const) {
+        const refused = await expectStatus(await cancel(), 404)
+
+        assert.equal(refused.error, 'pt_session_not_found', `${how}, ${label}`)
+        assert.equal((await requestRow(requestId)).status, 'scheduled', `${how}, ${label}`)
+        assert.equal(await sessionsLeft(packageId), 9, `${how}, ${label}`)
+        assert.equal((await movementsOn(packageId)).length, movements, `${how}, ${label}`)
+      }
+    }
+  })
+
   // ── Cancelling ───────────────────────────────────────────────────────────
 
   test('PT-37, PT-38, PT-50 a member cancels a pending request: the exact debit returns to its package, once', async () => {
