@@ -1310,7 +1310,7 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
       assert.equal(await sessionsLeft(packageId), 10, how)
       const after = await movementsOn(packageId)
       assert.equal(after.length, movements + 1, how)
-      const returned = after.find(m => m.delta === 1 && m.actor === 'admin')
+      const returned = after.find(m => m.delta === 1 && m.actor === 'staff')
       assert.ok(returned, `${how}: the credit came back as a staff movement`)
       assert.equal(returned.actedByStaffId, adminAtOne.staffId, how)
       assert.equal(returned.clientId, who.clientId, how)
