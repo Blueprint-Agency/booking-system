@@ -3,6 +3,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { WorkshopEditor, fromApiWorkshop } from "@/components/workshops/workshop-editor";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
 import type { Workshop } from "@/types";
@@ -11,6 +12,7 @@ export default function EditWorkshopPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const { api } = useWorkspace();
+  const timezone = useStudioZone();
   const [workshop, setWorkshop] = useState<Workshop | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -25,13 +27,13 @@ export default function EditWorkshopPage() {
       // shape so the main/supporting pickers init correctly.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const d = (await api.get(`/portal/admin/workshops/${id}`)) as any;
-      setWorkshop(fromApiWorkshop(d));
+      setWorkshop(fromApiWorkshop(d, timezone));
     } catch (err) {
       setError(err instanceof ApiError ? `HTTP ${err.status}` : "Network error");
     } finally {
       setLoading(false);
     }
-  }, [api, id]);
+  }, [api, id, timezone]);
 
   useEffect(() => {
     void load();

@@ -13,6 +13,7 @@ import { Button, Dialog, DialogFooter, Input, Label } from "@/components/ui";
 import { LocationRoomFields } from "@/components/schedule/location-room-fields";
 import { InstructorOption, useInstructorsOnLeave } from "@/components/schedule/instructor-leave";
 import { MemberSearch, SeatRowView, toSeat, type SeatRow } from "@/components/schedule/pt-seat";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import { useWorkspace } from "@/lib/workspace-context";
 import { LATEST_DATE, currentHourTime, todayIso } from "@/lib/formatters";
 import { ApiError } from "@/lib/api";
@@ -49,11 +50,12 @@ export function ManualPtSessionDialog({
   onCreated: () => void;
 }) {
   const { api, activeLocationId, currentStaff } = useWorkspace();
+  const timezone = useStudioZone();
 
   const [sessionType, setSessionType] = useState<PtSessionType>("1on1");
-  const [date, setDate] = useState(slot?.date ?? todayIso());
-  const [startTime, setStartTime] = useState(slot?.start ?? currentHourTime());
-  const [endTime, setEndTime] = useState(slot?.end ?? currentHourTime(1));
+  const [date, setDate] = useState(slot?.date ?? todayIso(timezone));
+  const [startTime, setStartTime] = useState(slot?.start ?? currentHourTime(timezone));
+  const [endTime, setEndTime] = useState(slot?.end ?? currentHourTime(timezone, 1));
   const [instructorId, setInstructorId] = useState("");
   const [locationId, setLocationId] = useState(activeLocationId ?? "");
   const [roomId, setRoomId] = useState("");
@@ -71,7 +73,7 @@ export function ManualPtSessionDialog({
 
   // An Instructor runs the session themselves; the route ignores anyone else.
   const sessionInstructorId = role === "admin" ? instructorId : (currentStaff?.id ?? "");
-  const startsAt = sessionStartIso(date, startTime);
+  const startsAt = sessionStartIso(timezone, date, startTime);
   const shape = `${sessionType}|${sessionInstructorId}|${startsAt ?? ""}`;
 
   useEffect(() => {
@@ -132,7 +134,7 @@ export function ManualPtSessionDialog({
           instructorId: forInstructor,
           startsAt: forStart,
         });
-        const choice = seatChoice(candidates);
+        const choice = seatChoice(candidates, timezone);
         setSeats((prev) =>
           prev.map((r) =>
             r.member.id === member.id && r.shape === forShape
@@ -150,7 +152,7 @@ export function ManualPtSessionDialog({
         );
       }
     },
-    [api, role],
+    [api, role, timezone],
   );
 
   // Changing the type, instructor or start changes what each package may pay
@@ -189,7 +191,7 @@ export function ManualPtSessionDialog({
     e.preventDefault();
     if (!api || saving) return;
     const body = manualSessionBody(
-      { sessionType, instructorId, locationId, roomId, date, startTime, endTime, pay },
+      { sessionType, instructorId, locationId, roomId, date, startTime, endTime, pay, timezone },
       seats.map((r) => toSeat(r, sessionType)),
       role,
     );
@@ -200,10 +202,10 @@ export function ManualPtSessionDialog({
     setSaving(true);
     setErr(null);
     try {
-      await createManualSession(api, role, body);
+      await createManualSession(api, timezone, role, body);
       onCreated();
     } catch (e) {
-      setErr(manualSessionErrorMessage(e));
+      setErr(manualSessionErrorMessage(e, timezone));
       // A package that changed under the form: read that member again so the
       // row shows what it now needs.
       const refused = e instanceof ApiError ? (e.body as { client_id?: string } | null)?.client_id : undefined;
@@ -243,7 +245,7 @@ export function ManualPtSessionDialog({
               id="manual-pt-date"
               type="date"
               required
-              min={todayIso()}
+              min={todayIso(timezone)}
               max={LATEST_DATE}
               value={date}
               onChange={(e) => setDate(e.target.value)}

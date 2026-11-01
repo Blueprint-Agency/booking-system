@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { X } from "lucide-react";
 import { Avatar, Badge, Button } from "@/components/ui";
 import { formatDateTime, formatRelative } from "@/lib/formatters";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import type { CorporateRequest, CorporateRequestStatus } from "@/types";
 
 const STATUS_LABEL: Record<CorporateRequestStatus, string> = {
@@ -37,6 +38,7 @@ export function CorporateRequestDrawer({
   onClose: () => void;
   busy?: boolean;
 }) {
+  const timezone = useStudioZone();
   const { client, package: pkg, session } = request;
   useEffect(() => {
     const prev = document.body.style.overflow;
@@ -74,7 +76,7 @@ export function CorporateRequestDrawer({
           {session && (
             <>
               <Row label="Scheduled for">
-                {formatDateTime(session.startsAt)} – {formatDateTime(session.endsAt)}
+                {formatDateTime(timezone, session.startsAt)} – {formatDateTime(timezone, session.endsAt)}
               </Row>
               <Row label="Location">{session.locationName ?? "—"}</Row>
               <Row label="Instructor">{session.instructorName ?? "—"}</Row>
@@ -114,7 +116,7 @@ export function CorporateRequestDrawer({
           <div className="mt-6 space-y-3">
             <div className="rounded-md bg-paper p-3 text-xs text-muted">
               {request.resolvedAt && (
-                <>Scheduled on {formatDateTime(request.resolvedAt)}.</>
+                <>Scheduled on {formatDateTime(timezone, request.resolvedAt)}.</>
               )}
             </div>
             <div className="flex flex-wrap gap-2">
@@ -131,7 +133,7 @@ export function CorporateRequestDrawer({
           request.resolvedAt && (
             <div className="mt-6 rounded-md bg-paper p-3 text-xs text-muted">
               {STATUS_LABEL[request.status]} on{" "}
-              {formatDateTime(request.resolvedAt)}.
+              {formatDateTime(timezone, request.resolvedAt)}.
             </div>
           )}
       </div>

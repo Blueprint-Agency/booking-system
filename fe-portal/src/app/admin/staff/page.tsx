@@ -34,6 +34,7 @@ import { answeredElsewhere } from "@/lib/failed-read";
 import { useAttention } from "@/components/attention/attention-provider";
 import { withoutParams } from "@/lib/attention";
 import { staffLinkTarget, type StaffLinkTarget } from "@/lib/staff-deep-link";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import { useWorkspace } from "@/lib/workspace-context";
 import { formatDate, formatRelative } from "@/lib/formatters";
 import { isPlaceholderEmail } from "@/lib/placeholder-email";
@@ -766,6 +767,7 @@ function StaffRow({
   onPermissionsChange?: (next: InstructorPermission[]) => void;
   permissionsBusy?: boolean;
 }) {
+  const timezone = useStudioZone();
   const isArchived = staff.status === "archived";
   const isPending = staff.status === "pending";
 
@@ -807,9 +809,9 @@ function StaffRow({
   const meta = (
     <div className="shrink-0 text-xs text-muted">
       {isArchived
-        ? `Archived ${staff.archived_at ? formatDate(staff.archived_at) : ""}`
+        ? `Archived ${staff.archived_at ? formatDate(timezone, staff.archived_at) : ""}`
         : staff.accepted_at
-        ? `Joined ${formatDate(staff.accepted_at)}`
+        ? `Joined ${formatDate(timezone, staff.accepted_at)}`
         : staff.invited_at
         ? `Invited ${formatRelative(staff.invited_at)}`
         : "—"}

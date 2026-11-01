@@ -9,6 +9,7 @@ import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
 import { computeEventState } from "@/lib/event-state";
 import { formatDate, formatTime } from "@/lib/formatters";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import { fetchInstructorPt, type InstructorPtDetail } from "@/lib/schedule";
 import {
   canCancelSession,
@@ -83,6 +84,7 @@ export default function InstructorPtPage({ params }: { params: Promise<{ id: str
 
 function SessionPage({ data, onChanged }: { data: InstructorPtDetail; onChanged: () => void | Promise<void> }) {
   const { api, may } = useWorkspace();
+  const timezone = useStudioZone();
   // Cancelling a private session they run is Take PT bookings'.
   const canTakePt = may("take_pt_bookings");
   const [cancelOpen, setCancelOpen] = useState(false);
@@ -121,7 +123,7 @@ function SessionPage({ data, onChanged }: { data: InstructorPtDetail; onChanged:
           Private session · {sessionTypeLabel(data.session_type)}
         </h1>
         <p className="mt-1 text-sm text-muted">
-          {[formatDate(data.starts_at), `${formatTime(data.starts_at)} – ${formatTime(data.ends_at)}`, where]
+          {[formatDate(timezone, data.starts_at), `${formatTime(timezone, data.starts_at)} – ${formatTime(timezone, data.ends_at)}`, where]
             .filter(Boolean)
             .join(" · ")}
         </p>
@@ -133,7 +135,7 @@ function SessionPage({ data, onChanged }: { data: InstructorPtDetail; onChanged:
         title="Cancel session"
         consequence={ptCancelConfirm(data)}
         onConfirm={cancelWithNote}
-        errorMessage={(e) => sessionActionErrorMessage(e, "Couldn't cancel the session")}
+        errorMessage={(e) => sessionActionErrorMessage(e, "Couldn't cancel the session", timezone)}
       />
 
       <PtSessionMembers role="instructor" data={data} onChanged={onChanged} />

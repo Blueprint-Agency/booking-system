@@ -61,8 +61,10 @@ export default defineConfig({
   reporter: [...baseReporters, ['./src/no-skips-reporter.ts']],
   use: {
     ...devices['Desktop Chrome'],
-    // The studio's zone (tenants.timezone defaults to Asia/Singapore), so a
-    // time typed into the portal is the time the instructor reads back.
+    // Not the e2e studio's zone (Australia/Sydney, be/src/e2e/studio.ts): every
+    // app reads the studio's clock, never the browser's, so a screen that
+    // formats in the browser's zone shows here. The journey that proves the
+    // round trip (schedule-a-class) puts the browser in a third zone again.
     timezoneId: 'Asia/Singapore',
     locale: 'en-SG',
     trace: 'retain-on-failure',

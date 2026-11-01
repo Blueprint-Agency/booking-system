@@ -7,6 +7,7 @@ import { Badge, Button, Select } from "@/components/ui";
 import { ApiError, type Api } from "@/lib/api";
 import { ERROR_CODES } from "@/lib/error-codes";
 import { formatDateTime } from "@/lib/formatters";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import { mappableLocations } from "@/lib/classpass";
 import { reviewParam, withoutParams } from "@/lib/attention";
 import {
@@ -182,6 +183,7 @@ function ReviewItem({
   onMap: (locationId: string) => void;
 }) {
   // The email is open for the item a bell link named, until the Admin says otherwise.
+  const timezone = useStudioZone();
   const [chosen, setChosen] = useState<boolean | null>(null);
   const showEmail = chosen ?? focused;
   const rowRef = useRef<HTMLLIElement>(null);
@@ -210,7 +212,7 @@ function ReviewItem({
 
   const fields: [string, string | null][] = [
     ["Class", item.class_name],
-    ["When", item.starts_at ? formatDateTime(item.starts_at) : null],
+    ["When", item.starts_at ? formatDateTime(timezone, item.starts_at) : null],
     ["Location", item.location_name],
     ["Member", item.member_name && item.member_email ? `${item.member_name} · ${item.member_email}` : item.member_email],
     ["Reservation ID", item.reservation_id],
@@ -227,7 +229,7 @@ function ReviewItem({
           {reviewReasonLabel(item.reason)}
         </Badge>
         {item.kind === "cancellation" && <Badge tone="neutral">Cancellation</Badge>}
-        <span className="text-xs text-muted">Received {formatDateTime(item.received_at)}</span>
+        <span className="text-xs text-muted">Received {formatDateTime(timezone, item.received_at)}</span>
       </div>
       <dl className="mt-2 grid gap-x-4 gap-y-1 text-sm sm:grid-cols-[8rem_1fr]">
         {fields.map(([label, value]) => (
@@ -245,7 +247,7 @@ function ReviewItem({
         (item.html ? (
           // The email as it arrived, with its scripts and links disabled.
           <iframe
-            title={`ClassPass email received ${formatDateTime(item.received_at)}`}
+            title={`ClassPass email received ${formatDateTime(timezone, item.received_at)}`}
             sandbox=""
             srcDoc={item.html}
             className="mt-2 h-80 w-full rounded-md border border-border bg-white"
@@ -297,7 +299,7 @@ function ReviewItem({
               >
                 {classes.map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.label} · {formatDateTime(c.starts_at)}
+                    {c.label} · {formatDateTime(timezone, c.starts_at)}
                     {locationName(c.location_id) ? ` · ${locationName(c.location_id)}` : ""}
                   </option>
                 ))}

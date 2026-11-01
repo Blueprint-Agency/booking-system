@@ -11,26 +11,14 @@ import {
   Loader2,
   Repeat,
 } from "lucide-react";
-import {
-  addDays,
-  addMonths,
-  addWeeks,
-  differenceInMinutes,
-  eachDayOfInterval,
-  endOfMonth,
-  format,
-  getDay,
-  isSameDay,
-  isSameMonth,
-  parseISO,
-  startOfMonth,
-  startOfWeek,
-} from "date-fns";
 import { Button, LoadFailure, PageHeader } from "@/components/ui";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import { answeredElsewhere } from "@/lib/failed-read";
 import { cn } from "@/lib/utils";
-import { formatTime } from "@/lib/formatters";
+import { formatPlainDay, formatTime } from "@/lib/formatters";
 import { localDay } from "@/lib/local-day";
+import { gridDays, gridWindow, minutesFromMidnight, startsOnDay } from "@/lib/schedule-grid";
+import { addDays, addMonths, isoWeekday, localDate, startOfMonth, startOfWeek } from "@/lib/studio-time";
 import { PtRequestPickerDialog } from "@/components/schedule/pt-request-picker-dialog";
 import { CorporateRequestPickerDialog } from "@/components/schedule/corporate-request-picker-dialog";
 import { useWorkspace } from "@/lib/workspace-context";
@@ -54,7 +42,14 @@ interface ApiInstructor {
   archived_at: string | null;
 }
 
-const TODAY = new Date();
+/**
+ * Today on the studio's clock. Every day this grid draws, every "today"
+ * highlight and the now line are the studio's, not the browser's.
+ */
+function useToday(): string {
+  return localDay(useStudioZone());
+}
+
 const HOUR_START = 6;
 const HOUR_END = 24;
 const HOUR_HEIGHT = 72;
@@ -81,8 +76,11 @@ const NEW_PAGE: Partial<Record<AddKind, string>> = {
 export default function SchedulePage() {
   const router = useRouter();
   const { api, activeLocationId, accessibleLocations } = useWorkspace();
+  const timezone = useStudioZone();
+  const todayKey = useToday();
   const [view, setView] = useState<View>("week");
-  const [cursor, setCursor] = useState<Date>(TODAY);
+  // The day the grid is on, a plain `YYYY-MM-DD` on the studio's calendar.
+  const [cursor, setCursor] = useState<string>(todayKey);
   const [type, setType] = useState<FilterType>("all");
   const [instructorId, setInstructorId] = useState<string>("all");
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -146,11 +144,16 @@ export default function SchedulePage() {
     [instructorsList],
   );
 
-  const range = useMemo(() => getRange(view, cursor), [view, cursor]);
+  // The days the view draws, and the instants that bound them: the studio's
+  // midnight of the first day up to the midnight after the last.
+  const range = useMemo(
+    () => ({ ...gridDays(view, cursor), ...gridWindow(timezone, view, cursor) }),
+    [view, cursor, timezone],
+  );
 
   const { entries: allEntries, loading, error, reload } = useSchedule({
-    from: range.start.toISOString(),
-    to: range.end.toISOString(),
+    from: range.from,
+    to: range.to,
     locationId: activeLocationId ?? undefined,
   });
 
@@ -171,18 +174,18 @@ export default function SchedulePage() {
   const visibleEntries = useMemo(
     () =>
       entries.filter((e) => {
-        const start = parseISO(e.startsAt);
-        return start >= range.start && start < range.end;
+        const start = Date.parse(e.startsAt);
+        return start >= Date.parse(range.from) && start < Date.parse(range.to);
       }),
     [entries, range]
   );
 
   const headingLabel =
     view === "day"
-      ? format(cursor, "EEEE, d MMM yyyy")
+      ? formatPlainDay(cursor, "EEEE, d MMM yyyy")
       : view === "week"
-        ? `${format(range.start, "d MMM")} – ${format(addDays(range.end, -1), "d MMM yyyy")}`
-        : format(cursor, "MMMM yyyy");
+        ? `${formatPlainDay(range.first, "d MMM")} – ${formatPlainDay(range.last, "d MMM yyyy")}`
+        : formatPlainDay(cursor, "MMMM yyyy");
 
   const filtersActive = type !== "all" || instructorId !== "all";
 
@@ -205,9 +208,9 @@ export default function SchedulePage() {
   };
 
   const navigate = (dir: -1 | 0 | 1) => {
-    if (dir === 0) return setCursor(TODAY);
+    if (dir === 0) return setCursor(todayKey);
     if (view === "day") return setCursor(addDays(cursor, dir));
-    if (view === "week") return setCursor(addWeeks(cursor, dir));
+    if (view === "week") return setCursor(addDays(cursor, 7 * dir));
     return setCursor(addMonths(cursor, dir));
   };
 
@@ -381,7 +384,7 @@ export default function SchedulePage() {
               )}
               {view === "week" && (
                 <WeekView
-                  weekStart={range.start}
+                  weekStart={range.first}
                   entries={visibleEntries}
                   resolver={resolver}
                   onPickSlot={addMode ? pickSlot : null}
@@ -428,29 +431,6 @@ export default function SchedulePage() {
       )}
     </div>
   );
-}
-
-function getRange(view: View, cursor: Date): { start: Date; end: Date } {
-  if (view === "day") {
-    const start = startOfDay(cursor);
-    return { start, end: addDays(start, 1) };
-  }
-  if (view === "week") {
-    const start = startOfWeek(cursor, { weekStartsOn: 1 });
-    return { start, end: addDays(start, 7) };
-  }
-  // month: include leading/trailing days to fill 6 rows
-  const monthStart = startOfMonth(cursor);
-  const monthEnd = endOfMonth(cursor);
-  const gridStart = startOfWeek(monthStart, { weekStartsOn: 1 });
-  const gridEnd = addDays(startOfWeek(monthEnd, { weekStartsOn: 1 }), 7 * 6);
-  return { start: gridStart, end: gridEnd };
-}
-
-function startOfDay(d: Date): Date {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x;
 }
 
 function ViewToggle({ value, onChange }: { value: View; onChange: (v: View) => void }) {
@@ -516,8 +496,9 @@ function FilterPill({
  * The week around the open day, one tap per day — day view's quick way across
  * the week, which matters most on a phone where day view is the default.
  */
-function WeekStrip({ day, onPick }: { day: Date; onPick: (d: Date) => void }) {
-  const start = startOfWeek(day, { weekStartsOn: 1 });
+function WeekStrip({ day, onPick }: { day: string; onPick: (d: string) => void }) {
+  const todayKey = useToday();
+  const start = startOfWeek(day);
   const days = Array.from({ length: 7 }, (_, i) => addDays(start, i));
   return (
     <div
@@ -526,15 +507,15 @@ function WeekStrip({ day, onPick }: { day: Date; onPick: (d: Date) => void }) {
       className="grid grid-cols-7 gap-1 border-b border-border bg-paper/40 px-2 py-2 sm:px-3"
     >
       {days.map((d) => {
-        const selected = isSameDay(d, day);
-        const today = isSameDay(d, TODAY);
+        const selected = d === day;
+        const today = d === todayKey;
         return (
           <button
-            key={d.toISOString()}
+            key={d}
             type="button"
             onClick={() => onPick(d)}
             aria-pressed={selected}
-            aria-label={format(d, "EEEE d MMMM")}
+            aria-label={formatPlainDay(d, "EEEE d MMMM")}
             className={cn(
               "flex min-h-11 flex-col items-center justify-center rounded-lg text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
               selected
@@ -550,10 +531,10 @@ function WeekStrip({ day, onPick }: { day: Date; onPick: (d: Date) => void }) {
                 selected ? "text-white/80" : "text-muted",
               )}
             >
-              {format(d, "EEEEE")}
-              <span className="hidden sm:inline">{format(d, "EEE").slice(1)}</span>
+              {formatPlainDay(d, "EEEEE")}
+              <span className="hidden sm:inline">{formatPlainDay(d, "EEE").slice(1)}</span>
             </span>
-            <span className="font-semibold tabular-nums">{format(d, "d")}</span>
+            <span className="font-semibold tabular-nums">{formatPlainDay(d, "d")}</span>
           </button>
         );
       })}
@@ -569,12 +550,13 @@ function DayView({
   resolver,
   onPickSlot,
 }: {
-  day: Date;
+  day: string;
   entries: Entry[];
   resolver: Resolver;
   onPickSlot: ((slot: Slot) => void) | null;
 }) {
-  const dayEntries = entries.filter((e) => isSameDay(parseISO(e.startsAt), day));
+  const timezone = useStudioZone();
+  const dayEntries = entries.filter((e) => startsOnDay(timezone, e.startsAt, day));
   return (
     <div className="flex">
       <TimeGutter />
@@ -599,24 +581,24 @@ function WeekView({
   resolver,
   onPickSlot,
 }: {
-  weekStart: Date;
+  weekStart: string;
   entries: Entry[];
   resolver: Resolver;
   onPickSlot: ((slot: Slot) => void) | null;
 }) {
+  const timezone = useStudioZone();
+  const todayKey = useToday();
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
   return (
     <div className="flex min-w-[760px]">
       <TimeGutter />
       <div className="grid min-w-0 flex-1 grid-cols-7 border-l border-border">
         {days.map((day) => {
-          const dayEntries = entries.filter((e) =>
-            isSameDay(parseISO(e.startsAt), day)
-          );
-          const today = isSameDay(day, TODAY);
+          const dayEntries = entries.filter((e) => startsOnDay(timezone, e.startsAt, day));
+          const today = day === todayKey;
           return (
             <div
-              key={day.toISOString()}
+              key={day}
               className={cn(
                 "relative border-r border-border last:border-r-0",
                 today && "bg-accent/[0.03]"
@@ -645,13 +627,15 @@ function MonthView({
   onPickDay,
   onOpenDay,
 }: {
-  monthStart: Date;
+  monthStart: string;
   entries: Entry[];
-  onPickDay: ((day: Date) => void) | null;
-  onOpenDay: (day: Date) => void;
+  onPickDay: ((day: string) => void) | null;
+  onOpenDay: (day: string) => void;
 }) {
-  const gridStart = startOfWeek(monthStart, { weekStartsOn: 1 });
-  const days = eachDayOfInterval({ start: gridStart, end: addDays(gridStart, 41) });
+  const timezone = useStudioZone();
+  const todayKey = useToday();
+  const gridStart = startOfWeek(monthStart);
+  const days = Array.from({ length: 42 }, (_, i) => addDays(gridStart, i));
   return (
     // On a phone seven cells can't hold event chips, so each cell shows its date
     // and a count, and a tap opens the day. From `sm` up the chips come back.
@@ -669,20 +653,20 @@ function MonthView({
       </div>
       <div className="grid grid-cols-7">
         {days.map((day) => {
-          const inMonth = isSameMonth(day, monthStart);
-          const today = isSameDay(day, TODAY);
+          const inMonth = day.slice(0, 7) === monthStart.slice(0, 7);
+          const today = day === todayKey;
           const dayEntries = entries
-            .filter((e) => isSameDay(parseISO(e.startsAt), day))
+            .filter((e) => startsOnDay(timezone, e.startsAt, day))
             .sort((a, b) => a.startsAt.localeCompare(b.startsAt));
           const visible = dayEntries.slice(0, 3);
           const overflow = dayEntries.length - visible.length;
           return (
             <div
-              key={day.toISOString()}
+              key={day}
               className={cn(
                 "relative min-h-[64px] border-b border-r border-border p-1 last:border-r-0 sm:min-h-[120px] sm:p-2",
                 !inMonth && "bg-paper/30",
-                getDay(day) % 7 === 0 && "border-r-0"
+                isoWeekday(day) === 7 && "border-r-0"
               )}
             >
               {onPickDay ? (
@@ -691,12 +675,12 @@ function MonthView({
                 <button
                   type="button"
                   onClick={() => onPickDay(day)}
-                  title={`${format(day, "EEE d MMM")}`}
+                  title={formatPlainDay(day, "EEE d MMM")}
                   className="group absolute inset-0 z-20 flex items-center justify-center transition-colors hover:bg-accent/15 focus-visible:bg-accent/20 focus-visible:outline-none"
                 >
                   <span className="pointer-events-none flex items-center gap-1 rounded-full bg-accent px-2 py-0.5 text-[10px] font-semibold text-white opacity-0 shadow-soft transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
                     <Plus className="h-3 w-3" />
-                    {format(day, "d MMM")}
+                    {formatPlainDay(day, "d MMM")}
                   </span>
                 </button>
               ) : (
@@ -705,7 +689,7 @@ function MonthView({
                 <button
                   type="button"
                   onClick={() => onOpenDay(day)}
-                  aria-label={`Open ${format(day, "EEEE d MMMM")}`}
+                  aria-label={`Open ${formatPlainDay(day, "EEEE d MMMM")}`}
                   className="absolute inset-0 z-0 transition-colors hover:bg-accent/[0.06] focus-visible:bg-accent/10 focus-visible:outline-none"
                 />
               )}
@@ -720,7 +704,7 @@ function MonthView({
                         : "text-muted"
                   )}
                 >
-                  {format(day, "d")}
+                  {formatPlainDay(day, "d")}
                 </span>
                 {dayEntries.length > 0 && (
                   <span className="rounded-full bg-paper px-1.5 text-[10px] font-semibold tabular-nums text-muted">
@@ -737,10 +721,10 @@ function MonthView({
                         "pointer-events-auto flex items-center gap-1 truncate rounded-sm border-l-[3px] px-1.5 py-1 text-[11px] font-semibold text-ink transition-all hover:-translate-y-px hover:shadow-sm",
                         kindClasses(e)
                       )}
-                      title={`${formatTime(e.startsAt)} · ${e.label}`}
+                      title={`${formatTime(timezone, e.startsAt)} · ${e.label}`}
                     >
                       <span className="shrink-0 text-[10px] font-bold tabular-nums text-ink/60">
-                        {formatTime(e.startsAt).replace("m", "")}
+                        {formatTime(timezone, e.startsAt).replace("m", "")}
                       </span>
                       <span className="truncate">{e.label}</span>
                       {e.kind === "class" && e.seriesId && <SeriesMark />}
@@ -796,8 +780,8 @@ function TimeGutter() {
  * It sits above the events so a slot that already holds a class can still be
  * picked — whether that double-books is the service's call, not the grid's.
  */
-function SlotLayer({ day, onPick }: { day: Date; onPick: (slot: Slot) => void }) {
-  const dateIso = localDay(day);
+function SlotLayer({ day, onPick }: { day: string; onPick: (slot: Slot) => void }) {
+  const dateIso = day;
   return (
     <div className="absolute inset-0 z-40">
       {Array.from({ length: SLOT_COUNT }, (_, i) => {
@@ -814,7 +798,7 @@ function SlotLayer({ day, onPick }: { day: Date; onPick: (slot: Slot) => void })
             key={slot.start}
             type="button"
             onClick={() => onPick(slot)}
-            title={`${format(day, "EEE d MMM")} · ${formatSlot(minutes)}`}
+            title={`${formatPlainDay(day, "EEE d MMM")} · ${formatSlot(minutes)}`}
             className="group absolute left-0 right-0 flex items-center justify-center transition-colors hover:bg-accent/15 focus-visible:bg-accent/20 focus-visible:outline-none"
             style={{ top: i * SLOT_HEIGHT, height: SLOT_HEIGHT }}
           >
@@ -839,8 +823,8 @@ function pad(n: number): string {
 }
 
 /** A day picked from month view carries no time — seed a mid-morning hour. */
-function daySlot(day: Date): Slot {
-  return { date: localDay(day), start: "09:00", end: "10:00" };
+function daySlot(day: string): Slot {
+  return { date: day, start: "09:00", end: "10:00" };
 }
 
 function formatSlot(minutes: number): string {
@@ -851,8 +835,8 @@ function formatSlot(minutes: number): string {
   return m === 0 ? `${hour12}${suffix}` : `${hour12}:${pad(m)}${suffix}`;
 }
 
-function DayHeader({ day, compact }: { day: Date; compact?: boolean }) {
-  const today = isSameDay(day, TODAY);
+function DayHeader({ day, compact }: { day: string; compact?: boolean }) {
+  const today = day === useToday();
   return (
     <div
       className={cn(
@@ -867,7 +851,7 @@ function DayHeader({ day, compact }: { day: Date; compact?: boolean }) {
           today ? "text-accent" : "text-muted"
         )}
       >
-        {format(day, "EEE")}
+        {formatPlainDay(day, "EEE")}
       </span>
       <span
         className={cn(
@@ -875,10 +859,10 @@ function DayHeader({ day, compact }: { day: Date; compact?: boolean }) {
           today ? "bg-accent text-white" : "text-ink"
         )}
       >
-        {format(day, "d")}
+        {formatPlainDay(day, "d")}
       </span>
       {!compact && (
-        <span className="text-xs text-muted">{format(day, "MMMM yyyy")}</span>
+        <span className="text-xs text-muted">{formatPlainDay(day, "MMMM yyyy")}</span>
       )}
     </div>
   );
@@ -901,10 +885,13 @@ function HourLines() {
   );
 }
 
-function NowIndicator({ day }: { day: Date }) {
-  if (!isSameDay(day, TODAY)) return null;
-  const now = TODAY;
-  const minutes = now.getHours() * 60 + now.getMinutes();
+function NowIndicator({ day }: { day: string }) {
+  const timezone = useStudioZone();
+  // Read once on mount, as the grid has always done: the line is where "now"
+  // was when the page opened.
+  const [now] = useState(() => Date.now());
+  if (day !== localDate(timezone, now)) return null;
+  const minutes = minutesFromMidnight(timezone, now);
   const startMin = HOUR_START * 60;
   const endMin = HOUR_END * 60;
   if (minutes < startMin || minutes > endMin) return null;
@@ -931,7 +918,8 @@ function EventLayer({
   dense: boolean;
   resolver: Resolver;
 }) {
-  const positioned = layoutEvents(entries);
+  const timezone = useStudioZone();
+  const positioned = layoutEvents(timezone, entries);
   return (
     // Transparent to the pointer: the chips take their own clicks, and an armed
     // SlotLayer sits above this to claim the gaps between them.
@@ -967,12 +955,12 @@ interface PositionedEvent {
  * column that is free by its start, then widens right across any columns that
  * stay free for its whole length.
  */
-function layoutEvents(entries: Entry[]): PositionedEvent[] {
+function layoutEvents(timezone: string, entries: Entry[]): PositionedEvent[] {
   const items = entries
     .map((entry) => ({
       entry,
-      start: parseISO(entry.startsAt).getTime(),
-      end: parseISO(entry.endsAt).getTime(),
+      start: Date.parse(entry.startsAt),
+      end: Date.parse(entry.endsAt),
       col: 0,
     }))
     .sort((a, b) => a.start - b.start || b.end - a.end);
@@ -1000,7 +988,7 @@ function layoutEvents(entries: Entry[]): PositionedEvent[] {
       ) {
         span++;
       }
-      const pos = computeYBounds(item.entry);
+      const pos = computeYBounds(timezone, item.entry);
       out.push({
         entry: item.entry,
         top: pos.top,
@@ -1021,13 +1009,13 @@ function layoutEvents(entries: Entry[]): PositionedEvent[] {
   return out;
 }
 
-function computeYBounds(entry: Entry): { top: number; height: number } {
-  const start = parseISO(entry.startsAt);
-  const end = parseISO(entry.endsAt);
-  const startMin = start.getHours() * 60 + start.getMinutes();
+function computeYBounds(timezone: string, entry: Entry): { top: number; height: number } {
+  // Down the column by the studio's wall clock, from the studio's midnight.
+  const startMin = minutesFromMidnight(timezone, entry.startsAt);
   const offsetMin = startMin - HOUR_START * 60;
   const top = Math.max(0, (offsetMin / 60) * HOUR_HEIGHT);
-  const durationMin = Math.max(15, differenceInMinutes(end, start));
+  const elapsedMin = Math.trunc((Date.parse(entry.endsAt) - Date.parse(entry.startsAt)) / 60_000);
+  const durationMin = Math.max(15, elapsedMin);
   const height = Math.max(20, (durationMin / 60) * HOUR_HEIGHT);
   return { top, height };
 }
@@ -1049,6 +1037,7 @@ function EventBlock({
   dense: boolean;
   resolver: Resolver;
 }) {
+  const timezone = useStudioZone();
   const instructors =
     entry.kind === "corporate"
       ? entry.mainInstructorId
@@ -1095,7 +1084,7 @@ function EventBlock({
         kindClasses(entry),
         entry.eventState === "cancelled" && "opacity-70"
       )}
-      title={`${formatTime(entry.startsAt)}–${formatTime(entry.endsAt)} · ${entry.label}${tooltipInstructor}`}
+      title={`${formatTime(timezone, entry.startsAt)}–${formatTime(timezone, entry.endsAt)} · ${entry.label}${tooltipInstructor}`}
     >
       <div className="flex items-start gap-1.5">
         <span
@@ -1110,7 +1099,7 @@ function EventBlock({
         {entry.kind === "class" && entry.seriesId && <SeriesMark />}
         {tiny && (
           <span className="ml-auto shrink-0 text-[10px] font-semibold tabular-nums text-ink/60">
-            {formatTime(entry.startsAt)}
+            {formatTime(timezone, entry.startsAt)}
           </span>
         )}
         {dayChip && !tiny && (
@@ -1122,7 +1111,7 @@ function EventBlock({
 
       {!tiny && (
         <div className="text-[11px] font-medium tabular-nums text-ink/65">
-          {formatTime(entry.startsAt)} – {formatTime(entry.endsAt)}
+          {formatTime(timezone, entry.startsAt)} – {formatTime(timezone, entry.endsAt)}
         </div>
       )}
 

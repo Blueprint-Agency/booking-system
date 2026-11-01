@@ -1,23 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import {
-  addMonths,
-  addWeeks,
-  eachDayOfInterval,
-  endOfMonth,
-  endOfWeek,
-  format as formatDateFns,
-  startOfMonth,
-  startOfWeek,
-} from "date-fns";
 import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui";
 import { cn } from "@/lib/utils";
+import { useStudioZone } from "@/components/brand/brand-provider";
+import { formatPlainDay } from "@/lib/formatters";
 import { localDay } from "@/lib/local-day";
+import { addDays, addMonths, startOfMonth } from "@/lib/studio-time";
 import { useWorkspace } from "@/lib/workspace-context";
 import { LEAVE_HALF_DAY_SHORT, LEAVE_TYPE_LABEL, formatLeaveDayRange, type LeaveType } from "@/lib/leave";
-import { layoutWeek, personColours, type WeekLayout, type WeekSegment } from "@/lib/leave-calendar-layout";
+import { layoutWeek, personColours, weeksOf, type WeekLayout, type WeekSegment } from "@/lib/leave-calendar-layout";
 
 /**
  * Who is away, for everybody on staff — admins and instructors alike — and the
@@ -76,23 +69,6 @@ function tooltip(e: ApiLeaveCalendarEntry): string {
   return `${head}\n${bits.join("\n")}`;
 }
 
-/** The weeks a view draws, each Monday-first. A month takes only the rows it
- *  needs, so a five-week month doesn't end on an empty row of the next. */
-function viewWeeks(view: View, cursor: Date): Date[][] {
-  const start =
-    view === "month"
-      ? startOfWeek(startOfMonth(cursor), { weekStartsOn: 1 })
-      : startOfWeek(cursor, { weekStartsOn: 1 });
-  const end =
-    view === "month"
-      ? endOfWeek(endOfMonth(cursor), { weekStartsOn: 1 })
-      : endOfWeek(cursor, { weekStartsOn: 1 });
-  const days = eachDayOfInterval({ start, end });
-  const weeks: Date[][] = [];
-  for (let i = 0; i < days.length; i += 7) weeks.push(days.slice(i, i + 7));
-  return weeks;
-}
-
 const tint = (colour: string, pct: number) => `color-mix(in srgb, ${colour} ${pct}%, transparent)`;
 
 /** Approved: a solid tint with the person's colour ruled down its first day.
@@ -120,9 +96,11 @@ function barStyle(
 
 export function LeaveCalendar() {
   const { api } = useWorkspace();
+  const timezone = useStudioZone();
   const [view, setView] = useState<View>("month");
-  // Any day inside the period shown; the view decides the period around it.
-  const [cursor, setCursor] = useState(() => new Date());
+  // Any day inside the period shown (a plain `YYYY-MM-DD`, today on the
+  // studio's clock to begin with); the view decides the period around it.
+  const [cursor, setCursor] = useState(() => localDay(timezone));
   const [entries, setEntries] = useState<ApiLeaveCalendarEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -131,13 +109,10 @@ export function LeaveCalendar() {
   /** Hovered or focused on the roster: lit, without reshuffling the lanes. */
   const [previewed, setPreviewed] = useState<string | null>(null);
 
-  const weeks = useMemo(() => viewWeeks(view, cursor), [view, cursor]);
+  const weeks = useMemo(() => weeksOf(view, cursor), [view, cursor]);
   // The whole grid, not just the month — an absence on a trailing day of the
   // previous month still has to show in the row it is drawn in.
-  const range = useMemo(
-    () => ({ from: localDay(weeks[0][0]), to: localDay(weeks[weeks.length - 1][6]) }),
-    [weeks],
-  );
+  const range = useMemo(() => ({ from: weeks[0][0], to: weeks[weeks.length - 1][6] }), [weeks]);
 
   // Stepping through periods quickly fires overlapping requests; only the one for
   // the period now on screen may write, or a slow earlier reply would draw last
@@ -183,7 +158,7 @@ export function LeaveCalendar() {
   const layouts = useMemo(
     () =>
       weeks.map((days) =>
-        layoutWeek(entries, localDay(days[0]), {
+        layoutWeek(entries, days[0], {
           maxLanes: view === "month" ? MONTH_LANES : undefined,
           first: focus,
         }),
@@ -192,17 +167,17 @@ export function LeaveCalendar() {
   );
 
   const navigate = (dir: -1 | 1) =>
-    setCursor((c) => (view === "month" ? addMonths(startOfMonth(c), dir) : addWeeks(c, dir)));
-  const openWeek = (day: Date) => {
+    setCursor((c) => (view === "month" ? addMonths(startOfMonth(c), dir) : addDays(c, 7 * dir)));
+  const openWeek = (day: string) => {
     setCursor(day);
     setView("week");
   };
 
   const heading =
     view === "month"
-      ? formatDateFns(cursor, "MMMM yyyy")
-      : `${formatDateFns(weeks[0][0], "d MMM")} – ${formatDateFns(weeks[0][6], "d MMM yyyy")}`;
-  const todayKey = localDay();
+      ? formatPlainDay(cursor, "MMMM yyyy")
+      : `${formatPlainDay(weeks[0][0], "d MMM")} – ${formatPlainDay(weeks[0][6], "d MMM yyyy")}`;
+  const todayKey = localDay(timezone);
   const anyOverCap = entries.some((e) => e.detail?.over_cap);
 
   return (
@@ -236,7 +211,7 @@ export function LeaveCalendar() {
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
-          <Button variant="secondary" size="sm" className="h-9 sm:h-8" onClick={() => setCursor(new Date())}>
+          <Button variant="secondary" size="sm" className="h-9 sm:h-8" onClick={() => setCursor(localDay(timezone))}>
             Today
           </Button>
           <ViewToggle value={view} onChange={setView} />
@@ -295,7 +270,7 @@ export function LeaveCalendar() {
           <div className="min-w-[640px]">
             <div className="grid grid-cols-7 border-b border-border bg-paper/40">
               {weeks[0].map((d, i) => {
-                const isToday = localDay(d) === todayKey;
+                const isToday = d === todayKey;
                 return (
                   <div
                     key={WEEKDAYS[i]}
@@ -309,7 +284,7 @@ export function LeaveCalendar() {
                           isToday ? "bg-accent text-white" : "text-ink",
                         )}
                       >
-                        {formatDateFns(d, "d")}
+                        {formatPlainDay(d, "d")}
                       </span>
                     )}
                   </div>
@@ -319,7 +294,7 @@ export function LeaveCalendar() {
 
             {weeks.map((days, w) => (
               <WeekRow
-                key={localDay(days[0])}
+                key={days[0]}
                 view={view}
                 days={days}
                 layout={layouts[w]}
@@ -365,13 +340,13 @@ function WeekRow({
   onOpenWeek,
 }: {
   view: View;
-  days: Date[];
+  days: string[];
   layout: WeekLayout<ApiLeaveCalendarEntry>;
-  monthStart: Date;
+  monthStart: string;
   todayKey: string;
   colours: Map<string, string>;
   lit: string | null;
-  onOpenWeek: (day: Date) => void;
+  onOpenWeek: (day: string) => void;
 }) {
   const month = view === "month";
   // In the month view the first grid row holds the dates; bars start below.
@@ -383,11 +358,11 @@ function WeekRow({
           its days rather than being broken by them. */}
       <div aria-hidden className="pointer-events-none absolute inset-0 grid grid-cols-7">
         {days.map((d) => {
-          const out = month && d.getMonth() !== monthStart.getMonth();
-          const isToday = localDay(d) === todayKey;
+          const out = month && d.slice(0, 7) !== monthStart.slice(0, 7);
+          const isToday = d === todayKey;
           return (
             <div
-              key={d.toISOString()}
+              key={d}
               className={cn(
                 "border-r border-border last:border-r-0",
                 out && "bg-paper/50",
@@ -406,21 +381,21 @@ function WeekRow({
       >
         {month &&
           days.map((d, i) => {
-            const out = d.getMonth() !== monthStart.getMonth();
-            const isToday = localDay(d) === todayKey;
+            const out = d.slice(0, 7) !== monthStart.slice(0, 7);
+            const isToday = d === todayKey;
             return (
               <button
-                key={d.toISOString()}
+                key={d}
                 type="button"
                 onClick={() => onOpenWeek(d)}
-                aria-label={`See the week of ${formatDateFns(d, "d MMMM")}`}
+                aria-label={`See the week of ${formatPlainDay(d, "d MMMM")}`}
                 style={{ gridColumn: i + 1, gridRow: 1 }}
                 className={cn(
                   "m-1.5 inline-flex h-6 w-6 items-center justify-center justify-self-start rounded-full text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:m-2",
                   isToday ? "bg-accent text-white" : out ? "text-muted hover:bg-paper" : "text-ink hover:bg-paper",
                 )}
               >
-                {formatDateFns(d, "d")}
+                {formatPlainDay(d, "d")}
               </button>
             );
           })}

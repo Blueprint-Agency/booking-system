@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, Loader2, Search, X } from "lucide-react";
 import { Button, Input, LoadFailure } from "@/components/ui";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import { useWorkspace } from "@/lib/workspace-context";
 import { memberSearchNotice, searchMembers, type MemberMatch, type StaffRole } from "@/lib/class-seats";
 import { answeredElsewhere } from "@/lib/failed-read";
@@ -315,6 +316,7 @@ export function AddSeatForm<T>({
   onCancel?: () => void;
 }) {
   const { api } = useWorkspace();
+  const timezone = useStudioZone();
   const [row, setRow] = useState<SeatRow | null>(null);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -339,7 +341,7 @@ export function AddSeatForm<T>({
           instructorId,
           startsAt,
         });
-        const choice = seatChoice(candidates);
+        const choice = seatChoice(candidates, timezone);
         setRow((r) =>
           r?.member.id === member.id ? { ...r, state: "ready", candidates, choice, chosen: choice.defaultId } : r,
         );
@@ -347,7 +349,7 @@ export function AddSeatForm<T>({
         setRow((r) => (r?.member.id === member.id ? { ...r, state: "error", error: seatReadErrorMessage(e) } : r));
       }
     },
-    [api, role, sessionType, instructorId, startsAt],
+    [api, role, sessionType, instructorId, startsAt, timezone],
   );
 
   async function submit() {
@@ -364,7 +366,7 @@ export function AddSeatForm<T>({
       setRow(null);
       await onDone();
     } catch (e) {
-      setErr(sessionActionErrorMessage(e, "Couldn't add them"));
+      setErr(sessionActionErrorMessage(e, "Couldn't add them", timezone));
       void read(row.member);
     } finally {
       setSaving(false);

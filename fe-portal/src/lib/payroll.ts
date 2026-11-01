@@ -26,7 +26,7 @@
 // context, following `catalog.ts`.
 import { permissionRefusal } from "@/lib/access-refusal";
 import { ApiError, type Api } from "@/lib/api";
-import { rangeToParams, type DateRange } from "@/components/date-range-filter";
+import { rangeToParams, type DateRange } from "@/lib/date-range";
 
 export interface ApiPayrollRow {
   kind: "class" | "pt" | "workshop" | "manual";
@@ -58,11 +58,12 @@ export interface ApiInstructorPayrollResponse {
 /** The caller's own teaching log; the backend scopes it, never the query. */
 export function fetchInstructorPayroll(
   api: Api,
+  timezone: string,
   range: DateRange,
 ): Promise<ApiInstructorPayrollResponse> {
   return api.get<ApiInstructorPayrollResponse>(
     "/portal/instructor/payroll",
-    rangeToParams(range),
+    rangeToParams(timezone, range),
   );
 }
 

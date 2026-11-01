@@ -156,10 +156,10 @@ const SERIES_ERROR_COPY: Record<string, string> = {
 };
 
 /** Admin-readable copy for a failed series call; falls back to the schedule copy. */
-export function seriesErrorMessage(err: unknown, fallback: string): string {
+export function seriesErrorMessage(err: unknown, fallback: string, timezone: string): string {
   if (err instanceof ApiError) {
     const code = (err.body as { error?: string } | null)?.error;
     if (code && SERIES_ERROR_COPY[code]) return SERIES_ERROR_COPY[code];
   }
-  return scheduleErrorMessage(err, fallback);
+  return scheduleErrorMessage(err, fallback, timezone);
 }

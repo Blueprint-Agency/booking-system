@@ -57,6 +57,7 @@ import { EditProfileDialog } from "@/components/clients/edit-profile-dialog";
 import { SendSetPasswordButton } from "@/components/access/send-set-password-button";
 import { SessionsPanel } from "@/components/access/sessions-panel";
 import { runsStudio } from "@/lib/staff-role";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
 import {
@@ -363,6 +364,7 @@ export default function ClientProfilePage({
 }) {
   const { id } = use(params);
   const { api, role } = useWorkspace();
+  const timezone = useStudioZone();
   const router = useRouter();
   const canEdit = runsStudio(role);
 
@@ -951,7 +953,7 @@ export default function ClientProfilePage({
               ? {
                   bookingId: cancelBookingFor.booking_id,
                   name: profile.name,
-                  detail: bookingWhat(cancelBookingFor),
+                  detail: bookingWhat(timezone, cancelBookingFor),
                   preview: cancelBookingFor.cancel_preview,
                 }
               : null
@@ -1139,6 +1141,7 @@ const GRID_PAGER = "mt-3 rounded-xl border border-border bg-card";
 
 /** Attendance over every booking ever — the backend counts, not the lists below. */
 function AttendanceStrip({ attendance }: { attendance: ApiAttendance }) {
+  const timezone = useStudioZone();
   const cells = [
     { label: "Attended", value: String(attendance.attended), warn: false },
     { label: "No-shows", value: String(attendance.no_shows), warn: attendance.no_shows > 0 },
@@ -1146,7 +1149,7 @@ function AttendanceStrip({ attendance }: { attendance: ApiAttendance }) {
     {
       label: "Last visit",
       value: attendance.last_attended_at
-        ? formatDate(attendance.last_attended_at, "d MMM yyyy")
+        ? formatDate(timezone, attendance.last_attended_at, "d MMM yyyy")
         : "No visits yet",
       warn: false,
     },
@@ -1181,15 +1184,16 @@ function AttendanceStrip({ attendance }: { attendance: ApiAttendance }) {
 
 /** The quieter facts about the member, out of the header so it stays short. */
 function DetailsCard({ profile }: { profile: ApiProfile }) {
+  const timezone = useStudioZone();
   const rows: { label: string; value: ReactNode }[] = [
-    { label: "Joined", value: formatDate(profile.joined_at, "d MMM yyyy") },
+    { label: "Joined", value: formatDate(timezone, profile.joined_at, "d MMM yyyy") },
   ];
   // Prefer not to say is shown, not hidden: "not said" is an answer, and
   // hiding it would read as "never asked".
   if (profile.gender) {
     rows.push({ label: "Gender", value: GENDER_LABEL[profile.gender] });
   }
-  if (profile.dob) rows.push({ label: "Born", value: formatDate(profile.dob, "d MMM yyyy") });
+  if (profile.dob) rows.push({ label: "Born", value: formatDate(timezone, profile.dob, "d MMM yyyy") });
   if (profile.referred_by) {
     rows.push({
       label: "Referred by",
@@ -1303,6 +1307,7 @@ function PackageCard({
   onAction: (action: PackageAction, p: ApiPackage) => void;
   wanted: string | null;
 }) {
+  const timezone = useStudioZone();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const actions = canEdit ? packageActions(p) : [];
@@ -1333,7 +1338,7 @@ function PackageCard({
   const unit = p.kind === "pt" ? "sessions" : "credits";
 
   const validity = p.expires_at
-    ? `${p.standing === "expired" ? "Expired" : "Valid until"} ${formatDate(p.expires_at, "d MMM yyyy")}`
+    ? `${p.standing === "expired" ? "Expired" : "Valid until"} ${formatDate(timezone, p.expires_at, "d MMM yyyy")}`
     : p.dormant
       ? "Starts at first booking"
       : "No expiry";
@@ -1449,12 +1454,12 @@ function PackageCard({
             what the old system recorded, with no discount derived. */}
         {!p.paid_online && !p.complimentary ? (
           <div>
-            Bought {formatDate(p.purchased_at, "d MMM yyyy")} · paid S${p.amount_paid_sgd} · no
+            Bought {formatDate(timezone, p.purchased_at, "d MMM yyyy")} · paid S${p.amount_paid_sgd} · no
             online payment on record
           </div>
         ) : (
           <div>
-            Bought {formatDate(p.purchased_at, "d MMM yyyy")} · List S${p.list_price_sgd} · paid S$
+            Bought {formatDate(timezone, p.purchased_at, "d MMM yyyy")} · List S${p.list_price_sgd} · paid S$
             {p.amount_paid_sgd}
             {discountOff(p.list_price_sgd, p.amount_paid_sgd) && (
               <span className="text-ink">
@@ -1494,6 +1499,7 @@ function OpenPurchaseList({
   onRefund: (p: ApiOpenPurchase) => void;
   wanted: string | null;
 }) {
+  const timezone = useStudioZone();
   const { visible, pagination } = usePaged(withWantedFirst(purchases, wanted));
   return (
     <>
@@ -1515,7 +1521,7 @@ function OpenPurchaseList({
                 )}
                 <p className="mt-1 text-xs text-muted">
                   S${p.paid_sgd} paid of S${p.total_sgd}
-                  {p.part_paid_at ? ` · since ${formatDate(p.part_paid_at)}` : ""}
+                  {p.part_paid_at ? ` · since ${formatDate(timezone, p.part_paid_at)}` : ""}
                 </p>
               </div>
               <div className="shrink-0 text-right">
@@ -1884,6 +1890,7 @@ function BookingRow({
   /** Offered only on an upcoming booking the backend says can be cancelled. */
   onCancel?: (b: ApiBooking) => void;
 }) {
+  const timezone = useStudioZone();
   const outcome = bookingOutcome(b, upcoming);
   const detail = [b.instructor, b.location, b.package_name ? `on ${b.package_name}` : null]
     .filter(Boolean)
@@ -1896,8 +1903,8 @@ function BookingRow({
         <div className="w-20 shrink-0 text-xs tabular-nums text-muted sm:w-28">
           {b.starts_at ? (
             <>
-              <div className="font-medium text-ink">{formatDate(b.starts_at, "d MMM yyyy")}</div>
-              <div>{formatDate(b.starts_at, "EEE h:mma").replace(/(AM|PM)/, (m) => m.toLowerCase())}</div>
+              <div className="font-medium text-ink">{formatDate(timezone, b.starts_at, "d MMM yyyy")}</div>
+              <div>{atTime(timezone, b.starts_at, "EEE h:mma")}</div>
             </>
           ) : (
             "—"
@@ -1938,8 +1945,8 @@ function SourceBadge({ source }: { source: BookingSource }) {
   return label ? <Badge tone="accent">{label}</Badge> : null;
 }
 
-const atTime = (iso: string, pattern: string) =>
-  formatDate(iso, pattern).replace(/(AM|PM)/, (m) => m.toLowerCase());
+const atTime = (timezone: string, iso: string, pattern: string) =>
+  formatDate(timezone, iso, pattern).replace(/(AM|PM)/, (m) => m.toLowerCase());
 
 /**
  * A cancellation as the front desk is asked about it: what and when it
@@ -1948,13 +1955,14 @@ const atTime = (iso: string, pattern: string) =>
  * cancelled again.
  */
 function CancelledRow({ b }: { b: ApiCancelledBooking }) {
+  const timezone = useStudioZone();
   const request = b.booking_id === null;
   const title = request ? `${bookingTitle(b)} request` : bookingTitle(b);
   const detail = [b.instructor, b.location, b.package_name ? `on ${b.package_name}` : null]
     .filter(Boolean)
     .join(" · ");
   const cancelled = [
-    b.cancelled_at ? `Cancelled ${atTime(b.cancelled_at, "d MMM, h:mma")}` : "Cancelled",
+    b.cancelled_at ? `Cancelled ${atTime(timezone, b.cancelled_at, "d MMM, h:mma")}` : "Cancelled",
     `by ${b.who_line}`,
   ].join(" ");
   return (
@@ -1963,8 +1971,8 @@ function CancelledRow({ b }: { b: ApiCancelledBooking }) {
         <div className="w-20 shrink-0 text-xs tabular-nums text-muted sm:w-28">
           {b.starts_at ? (
             <>
-              <div className="font-medium text-ink">{formatDate(b.starts_at, "d MMM yyyy")}</div>
-              <div>{atTime(b.starts_at, "EEE h:mma")}</div>
+              <div className="font-medium text-ink">{formatDate(timezone, b.starts_at, "d MMM yyyy")}</div>
+              <div>{atTime(timezone, b.starts_at, "EEE h:mma")}</div>
             </>
           ) : (
             // A request withdrawn or expired before it was ever scheduled.
@@ -1994,10 +2002,8 @@ function CancelledRow({ b }: { b: ApiCancelledBooking }) {
 }
 
 /** "Vinyasa Flow on Tue 6 Oct, 7:00am" — the cancel dialog's line under its title. */
-function bookingWhat(b: ApiBooking): string {
-  const when = b.starts_at
-    ? ` on ${formatDate(b.starts_at, "EEE d MMM, h:mma").replace(/(AM|PM)/, (m) => m.toLowerCase())}`
-    : "";
+function bookingWhat(timezone: string, b: ApiBooking): string {
+  const when = b.starts_at ? ` on ${atTime(timezone, b.starts_at, "EEE d MMM, h:mma")}` : "";
   return `${bookingTitle(b)}${when}`;
 }
 
@@ -2092,6 +2098,7 @@ const PAYMENT_STATUS: Record<ApiPayment["status"], { label: string; tone: "sage"
  * paid on their own card above, so this list being empty is not "never paid".
  */
 function PaymentsSection({ payments }: { payments: ApiPayment[] }) {
+  const timezone = useStudioZone();
   const { visible, pagination } = usePaged(payments);
   return (
     <Section title="Online payments" count={payments.length}>
@@ -2112,7 +2119,7 @@ function PaymentsSection({ payments }: { payments: ApiPayment[] }) {
                 <li key={p.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 sm:flex-nowrap sm:px-5">
                   <div className="flex min-w-0 flex-1 basis-full items-center gap-3 sm:basis-auto">
                     <div className="w-20 shrink-0 text-xs tabular-nums text-muted sm:w-28">
-                      {formatDate(p.created_at, "d MMM yyyy")}
+                      {formatDate(timezone, p.created_at, "d MMM yyyy")}
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm font-medium text-ink" title={p.item_name}>
@@ -2120,7 +2127,7 @@ function PaymentsSection({ payments }: { payments: ApiPayment[] }) {
                       </div>
                       {p.refunded_at && (
                         <div className="text-xs text-muted">
-                          Refunded {formatDate(p.refunded_at, "d MMM yyyy")}
+                          Refunded {formatDate(timezone, p.refunded_at, "d MMM yyyy")}
                         </div>
                       )}
                     </div>

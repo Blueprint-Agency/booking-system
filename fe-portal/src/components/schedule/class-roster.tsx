@@ -39,6 +39,7 @@ import {
 } from "@/lib/class-waitlist";
 import type { ScheduleClassAttendee, ScheduleClassCancelled } from "@/lib/schedule";
 import { formatDate } from "@/lib/formatters";
+import { useStudioZone } from "@/components/brand/brand-provider";
 
 export function Stat({
   label,
@@ -265,6 +266,7 @@ export function ClassRoster({
  * whole of who was booked. Never checked in, never cancelled again.
  */
 function CancelledSection({ role, rows, open }: { role: StaffRole; rows: ScheduleClassCancelled[]; open: boolean }) {
+  const timezone = useStudioZone();
   return (
     <details open={open} className="group mt-4 border-t border-border pt-3">
       <summary className="flex min-h-11 cursor-pointer list-none items-center gap-1.5 text-sm font-medium text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent [&::-webkit-details-marker]:hidden">
@@ -274,7 +276,7 @@ function CancelledSection({ role, rows, open }: { role: StaffRole; rows: Schedul
       <ul className="divide-y divide-border">
         {rows.map((b) => {
           const when = b.cancelled_at
-            ? formatDate(b.cancelled_at, "d MMM, h:mma").replace(/(AM|PM)/, (m) => m.toLowerCase())
+            ? formatDate(timezone, b.cancelled_at, "d MMM, h:mma").replace(/(AM|PM)/, (m) => m.toLowerCase())
             : null;
           return (
             <li
@@ -374,6 +376,7 @@ function AddMember({
   onBooked: () => void;
 }) {
   const { api } = useWorkspace();
+  const timezone = useStudioZone();
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [matches, setMatches] = useState<MemberMatch[]>([]);
@@ -442,9 +445,9 @@ function AddMember({
     setChoosing(null);
     let pick: PackagePick | null;
     try {
-      pick = packagePick(await memberPackagesForClass(api, role, classId, member.id));
+      pick = packagePick(await memberPackagesForClass(api, role, classId, member.id), timezone);
     } catch (e) {
-      setRefusal({ member, refusal: staffBookingPrompt(e, role), packageId: null });
+      setRefusal({ member, refusal: staffBookingPrompt(e, role, timezone), packageId: null });
       setBusyId(null);
       return;
     }
@@ -462,12 +465,12 @@ function AddMember({
     // chosen; a select left open beside the prompt could say otherwise.
     setChoosing(null);
     try {
-      const res = await staffBookClass(api, role, classId, member.id, overbook, packageId);
+      const res = await staffBookClass(api, timezone, role, classId, member.id, overbook, packageId);
       setAdded(addedMemberLine(member.name, res.seat));
       close();
       onBooked();
     } catch (e) {
-      setRefusal({ member, refusal: staffBookingPrompt(e, role), packageId });
+      setRefusal({ member, refusal: staffBookingPrompt(e, role, timezone), packageId });
     } finally {
       setBusyId(null);
     }
@@ -479,12 +482,12 @@ function AddMember({
     setRefusal(null);
     setAdded(null);
     try {
-      const res = await staffJoinWaitlist(api, role, classId, member.id);
+      const res = await staffJoinWaitlist(api, timezone, role, classId, member.id);
       setAdded(`${member.name} is #${res.position} on the waitlist.`);
       close();
       onBooked();
     } catch (e) {
-      setRefusal({ member, refusal: { kind: "error", message: staffJoinRefusal(e) }, packageId: null });
+      setRefusal({ member, refusal: { kind: "error", message: staffJoinRefusal(e, timezone) }, packageId: null });
     } finally {
       setBusyId(null);
     }

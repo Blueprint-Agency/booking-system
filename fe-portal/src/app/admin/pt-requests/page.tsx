@@ -4,6 +4,7 @@ import { useRequestDeepLink } from "@/components/attention/deep-links";
 import { useAttention } from "@/components/attention/attention-provider";
 import { PageHeader, Badge, LoadFailure, Pagination, usePaged } from "@/components/ui";
 import { answeredElsewhere } from "@/lib/failed-read";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import { useWorkspace } from "@/lib/workspace-context";
 import { PtRequestDrawer } from "@/components/pt-requests/pt-request-drawer";
 import { ScheduleFromRequestDialog } from "@/components/pt-requests/schedule-from-request-dialog";
@@ -33,6 +34,7 @@ export default function PtRequestsPage() {
 
 function PtRequestsView() {
   const { api, activeLocation, loading: wsLoading } = useWorkspace();
+  const timezone = useStudioZone();
   // The bell's count follows what this page resolves, without waiting for the next poll.
   const { refresh: refreshAttention } = useAttention();
 
@@ -214,7 +216,7 @@ function PtRequestsView() {
               : "Cancel this pending request? The sessions it was holding go back to the requester's package."
           }
           onConfirm={(note) => cancelWithNote(cancelFor, note)}
-          errorMessage={(err) => sessionActionErrorMessage(err, "Couldn't cancel the request")}
+          errorMessage={(err) => sessionActionErrorMessage(err, "Couldn't cancel the request", timezone)}
         />
       )}
       {schedFor && (

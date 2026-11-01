@@ -23,6 +23,7 @@ import {
 } from "@/components/ui";
 import type { ClientGender } from "@/components/clients/edit-profile-dialog";
 import { runsStudio } from "@/lib/staff-role";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
 import { addCustomerError } from "@/lib/add-customer";
@@ -36,8 +37,8 @@ type SortKey = "joined" | "name";
 const SEARCH_DEBOUNCE_MS = 300;
 
 /** Nothing outside the Trials filter has a trial date, so nothing else asks. */
-function trialStarted(c: ApiClient): string {
-  return c.trial_started_at ? formatDate(c.trial_started_at) : "—";
+function trialStarted(timezone: string, c: ApiClient): string {
+  return c.trial_started_at ? formatDate(timezone, c.trial_started_at) : "—";
 }
 
 interface ApiClient {
@@ -130,6 +131,7 @@ export default function CustomersPage() {
 
 function CustomersList() {
   const { api, currentStaff } = useWorkspace();
+  const timezone = useStudioZone();
   const isAdmin = runsStudio(currentStaff?.role);
   const searchParams = useSearchParams();
   // Read once: afterwards the list owns its position and writes it back.
@@ -324,7 +326,7 @@ function CustomersList() {
                           </span>
                         )}
                         <span>
-                          {showTrials ? trialStarted(c) : formatDate(c.joined_at, "d MMM yyyy")}
+                          {showTrials ? trialStarted(timezone, c) : formatDate(timezone, c.joined_at, "d MMM yyyy")}
                         </span>
                       </div>
                     </div>
@@ -382,7 +384,7 @@ function CustomersList() {
                         {c.phone || "—"}
                       </td>
                       <td className="whitespace-nowrap px-5 py-3 text-sm text-muted">
-                        {showTrials ? trialStarted(c) : formatDate(c.joined_at, "d MMM yyyy")}
+                        {showTrials ? trialStarted(timezone, c) : formatDate(timezone, c.joined_at, "d MMM yyyy")}
                       </td>
                       {showTrials && (
                         <td

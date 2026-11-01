@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { Badge, Button, EmptyState, LoadFailure, PageHeader, Pagination, usePaged } from "@/components/ui";
 import { useRead } from "@/lib/use-read";
 import { RefundDialog } from "@/components/clients/refund-dialog";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import { useWorkspace } from "@/lib/workspace-context";
 import { runsStudio } from "@/lib/staff-role";
 import { ApiError } from "@/lib/api";
@@ -66,6 +67,7 @@ export default function UnfinishedPurchasesPage() {
 
 function UnfinishedPurchases() {
   const { api, role } = useWorkspace();
+  const timezone = useStudioZone();
   const search = useSearchParams();
   // The purchase the bell linked to: listed first and highlighted. If it is gone
   // (refunded, paid, dismissed) the page opens as normal.
@@ -161,7 +163,7 @@ function UnfinishedPurchases() {
                       >
                         {p.client_name}
                       </Link>{" "}
-                      · started {formatDate(p.created_at)}
+                      · started {formatDate(timezone, p.created_at)}
                     </p>
                     <p className="mt-1 text-xs text-muted">{p.silence_notice}</p>
                     {refundProgressTag(p.refund_progress) && (

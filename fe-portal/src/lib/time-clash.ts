@@ -8,6 +8,7 @@
 // words the warning and runs that ask-then-retry; the backend decides.
 
 import { ApiError } from "@/lib/api";
+import { zoneFormat } from "@/lib/studio-time";
 
 /** What a `time_clash` refusal carries. */
 export interface TimeClash {
@@ -39,33 +40,28 @@ export function timeClashOf(err: unknown): TimeClash | null {
   return { clientId: body.client_id ?? null, clientName: body.client_name ?? null, clash: body.clash };
 }
 
-/** "4:00 pm", in the studio's time. */
-function clock(iso: string): string {
-  return new Date(iso).toLocaleTimeString("en-SG", {
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-    timeZone: "Asia/Singapore",
-  });
+/** "4:00 pm", on the studio's clock (`timezone` is the studio's IANA zone). */
+function clock(timezone: string, iso: string): string {
+  return zoneFormat(timezone, "en-SG", { hour: "numeric", minute: "2-digit", hour12: true }).format(new Date(iso));
 }
 
 /** "Inversion at 4:00 pm (Riverside)", or "a private session at …". */
-function held(c: TimeClash["clash"]): string {
+function held(timezone: string, c: TimeClash["clash"]): string {
   const what = c.kind === "pt" ? "a private session" : c.title;
   const place = c.location_name ? ` (${c.location_name})` : "";
-  return `${what} at ${clock(c.starts_at)}${place}`;
+  return `${what} at ${clock(timezone, c.starts_at)}${place}`;
 }
 
 /** The warning staff confirm before booking anyway. */
-export function timeClashPrompt(t: TimeClash, noun: ClashNoun): string {
+export function timeClashPrompt(t: TimeClash, noun: ClashNoun, timezone: string): string {
   const who = t.clientName || "This member";
-  return `${who} is already booked into ${held(t.clash)}, which overlaps this ${noun}. Book anyway?`;
+  return `${who} is already booked into ${held(timezone, t.clash)}, which overlaps this ${noun}. Book anyway?`;
 }
 
 /** What staff read when they chose not to book anyway. */
-export function timeClashRefusal(t: TimeClash): string {
+export function timeClashRefusal(t: TimeClash, timezone: string): string {
   const who = t.clientName || "This member";
-  return `Not booked: ${who} is already booked into ${held(t.clash)} at the same time.`;
+  return `Not booked: ${who} is already booked into ${held(timezone, t.clash)} at the same time.`;
 }
 
 /**
@@ -76,6 +72,7 @@ export function timeClashRefusal(t: TimeClash): string {
  */
 export async function withClashConfirm<T>(
   noun: ClashNoun,
+  timezone: string,
   run: (extra: { allow_clash?: true }) => Promise<T>,
   ask: (message: string) => boolean = (m) => window.confirm(m),
 ): Promise<T> {
@@ -83,7 +80,7 @@ export async function withClashConfirm<T>(
     return await run({});
   } catch (err) {
     const t = timeClashOf(err);
-    if (!t || !ask(timeClashPrompt(t, noun))) throw err;
+    if (!t || !ask(timeClashPrompt(t, noun, timezone))) throw err;
     return run({ allow_clash: true });
   }
 }

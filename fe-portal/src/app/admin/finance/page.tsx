@@ -15,11 +15,9 @@ import {
   Select,
   DEFAULT_PAGE_SIZE,
 } from "@/components/ui";
-import {
-  DateRangeFilter,
-  presetRange,
-  type DateRange,
-} from "@/components/date-range-filter";
+import { DateRangeFilter } from "@/components/date-range-filter";
+import { useStudioZone } from "@/components/brand/brand-provider";
+import { presetRange, type DateRange } from "@/lib/date-range";
 import { useWorkspace } from "@/lib/workspace-context";
 import type { Api } from "@/lib/api";
 import { answeredElsewhere, loadError, type LoadError } from "@/lib/failed-read";
@@ -98,9 +96,10 @@ export default function FinancePage() {
 
 function FinanceScreen() {
   const { api } = useWorkspace();
+  const timezone = useStudioZone();
   // Read once: afterwards the screen owns its filter and writes it back.
   const searchParams = useSearchParams();
-  const [initial] = useState(() => parseFinanceSearch(searchParams.toString(), presetRange("month")));
+  const [initial] = useState(() => parseFinanceSearch(searchParams.toString(), presetRange(timezone, "month")));
 
   const [instructors, setInstructors] = useState<CatalogInstructor[]>([]);
   const [locations, setLocations] = useState<CatalogLocation[]>([]);
@@ -173,11 +172,11 @@ function FinanceScreen() {
     setOverview(null);
     setOverviewFailed(false);
     try {
-      setOverview(await fetchFinanceOverview(api, range));
+      setOverview(await fetchFinanceOverview(api, timezone, range));
     } catch (err) {
       if (!answeredElsewhere(err)) setOverviewFailed(true);
     }
-  }, [api, range]);
+  }, [api, timezone, range]);
 
   useEffect(() => {
     void loadOverview();
@@ -190,7 +189,7 @@ function FinanceScreen() {
     // Drop the old period's rows before asking for the new one's.
     setData(null);
     try {
-      setData(await fetchFinance(api, filters));
+      setData(await fetchFinance(api, timezone, filters));
       setDrafts({});
     } catch (err) {
       // A `401` or maintenance is answered by the sign-in and the maintenance screen.
@@ -198,7 +197,7 @@ function FinanceScreen() {
     } finally {
       setLoading(false);
     }
-  }, [api, filters]);
+  }, [api, timezone, filters]);
 
   useEffect(() => {
     void load();
@@ -336,7 +335,7 @@ function FinanceScreen() {
     if (!api) return;
     setExporting(true);
     try {
-      await downloadFinanceCsv(api, filters);
+      await downloadFinanceCsv(api, timezone, filters);
     } catch (err) {
       toast.error(financeErrorMessage(err, "Couldn't export"));
     } finally {
@@ -501,7 +500,7 @@ function FinanceScreen() {
                     {row.user_name ?? <span className="text-muted">—</span>}
                   </div>
                   <div className="text-xs text-muted">
-                    {formatDate(row.occurred_at)} · {formatTime(row.occurred_at)}
+                    {formatDate(timezone, row.occurred_at)} · {formatTime(timezone, row.occurred_at)}
                   </div>
                   <div className="mt-1.5 leading-6">
                     <RowTags row={row} />
@@ -568,10 +567,10 @@ function FinanceScreen() {
                 {visible.map((row) => (
                   <tr key={rowKey(row)} className="hover:bg-warm/40">
                     <td className="whitespace-nowrap px-3 py-2.5 text-muted">
-                      {formatDate(row.occurred_at)}
+                      {formatDate(timezone, row.occurred_at)}
                     </td>
                     <td className="whitespace-nowrap px-3 py-2.5 text-muted">
-                      {formatTime(row.occurred_at)}
+                      {formatTime(timezone, row.occurred_at)}
                     </td>
                     <td className="px-3 py-2.5 text-ink">
                       {row.user_name ?? <span className="text-muted">—</span>}
@@ -783,7 +782,8 @@ function ManualEntryDialog({
   const [instructorId, setInstructorId] = useState("");
   const [amount, setAmount] = useState("");
   const [label, setLabel] = useState("");
-  const [date, setDate] = useState(() => localDay());
+  const timezone = useStudioZone();
+  const [date, setDate] = useState(() => localDay(timezone));
   const [saving, setSaving] = useState(false);
 
   const amountNum = Number(amount);
@@ -805,6 +805,7 @@ function ManualEntryDialog({
         amountSgd: amountNum,
         label: label.trim(),
         day: date,
+        timezone,
       });
       toast.success("Entry created");
       await onCreated();

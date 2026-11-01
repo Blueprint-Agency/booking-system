@@ -59,6 +59,8 @@ import type { BookingSeat, BookingSource, ClassSeats } from "@/lib/class-seats";
 import type { ClassWaitlist } from "@/lib/class-waitlist";
 import type { StaffCancelPreview } from "@/lib/staff-cancel";
 import type { StaffCancellation } from "@/lib/cancellations";
+import { atLocalTime } from "@/lib/local-day";
+import { localClock, localDate } from "@/lib/studio-time";
 import { timeClashOf, timeClashRefusal, withClashConfirm } from "@/lib/time-clash";
 import {
   PACKAGE_RULE_ERROR_COPY,
@@ -253,6 +255,29 @@ interface SupportingPay {
   pay_sgd: number | null;
 }
 
+/**
+ * The start and end an edit form sends: each only when the date or time fields
+ * behind it were changed from what the stored instant reads as at the studio.
+ * Re-sending an unchanged one would re-derive it from the wall time, and the
+ * wall time cannot tell the two occurrences of an hour that falls back twice:
+ * a class stored at the second would move an hour earlier on any other edit.
+ */
+export function changedTimes(
+  timezone: string,
+  stored: { starts_at: string; ends_at: string },
+  form: { date: string; startTime: string; endTime: string },
+): { starts_at?: string; ends_at?: string } {
+  const sameDay = form.date === localDate(timezone, stored.starts_at);
+  const out: { starts_at?: string; ends_at?: string } = {};
+  if (!sameDay || form.startTime !== localClock(timezone, stored.starts_at)) {
+    out.starts_at = atLocalTime(timezone, form.date, form.startTime).toISOString();
+  }
+  if (!sameDay || form.endTime !== localClock(timezone, stored.ends_at)) {
+    out.ends_at = atLocalTime(timezone, form.date, form.endTime).toISOString();
+  }
+  return out;
+}
+
 export interface ClassPatch {
   class_type_id: string;
   main_instructor_id: string;
@@ -260,8 +285,9 @@ export interface ClassPatch {
   supporting_instructors: SupportingPay[];
   location_id: string;
   room_id: string;
-  starts_at: string;
-  ends_at: string;
+  /** Left out when the date and times were not changed (`changedTimes`). */
+  starts_at?: string;
+  ends_at?: string;
   /** Sent only when changed: online can't drop below the members booked online. */
   capacity_online?: number;
   capacity_waitlist?: number;
@@ -282,8 +308,9 @@ export interface PtPatch {
   supporting_instructors: SupportingPay[];
   location_id: string;
   room_id: string;
-  starts_at: string;
-  ends_at: string;
+  /** Left out when the date and times were not changed (`changedTimes`). */
+  starts_at?: string;
+  ends_at?: string;
 }
 
 /** Corporate takes bare supporting ids and carries no pay fields. */
@@ -293,8 +320,9 @@ export interface CorporatePatch {
   supporting_instructor_ids: string[];
   location_id: string;
   room_id: string;
-  starts_at: string;
-  ends_at: string;
+  /** Left out when the date and times were not changed (`changedTimes`). */
+  starts_at?: string;
+  ends_at?: string;
 }
 
 export function patchClass(api: Api, classId: string, input: ClassPatch): Promise<unknown> {
@@ -314,8 +342,8 @@ export async function previewClassRule(api: Api, classId: string, rule: PackageR
 }
 
 /** Moved onto a time a member on it is booked elsewhere, staff are asked first. */
-export function patchPtSession(api: Api, sessionId: string, input: PtPatch): Promise<unknown> {
-  return withClashConfirm("session", (extra) =>
+export function patchPtSession(api: Api, timezone: string, sessionId: string, input: PtPatch): Promise<unknown> {
+  return withClashConfirm("session", timezone, (extra) =>
     api.patch(`/portal/admin/pt-sessions/sessions/${sessionId}`, { ...input, ...extra }),
   );
 }
@@ -386,13 +414,13 @@ const SCHEDULE_ERROR_COPY: Record<string, string> = {
  * the backend knows WHO is double-booked and by which event, so it composes the
  * sentence and this passes it through.
  */
-export function scheduleErrorMessage(err: unknown, fallback = "Save failed"): string {
+export function scheduleErrorMessage(err: unknown, fallback: string, timezone: string): string {
   if (!(err instanceof ApiError)) return "Network error";
   const refused = permissionRefusal(err);
   if (refused) return refused;
   // A member on it is booked elsewhere then, and staff chose not to go ahead.
   const clash = timeClashOf(err);
-  if (clash) return timeClashRefusal(clash);
+  if (clash) return timeClashRefusal(clash, timezone);
   const body = err.body as { error?: string; message?: string } | null;
   if (typeof body?.message === "string" && body.message) return body.message;
   const known = body?.error ? SCHEDULE_ERROR_COPY[body.error] : undefined;

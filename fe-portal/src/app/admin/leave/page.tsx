@@ -17,6 +17,7 @@ import { answeredElsewhere, loadError, type LoadError } from "@/lib/failed-read"
 import { LeaveCalendar } from "@/components/leave-calendar";
 import { useAttention } from "@/components/attention/attention-provider";
 import { useRequestDeepLink } from "@/components/attention/deep-links";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import { useWorkspace } from "@/lib/workspace-context";
 import { openSignedUrl } from "@/lib/api";
 import { todayIso } from "@/lib/formatters";
@@ -94,6 +95,7 @@ export default function AdminLeavePage() {
 
 function AdminLeaveView() {
   const { api, currentStaff } = useWorkspace();
+  const timezone = useStudioZone();
   // The bell's count and the Leave badge follow a decision without waiting for the next poll.
   const { refresh: refreshAttention } = useAttention();
   /** The request a bell link named: shown on its status's tab, ringed and scrolled to. */
@@ -214,7 +216,7 @@ function AdminLeaveView() {
   }
 
   // Mirrors the server rule: approved leave is only revocable before it starts.
-  const notStarted = (r: ApiAdminLeaveRequest) => r.start_date > todayIso();
+  const notStarted = (r: ApiAdminLeaveRequest) => r.start_date > todayIso(timezone);
 
   // One decision control, rendered in the phone card and the desktop table.
   const decision = (r: ApiAdminLeaveRequest) =>

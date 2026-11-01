@@ -3,6 +3,24 @@
 // plain `YYYY-MM-DD`, compared and counted without ever becoming an instant, so
 // no timezone can shift a bar by a day.
 
+import { addDays, endOfMonth, startOfMonth, startOfWeek } from "./studio-time";
+
+/**
+ * The weeks a leave calendar view draws, each Monday-first, as plain days. A
+ * month takes only the rows it needs, so a five-week month doesn't end on an
+ * empty row of the next. `cursor` is any day inside the period shown.
+ */
+export function weeksOf(view: "month" | "week", cursor: string): string[][] {
+  const start = startOfWeek(view === "month" ? startOfMonth(cursor) : cursor);
+  const last = view === "month" ? endOfMonth(cursor) : cursor;
+  const end = addDays(startOfWeek(last), 6);
+  const weeks: string[][] = [];
+  for (let week = start; week <= end; week = addDays(week, 7)) {
+    weeks.push(Array.from({ length: 7 }, (_, i) => addDays(week, i)));
+  }
+  return weeks;
+}
+
 export interface LaidOutAbsence {
   staff: { id: string; name: string };
   start_date: string;

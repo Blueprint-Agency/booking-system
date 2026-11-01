@@ -2,7 +2,9 @@
 import { Plus, Trash2 } from "lucide-react";
 import { Button, Input, Label } from "@/components/ui";
 import type { WorkshopDay, WorkshopTier } from "@/types";
-import { atLocalTime } from "@/lib/local-day";
+import { useStudioZone } from "@/components/brand/brand-provider";
+import { formatPlainDay } from "@/lib/formatters";
+import { cutoffFromInput, cutoffInputValue } from "@/lib/workshop-form";
 
 export function WorkshopTiersEditor({
   workshopId,
@@ -15,6 +17,7 @@ export function WorkshopTiersEditor({
   tiers: WorkshopTier[];
   onChange: (tiers: WorkshopTier[]) => void;
 }) {
+  const timezone = useStudioZone();
   if (days.length === 0) {
     return (
       <div className="rounded-lg border border-dashed border-border bg-paper p-4 text-sm text-muted">
@@ -118,11 +121,7 @@ export function WorkshopTiersEditor({
                         onChange={() => toggleDay(t, d.id)}
                         className="h-3 w-3"
                       />
-                      Day {idx + 1} ·{" "}
-                      {atLocalTime(d.date, "00:00").toLocaleDateString(undefined, {
-                        day: "numeric",
-                        month: "short",
-                      })}
+                      Day {idx + 1} · {formatPlainDay(d.date, "d MMM")}
                     </label>
                   );
                 })}
@@ -163,16 +162,12 @@ export function WorkshopTiersEditor({
               <Label className="text-xs">Early-bird cutoff</Label>
               <Input
                 type="datetime-local"
-                value={
-                  t.earlyBirdCutoffAt ? t.earlyBirdCutoffAt.slice(0, 16) : ""
-                }
+                // The cutoff is a wall time at the studio, whatever zone this
+                // browser is in (lib/workshop-form.ts).
+                value={cutoffInputValue(timezone, t.earlyBirdCutoffAt)}
                 disabled={t.earlyBirdPriceSgd === null}
                 onChange={(e) =>
-                  update(t.id, {
-                    earlyBirdCutoffAt: e.target.value
-                      ? `${e.target.value}:00.000Z`
-                      : null,
-                  })
+                  update(t.id, { earlyBirdCutoffAt: cutoffFromInput(timezone, e.target.value) })
                 }
               />
             </div>

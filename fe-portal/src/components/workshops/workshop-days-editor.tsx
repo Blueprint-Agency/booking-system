@@ -2,8 +2,9 @@
 import { Plus, Trash2 } from "lucide-react";
 import { Button, Input, Label } from "@/components/ui";
 import { CapacityFields } from "@/components/schedule/capacity-fields";
+import { useStudioZone } from "@/components/brand/brand-provider";
 import { todayIso } from "@/lib/formatters";
-import { atLocalTime, localDay } from "@/lib/local-day";
+import { addDays } from "@/lib/studio-time";
 import type { Capacity, WorkshopDay } from "@/types";
 
 type Mode = "range" | "individual";
@@ -28,22 +29,16 @@ export function newDay(date: string): WorkshopDay {
   };
 }
 
+/** Every calendar day from `start` to `end`, inclusive. Plain days: no zone is involved. */
 function expandRange(start: string, end: string): string[] {
   if (!start || !end || start > end) return [];
   const out: string[] = [];
   let cur = start;
   while (cur <= end) {
     out.push(cur);
-    cur = localDay(addDays(cur, 1));
+    cur = addDays(cur, 1);
   }
   return out;
-}
-
-/** `day` shifted by n calendar days, as a local instant. */
-function addDays(day: string, n: number): Date {
-  const d = atLocalTime(day, "00:00");
-  d.setDate(d.getDate() + n);
-  return d;
 }
 
 export function WorkshopDaysEditor({
@@ -70,6 +65,7 @@ export function WorkshopDaysEditor({
   /** The rooms could not be read, so an empty list is not "no rooms". */
   roomsUnknown?: boolean;
 }) {
+  const timezone = useStudioZone();
   function regenerateFromRange(start: string, end: string) {
     onRangeChange(start, end);
     const dates = expandRange(start, end);
@@ -82,8 +78,8 @@ export function WorkshopDaysEditor({
   }
 
   function addIndividual() {
-    const last = days[days.length - 1]?.date ?? localDay();
-    onChange([...days, newDay(localDay(addDays(last, 7)))]);
+    const last = days[days.length - 1]?.date ?? todayIso(timezone);
+    onChange([...days, newDay(addDays(last, 7))]);
   }
 
   function updateDay(id: string, patch: Partial<WorkshopDay>) {
@@ -121,7 +117,7 @@ export function WorkshopDaysEditor({
             <Label className="text-xs">Start date</Label>
             <Input
               type="date"
-              min={todayIso()}
+              min={todayIso(timezone)}
               value={rangeStart}
               onChange={(e) => {
                 const start = e.target.value;
@@ -135,7 +131,7 @@ export function WorkshopDaysEditor({
             <Label className="text-xs">End date</Label>
             <Input
               type="date"
-              min={rangeStart || todayIso()}
+              min={rangeStart || todayIso(timezone)}
               value={rangeEnd}
               onChange={(e) => regenerateFromRange(rangeStart, e.target.value)}
             />
@@ -168,7 +164,7 @@ export function WorkshopDaysEditor({
                 <Label className="text-xs">Date</Label>
                 <Input
                   type="date"
-                  min={todayIso()}
+                  min={todayIso(timezone)}
                   value={d.date}
                   disabled={mode === "range"}
                   onChange={(e) => updateDay(d.id, { date: e.target.value })}
