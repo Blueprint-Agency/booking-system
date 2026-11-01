@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert";
 import {
   UNATTRIBUTED,
+  createManualEntry,
   fetchFinance,
   financeSearch,
   parseFinanceSearch,
@@ -9,6 +10,8 @@ import {
   type FinanceRow,
 } from "./finance";
 import { type Api } from "./api";
+
+const SG = "Asia/Singapore";
 
 // Captures the one request the module makes — no session, no React.
 function spyApi(seen: { path?: string; query?: unknown; body?: unknown }): Api {
@@ -60,7 +63,7 @@ const row = (p: Partial<FinanceRow>): FinanceRow => ({
 // search box is trimmed for the same reason — a box holding only spaces is empty.
 test("unset filters are omitted, not sent blank", async () => {
   const seen: { query?: unknown } = {};
-  await fetchFinance(spyApi(seen), {
+  await fetchFinance(spyApi(seen), SG, {
     type: "",
     q: "   ",
     location: "",
@@ -80,15 +83,15 @@ test("unset filters are omitted, not sent blank", async () => {
 // the same "empty means all" trimming that drops a blank Location.
 test("the Unattributed bucket is sent as a value", async () => {
   const seen: { query?: unknown } = {};
-  await fetchFinance(spyApi(seen), { location: UNATTRIBUTED, range: null });
+  await fetchFinance(spyApi(seen), SG, { location: UNATTRIBUTED, range: null });
   assert.strictEqual((seen.query as { location?: string }).location, UNATTRIBUTED);
 });
 
 test("needs-pay is only sent when it is on", async () => {
   const on: { query?: unknown } = {};
   const off: { query?: unknown } = {};
-  await fetchFinance(spyApi(on), { needsPay: true, range: null });
-  await fetchFinance(spyApi(off), { needsPay: false, range: null });
+  await fetchFinance(spyApi(on), SG, { needsPay: true, range: null });
+  await fetchFinance(spyApi(off), SG, { needsPay: false, range: null });
   assert.strictEqual((on.query as { needs_pay?: string }).needs_pay, "true");
   assert.strictEqual((off.query as { needs_pay?: string }).needs_pay, undefined);
 });
@@ -165,4 +168,36 @@ test("the filter and range write back so a reload or a shared link reads the sam
 test("what is written is read back unchanged", () => {
   const state = { needsPay: true, range: { from: "2026-09-01", to: "2026-10-15" } };
   assert.deepEqual(parseFinanceSearch(financeSearch(state), MONTH), state);
+});
+
+test("TEN-135 the Finance period is sent as the studio's midnights, and a manual entry's day is the studio's midnight of it", async () => {
+  const range = { from: "2026-08-12", to: "2026-08-12" };
+  const sydney: { query?: unknown } = {};
+  await fetchFinance(spyApi(sydney), "Australia/Sydney", { range });
+  assert.deepStrictEqual(
+    { from: (sydney.query as { from?: string }).from, to: (sydney.query as { to?: string }).to },
+    { from: "2026-08-11T14:00:00.000Z", to: "2026-08-12T13:59:59.999Z" },
+  );
+  const singapore: { query?: unknown } = {};
+  await fetchFinance(spyApi(singapore), SG, { range });
+  assert.strictEqual((singapore.query as { from?: string }).from, "2026-08-11T16:00:00.000Z");
+  assert.strictEqual((singapore.query as { to?: string }).to, "2026-08-12T15:59:59.999Z");
+
+  const posted: { body?: unknown } = {};
+  const api = {
+    post: async (_path: string, body?: unknown) => {
+      posted.body = body;
+      return {};
+    },
+  } as unknown as Api;
+  await createManualEntry(api, {
+    instructorId: "i-1",
+    amountSgd: 40,
+    label: "Cover",
+    day: "2026-08-12",
+    timezone: "Australia/Sydney",
+  });
+  assert.strictEqual((posted.body as { entry_date: string }).entry_date, "2026-08-11T14:00:00.000Z");
+  await createManualEntry(api, { instructorId: "i-1", amountSgd: 40, label: "Cover", day: "2026-08-12", timezone: SG });
+  assert.strictEqual((posted.body as { entry_date: string }).entry_date, "2026-08-11T16:00:00.000Z");
 });

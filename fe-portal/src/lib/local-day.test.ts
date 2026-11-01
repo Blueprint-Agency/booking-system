@@ -1,42 +1,60 @@
-import assert from "node:assert";
+import test from "node:test";
+import assert from "node:assert/strict";
 import { atLocalTime, localDay, localDayRange } from "./local-day";
 
-// Every instant here is built with the local-time Date constructor, so these
-// hold in any timezone the runner happens to be in — not just SGT.
+const SYDNEY = "Australia/Sydney";
+const SINGAPORE = "Asia/Singapore";
 
-// Late local evening stays on its own day. Slicing the UTC ISO string pushes
-// this to the 10th anywhere east of UTC.
-assert.strictEqual(localDay(new Date(2026, 7, 9, 23, 45)), "2026-08-09");
+// Every instant here is written in UTC and every zone is passed in, so these hold
+// in any timezone the runner happens to be in.
 
-// Early local morning likewise — a UTC slice pulls this back to the 9th.
-assert.strictEqual(localDay(new Date(2026, 7, 10, 0, 15)), "2026-08-10");
+test("TEN-123 a calendar day, the instants a day picked in a date field spans, and the wall time typed on it are all the studio's own", () => {
+  // Late evening stays on its own day. Slicing the UTC ISO string pushes this
+  // to the 10th anywhere east of UTC.
+  assert.equal(localDay(SINGAPORE, "2026-08-09T15:45:00.000Z"), "2026-08-09");
+  // Early morning likewise — a UTC slice pulls this back to the 9th.
+  assert.equal(localDay(SINGAPORE, "2026-08-09T16:15:00.000Z"), "2026-08-10");
+  assert.equal(localDay(SINGAPORE, "2026-12-31T16:00:00.000Z"), "2027-01-01");
+  // The same instant is a different day in Sydney (UTC+10) and in Singapore (UTC+8).
+  assert.equal(localDay(SYDNEY, "2026-08-11T14:30:00.000Z"), "2026-08-12");
+  assert.equal(localDay(SINGAPORE, "2026-08-11T14:30:00.000Z"), "2026-08-11");
+  // The clock is a parameter, so "today" is checkable rather than whatever the machine says.
+  assert.equal(localDay(SYDNEY, Date.parse("2026-08-11T14:30:00.000Z")), "2026-08-12");
+  assert.equal(localDay(SYDNEY, new Date("2026-08-11T14:30:00.000Z")), "2026-08-12");
 
-// The clock is a parameter, so "today" is checkable rather than whatever the
-// machine says.
-assert.strictEqual(localDay(new Date(2027, 0, 1, 0, 0)), "2027-01-01");
+  // A bare calendar day is already a day — it must not be re-parsed as UTC
+  // midnight, which reads as the previous day west of UTC.
+  assert.equal(localDay("America/Los_Angeles", "2026-08-09"), "2026-08-09");
+  assert.equal(localDay(SYDNEY, localDay(SYDNEY, "2026-01-01")), "2026-01-01");
 
-// API timestamps arrive as ISO strings.
-assert.strictEqual(localDay(new Date(2026, 7, 9, 23, 45).toISOString()), "2026-08-09");
+  // 19:00 typed on a day is 19:00 at the studio, not on the browser's clock.
+  assert.equal(atLocalTime(SYDNEY, "2026-08-12", "19:00").toISOString(), "2026-08-12T09:00:00.000Z");
+  assert.equal(atLocalTime(SINGAPORE, "2026-08-12", "19:00").toISOString(), "2026-08-12T11:00:00.000Z");
+  // Round trip, both directions.
+  const noon = atLocalTime(SYDNEY, "2026-08-12", "12:00");
+  assert.equal(localDay(SYDNEY, noon), "2026-08-12");
+  assert.equal(atLocalTime(SYDNEY, localDay(SYDNEY, noon), "12:00").getTime(), noon.getTime());
 
-// Round trip, both directions.
-assert.strictEqual(localDay(atLocalTime("2026-08-09", "23:45")), "2026-08-09");
-const noon = new Date(2026, 7, 9, 12, 0);
-assert.strictEqual(atLocalTime(localDay(noon), "12:00").getTime(), noon.getTime());
+  // A full day covers both its endpoints and nothing on the neighbouring days.
+  const { start, end } = localDayRange(SYDNEY, "2026-08-12");
+  assert.equal(start.toISOString(), "2026-08-11T14:00:00.000Z");
+  assert.equal(end.toISOString(), "2026-08-12T13:59:59.999Z");
+  assert.equal(localDay(SYDNEY, start), "2026-08-12");
+  assert.equal(localDay(SYDNEY, end), "2026-08-12");
+  assert.equal(localDay(SYDNEY, start.getTime() - 1), "2026-08-11");
+  assert.equal(localDay(SYDNEY, end.getTime() + 1), "2026-08-13");
+});
 
-// A full day covers both its endpoints and nothing on the neighbouring days.
-const { start, end } = localDayRange("2026-08-09");
-assert.strictEqual(localDay(start), "2026-08-09");
-assert.strictEqual(localDay(end), "2026-08-09");
-assert.strictEqual(start.getHours(), 0);
-assert.strictEqual(start.getMinutes(), 0);
-assert.ok(start <= new Date(2026, 7, 9, 0, 0));
-assert.ok(new Date(2026, 7, 9, 23, 59, 59) <= end);
-assert.ok(new Date(2026, 7, 8, 23, 59, 59, 999) < start);
-assert.ok(new Date(2026, 7, 10, 0, 0) > end);
-
-// A bare calendar day is already a day — it must not be re-parsed as UTC
-// midnight, which reads as the previous day west of UTC.
-assert.strictEqual(localDay("2026-08-09"), "2026-08-09");
-assert.strictEqual(localDay(localDay("2026-01-01")), "2026-01-01");
-
-console.log("local-day.test ok");
+test("TEN-123 a day's range on a Sydney daylight-saving day ends at that day's own last instant", () => {
+  // 4 October 2026 has 23 hours: it opens at 14:00 UTC on the 3rd and the next
+  // day opens at 13:00 UTC on the 4th.
+  const spring = localDayRange(SYDNEY, "2026-10-04");
+  assert.equal(spring.start.toISOString(), "2026-10-03T14:00:00.000Z");
+  assert.equal(spring.end.toISOString(), "2026-10-04T12:59:59.999Z");
+  assert.equal(localDayRange(SYDNEY, "2026-10-05").start.getTime(), spring.end.getTime() + 1);
+  // 5 April 2026 has 25 hours.
+  const autumn = localDayRange(SYDNEY, "2026-04-05");
+  assert.equal(autumn.start.toISOString(), "2026-04-04T13:00:00.000Z");
+  assert.equal(autumn.end.toISOString(), "2026-04-05T13:59:59.999Z");
+  assert.equal(localDayRange(SYDNEY, "2026-04-06").start.getTime(), autumn.end.getTime() + 1);
+});

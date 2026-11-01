@@ -14,20 +14,9 @@ import {
 } from "./class-seats";
 
 // The dates these tests read are instants that fall on Singapore calendar days,
-// and the page words them in the zone the browser is in. The tests that read a
-// date run in Singapore, so the day they name is the same wherever the runner
-// is. The zone is set inside the test and restored after it, so it can't leak
-// into other files when they share a process.
-const inSingapore = (run: () => void) => (): void => {
-  const zone = process.env.TZ;
-  process.env.TZ = "Asia/Singapore";
-  try {
-    run();
-  } finally {
-    if (zone === undefined) delete process.env.TZ;
-    else process.env.TZ = zone;
-  }
-};
+// and the page words them on the studio's clock, which is passed in: the
+// runner's own zone is irrelevant.
+const SINGAPORE = "Asia/Singapore";
 
 const CLASS = {
   capacity_online: 10,
@@ -69,28 +58,28 @@ test("SEAT-01 Add member's confirmation names the seat the booking took", () => 
 });
 
 test("a full class asks an admin whether to overbook", () => {
-  const refusal = staffBookingRefusal(new ApiError(409, { error: "class_full", waitlist_open: false }), "admin");
+  const refusal = staffBookingRefusal(new ApiError(409, { error: "class_full", waitlist_open: false }), "admin", SINGAPORE);
   assert.deepStrictEqual(refusal, { kind: "full", message: "No seats left. Overbook?", canOverbook: true });
 });
 
 test("a full class tells an instructor there are no seats, with nothing to override", () => {
-  const refusal = staffBookingRefusal(new ApiError(409, { error: "class_full" }), "instructor");
+  const refusal = staffBookingRefusal(new ApiError(409, { error: "class_full" }), "instructor", SINGAPORE);
   assert.deepStrictEqual(refusal, { kind: "full", message: "No seats left.", canOverbook: false });
 });
 
 test("a member whose packages can't pay is explained in staff terms", () => {
-  assert.deepStrictEqual(staffBookingRefusal(new ApiError(409, { error: "insufficient_credits" }), "admin"), {
+  assert.deepStrictEqual(staffBookingRefusal(new ApiError(409, { error: "insufficient_credits" }), "admin", SINGAPORE), {
     kind: "error",
     message: "This member has no package that can pay for this class.",
   });
 });
 
 test("an unknown refusal falls back to the status", () => {
-  assert.deepStrictEqual(staffBookingRefusal(new ApiError(500, null), "admin"), {
+  assert.deepStrictEqual(staffBookingRefusal(new ApiError(500, null), "admin", SINGAPORE), {
     kind: "error",
     message: "Couldn't add the member (HTTP 500).",
   });
-  assert.deepStrictEqual(staffBookingRefusal(new Error("offline"), "admin"), {
+  assert.deepStrictEqual(staffBookingRefusal(new Error("offline"), "admin", SINGAPORE), {
     kind: "error",
     message: "Network error",
   });
@@ -115,12 +104,12 @@ const pkg = (over: Partial<StaffMemberPackage>): StaffMemberPackage => ({
 test("BKG-36 one or no Eligible package books straight away, with no select", () => {
   const one = pkg({ id: "a" });
   const short = pkg({ id: "b", eligible: false, reason: "insufficient_credits" });
-  assert.strictEqual(packagePick({ default_client_package_id: "a", packages: [one, short] }), null);
-  assert.strictEqual(packagePick({ default_client_package_id: null, packages: [short] }), null);
-  assert.strictEqual(packagePick({ default_client_package_id: null, packages: [] }), null);
+  assert.strictEqual(packagePick({ default_client_package_id: "a", packages: [one, short] }, SINGAPORE), null);
+  assert.strictEqual(packagePick({ default_client_package_id: null, packages: [short] }, SINGAPORE), null);
+  assert.strictEqual(packagePick({ default_client_package_id: null, packages: [] }, SINGAPORE), null);
 });
 
-test("BKG-36 more than one Eligible package offers a select, the Default payer chosen and Ineligible ones greyed with their reason", inSingapore(() => {
+test("BKG-36 more than one Eligible package offers a select, the Default payer chosen and Ineligible ones greyed with their reason", () => {
   const pick = packagePick({
     default_client_package_id: "run",
     packages: [
@@ -131,7 +120,7 @@ test("BKG-36 more than one Eligible package offers a select, the Default payer c
       pkg({ id: "rule", eligible: false, reason: "not_accepted" }),
       pkg({ id: "late", eligible: false, reason: "plan_expires_before_class" }),
     ],
-  });
+  }, SINGAPORE);
   assert.ok(pick);
   assert.strictEqual(pick.defaultId, "run");
   assert.deepStrictEqual(
@@ -147,7 +136,7 @@ test("BKG-36 more than one Eligible package offers a select, the Default payer c
   );
   assert.strictEqual(pick.options[1]!.label, "10 Class Pass · 4 credits left");
   assert.strictEqual(pick.options[2]!.label, "Monthly Unlimited · Unlimited");
-}));
+});
 
 test("SCH-04 the capacity fields read attendance capacity and the waitlist apart", () => {
   assert.strictEqual(capacityLine({ waitlist: 5, onlineBooking: 10, buffer: 2 }), "Attendance capacity: 12 · Waitlist: 5");

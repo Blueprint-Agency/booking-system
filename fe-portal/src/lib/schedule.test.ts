@@ -5,6 +5,9 @@ import { seriesErrorMessage } from "./series";
 import { manualSessionErrorMessage } from "./pt-manual";
 import { ApiError, type Api } from "./api";
 
+// The studio's zone, which a clash sentence reads its time in.
+const SG = "Asia/Singapore";
+
 // A clash is one code for both subjects, and the backend says who is taken by
 // what — that sentence is the whole point, so it must survive to the screen.
 test("a scheduling clash shows the backend's specific sentence", () => {
@@ -15,6 +18,8 @@ test("a scheduling clash shows the backend's specific sentence", () => {
         subject: "instructor",
         message: "Anya is already booked — a class on 1 Jan, 18:00–19:00.",
       }),
+      "Save failed",
+      SG,
     ),
     "Anya is already booked — a class on 1 Jan, 18:00–19:00.",
   );
@@ -25,21 +30,21 @@ test("a scheduling clash shows the backend's specific sentence", () => {
 test("STF-35 a missing Instructor Permission reads as ask an admin, on every schedule call", () => {
   const refused = new ApiError(403, { error: "forbidden_permission", required: "schedule_classes" });
   const copy = "You do not have permission for this. Ask an admin.";
-  assert.strictEqual(scheduleErrorMessage(refused, "Failed to create class"), copy);
-  assert.strictEqual(seriesErrorMessage(refused, "Couldn't preview the dates"), copy);
+  assert.strictEqual(scheduleErrorMessage(refused, "Failed to create class", SG), copy);
+  assert.strictEqual(seriesErrorMessage(refused, "Couldn't preview the dates", SG), copy);
 });
 
 // ...and if it ever arrives without one, the code still explains itself.
 test("a clash with no message falls back to the code's copy", () => {
   assert.strictEqual(
-    scheduleErrorMessage(new ApiError(409, { error: "schedule_conflict" })),
+    scheduleErrorMessage(new ApiError(409, { error: "schedule_conflict" }), "Save failed", SG),
     "That room or instructor is already booked for an overlapping time.",
   );
 });
 
 test("a known code is explained without a status", () => {
   assert.strictEqual(
-    scheduleErrorMessage(new ApiError(400, { error: "room_location_mismatch" })),
+    scheduleErrorMessage(new ApiError(400, { error: "room_location_mismatch" }), "Save failed", SG),
     "That room belongs to a different location.",
   );
 });
@@ -48,11 +53,11 @@ test("a known code is explained without a status", () => {
 // is refused in words the admin can act on, not a status.
 test("an edit into the past or with inverted times is explained without a status", () => {
   assert.strictEqual(
-    scheduleErrorMessage(new ApiError(400, { error: "starts_at_in_past" })),
+    scheduleErrorMessage(new ApiError(400, { error: "starts_at_in_past" }), "Save failed", SG),
     "A class can't be moved to a time that has already passed. Pick a date and start time still to come.",
   );
   assert.strictEqual(
-    scheduleErrorMessage(new ApiError(400, { error: "ends_at_must_be_after_starts_at" })),
+    scheduleErrorMessage(new ApiError(400, { error: "ends_at_must_be_after_starts_at" }), "Save failed", SG),
     "End time must be after start time.",
   );
 });
@@ -60,10 +65,10 @@ test("an edit into the past or with inverted times is explained without a status
 // An unknown code still says which action failed, in the caller's words.
 test("an unknown code falls back to the named action", () => {
   assert.strictEqual(
-    scheduleErrorMessage(new ApiError(500, { error: "kaboom" }), "Failed to create class"),
+    scheduleErrorMessage(new ApiError(500, { error: "kaboom" }), "Failed to create class", SG),
     "Failed to create class (HTTP 500).",
   );
-  assert.strictEqual(scheduleErrorMessage(new ApiError(500, null)), "Save failed (HTTP 500).");
+  assert.strictEqual(scheduleErrorMessage(new ApiError(500, null), "Save failed", SG), "Save failed (HTTP 500).");
 });
 
 test("PT-145 scheduling, moving or creating a private session after its package's expiry shows the backend's sentence, and its own copy without one, never a status", () => {
@@ -72,10 +77,10 @@ test("PT-145 scheduling, moving or creating a private session after its package'
   const withSentence = new ApiError(409, { error: "package_expires_before_session", message: sentence });
   const bare = new ApiError(409, { error: "package_expires_before_session" });
   const copy = "The package paying for this session runs out before that time. Choose an earlier time.";
-  assert.strictEqual(scheduleErrorMessage(withSentence, "Couldn't schedule"), sentence);
-  assert.strictEqual(manualSessionErrorMessage(withSentence), sentence);
-  assert.strictEqual(scheduleErrorMessage(bare, "Couldn't schedule"), copy);
-  assert.strictEqual(manualSessionErrorMessage(bare), copy);
+  assert.strictEqual(scheduleErrorMessage(withSentence, "Couldn't schedule", SG), sentence);
+  assert.strictEqual(manualSessionErrorMessage(withSentence, SG), sentence);
+  assert.strictEqual(scheduleErrorMessage(bare, "Couldn't schedule", SG), copy);
+  assert.strictEqual(manualSessionErrorMessage(bare, SG), copy);
 });
 
 test("CXL-70 cancelling a class promises no credit back to a refunded package", () => {
@@ -86,7 +91,7 @@ test("CXL-70 cancelling a class promises no credit back to a refunded package", 
 });
 
 test("a thrown non-response is a network error", () => {
-  assert.strictEqual(scheduleErrorMessage(new TypeError("fetch failed")), "Network error");
+  assert.strictEqual(scheduleErrorMessage(new TypeError("fetch failed"), "Save failed", SG), "Network error");
 });
 
 // The corporate read is the odd envelope on this surface; callers get the row.

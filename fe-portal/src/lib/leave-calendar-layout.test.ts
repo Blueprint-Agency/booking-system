@@ -1,6 +1,25 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { PERSON_PALETTE, dayDiff, layoutWeek, personColours } from "./leave-calendar-layout";
+import { PERSON_PALETTE, dayDiff, layoutWeek, personColours, weeksOf } from "./leave-calendar-layout";
+
+test("TEN-134 the leave calendar draws Monday-first weeks of plain days, a month only the rows it needs", () => {
+  // October 2026 begins on a Thursday and ends on a Saturday: five rows, 28 September to 1 November.
+  const month = weeksOf("month", "2026-10-17");
+  assert.equal(month.length, 5);
+  assert.deepEqual(month[0], ["2026-09-28", "2026-09-29", "2026-09-30", "2026-10-01", "2026-10-02", "2026-10-03", "2026-10-04"]);
+  assert.equal(month[4]![6], "2026-11-01");
+  // February 2027 begins on a Monday and ends on a Sunday: exactly four rows, none of another month.
+  const february = weeksOf("month", "2027-02-10");
+  assert.equal(february.length, 4);
+  assert.equal(february[0]![0], "2027-02-01");
+  assert.equal(february[3]![6], "2027-02-28");
+  // A week is the Monday-to-Sunday around the day, across a year end and Sydney's daylight-saving Sunday.
+  assert.deepEqual(weeksOf("week", "2027-01-01"), [
+    ["2026-12-28", "2026-12-29", "2026-12-30", "2026-12-31", "2027-01-01", "2027-01-02", "2027-01-03"],
+  ]);
+  assert.deepEqual(weeksOf("week", "2026-10-04")[0]![0], "2026-09-28");
+  assert.equal(weeksOf("week", "2026-10-04")[0]![6], "2026-10-04");
+});
 
 // The leave calendar draws each absence as one bar across its days, stacked in
 // lanes, one colour per person.
