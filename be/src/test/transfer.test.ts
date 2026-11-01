@@ -53,9 +53,11 @@ describe('moving a studio between deployments', () => {
   /**
    * A studio of this test's own, with enough in it to be worth restoring.
    *
-   * Deliberately includes the two things a row count cannot check: a member who
-   * refers another (the self-reference the two-pass write exists for) and a waiver
-   * text (a `tenant_settings` column the application role may not read directly).
+   * Deliberately includes the things a row count cannot check: a member who
+   * refers another (the self-reference the two-pass write exists for), a waiver
+   * text (a `tenant_settings` column the application role may not read directly),
+   * and a scheduled PT request with its session — the two rows that name each
+   * other, which no write order satisfies and a delete must untie first.
    */
   async function studioWithData(slug: string): Promise<string> {
     const tenantId = await emptyTenant(slug)
@@ -69,15 +71,42 @@ describe('moving a studio between deployments', () => {
     INSERT INTO clients (tenant_id, auth_user_id, email, name, phone, referred_by_client_id)
     VALUES (${tenantId}, ${randomUUID()}, 'friend@restored.test', 'Referred Friend', '+6580000002', ${referrer!.id})
   `)
-    await harness.db.execute(sql`
-    INSERT INTO locations (tenant_id, name) VALUES (${tenantId}, 'The Studio')
+    const [location] = await harness.db.execute<{ id: string }>(sql`
+    INSERT INTO locations (tenant_id, name) VALUES (${tenantId}, 'The Studio') RETURNING id
   `)
     await harness.db.execute(sql`
     INSERT INTO tenant_settings (tenant_id, display_name, waiver_text)
     VALUES (${tenantId}, ${slug}, ${'The studio’s own words.'})
   `)
 
+    const [staff] = await harness.db.execute<{ id: string }>(sql`
+    INSERT INTO staff_users (tenant_id, auth_user_id, email, name, role, status)
+    VALUES (${tenantId}, ${randomUUID()}, 'coach@restored.test', 'Restored Coach', 'instructor', 'active')
+    RETURNING id
+  `)
+    await harness.db.execute(sql`INSERT INTO instructors (tenant_id, staff_user_id) VALUES (${tenantId}, ${staff!.id})`)
+    const [request] = await harness.db.execute<{ id: string }>(sql`
+    INSERT INTO pt_requests (tenant_id, client_id, location_id, session_type, status)
+    VALUES (${tenantId}, ${referrer!.id}, ${location!.id}, '1on1', 'pending')
+    RETURNING id
+  `)
+    const [session] = await harness.db.execute<{ id: string }>(sql`
+    INSERT INTO pt_sessions (tenant_id, pt_request_id, instructor_id, location_id, starts_at, ends_at, session_type,
+                             capacity_online, scheduled_at, scheduled_by_staff_id)
+    VALUES (${tenantId}, ${request!.id}, ${staff!.id}, ${location!.id}, now() + interval '2 days',
+            now() + interval '2 days 1 hour', '1on1', 1, now(), ${staff!.id})
+    RETURNING id
+  `)
+    await harness.db.execute(sql`
+    UPDATE pt_requests SET status = 'scheduled', scheduled_pt_session_id = ${session!.id} WHERE id = ${request!.id}
+  `)
+
     return tenantId
+  }
+
+  /** Strip the staff and PT rows `studioWithData` made, for a test that brings staff of its own. */
+  function withoutStaffRows(archive: { rows: Record<string, unknown[]> }) {
+    for (const table of ['instructors', 'pt_requests', 'pt_sessions']) archive.rows[table] = []
   }
 
   /**
@@ -87,7 +116,16 @@ describe('moving a studio between deployments', () => {
    * foreign keys that make a restore need an order make a delete need one too.
    */
   async function deleteTenantRows(tenantId: string) {
-    const { order } = await transfer.tenantTableOrder()
+    const { order, deferred } = await transfer.tenantTableOrder()
+    // The references no write order satisfies (a PT request and its session name
+    // each other) are untied first, as `clearStudioRows` does.
+    for (const [table, columns] of Object.entries(deferred)) {
+      await harness.db.execute(sql`
+        UPDATE ${sql.identifier(table)}
+        SET ${sql.join(columns.map(c => sql`${sql.identifier(c)} = NULL`), sql`, `)}
+        WHERE tenant_id = ${tenantId}
+      `)
+    }
     for (const table of [...order].reverse()) {
       await harness.db.execute(
         sql`DELETE FROM ${sql.identifier(table)} WHERE tenant_id = ${tenantId}`,
@@ -237,6 +275,7 @@ describe('moving a studio between deployments', () => {
     // the database itself was migrated.
     const source = await studioWithData(`oldrolesrc-${Date.now()}`)
     const archive = await transfer.exportTenant(source)
+    withoutStaffRows(archive)
     const staffId = randomUUID()
     archive.rows.staff_users = [
       {
@@ -284,6 +323,7 @@ describe('moving a studio between deployments', () => {
     // the migration backfilled the database: every instructor holding all three.
     const source = await studioWithData(`prepermsrc-${Date.now()}`)
     const archive = await transfer.exportTenant(source)
+    withoutStaffRows(archive)
     const staffId = randomUUID()
     archive.rows.staff_users = [
       {

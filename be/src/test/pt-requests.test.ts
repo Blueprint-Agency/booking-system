@@ -1259,18 +1259,16 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
    * A request `scheduled` with no session behind it, the two ways one is found:
    * `never`, a request marked scheduled that named no session; `cleared`, one
    * whose session is gone and whose session id was cleared (migration 0140, a
-   * restore); `dangling`, one whose session is gone and whose id still names
-   * it (this schema has no foreign key on it). The member's debit stays on the
-   * package, as it was.
+   * restore). An id still naming a session that is gone can no longer be
+   * stored: migration 0140's foreign key refuses it. The member's debit stays on
+   * the package, as it was.
    */
-  async function withoutSession(requestId: string, how: 'never' | 'cleared' | 'dangling'): Promise<void> {
-    if (how === 'cleared' || how === 'dangling') {
+  async function withoutSession(requestId: string, how: 'never' | 'cleared'): Promise<void> {
+    if (how === 'cleared') {
       const sessionId = (await requestRow(requestId)).scheduledPtSessionId
       assert.ok(sessionId, 'the request was scheduled before its session went')
       await harness.db.execute(sql`UPDATE client_packages SET activated_by_pt_session_id = NULL WHERE activated_by_pt_session_id = ${sessionId}`)
-      if (how === 'cleared') {
-        await harness.db.execute(sql`UPDATE pt_requests SET scheduled_pt_session_id = NULL WHERE id = ${requestId}`)
-      }
+      await harness.db.execute(sql`UPDATE pt_requests SET scheduled_pt_session_id = NULL WHERE id = ${requestId}`)
       await harness.db.execute(sql`DELETE FROM bookings WHERE pt_session_id = ${sessionId}`)
       await harness.db.execute(sql`DELETE FROM pt_session_clients WHERE pt_session_id = ${sessionId}`)
       await harness.db.execute(sql`DELETE FROM pt_session_supporting_instructors WHERE pt_session_id = ${sessionId}`)
@@ -1284,7 +1282,7 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
   }
 
   test('PT-181 an Admin cancels a scheduled request that has no session, whether it named none or its session is gone: it ends cancelled_after_scheduled, the held credit goes back to its package with a movement and an audit row, and nothing else moves', async () => {
-    for (const how of ['never', 'cleared', 'dangling'] as const) {
+    for (const how of ['never', 'cleared'] as const) {
       const who = await member(one, `Sid Sessionless ${how}`)
       const packageId = await givePt(one, who, '1on1')
       const requestId = await requestOk(one, who, { sessionType: '1on1', clientPackageId: packageId })
@@ -1419,7 +1417,7 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
   })
 
   test('PT-183 a member (or an Instructor) cancelling a scheduled request that has no session is answered as before, 404 pt_session_not_found: the request stays scheduled and nothing is returned', async () => {
-    for (const how of ['never', 'cleared', 'dangling'] as const) {
+    for (const how of ['never', 'cleared'] as const) {
       const who = await member(one, `Sid Own ${how}`)
       const packageId = await givePt(one, who, '1on1')
       const requestId = await requestOk(one, who, { sessionType: '1on1', clientPackageId: packageId })
@@ -1807,6 +1805,20 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     await expectStatus(await memberCancel(cat, requestId), 403)
 
     assert.equal((await requestRow(requestId)).status, 'pending')
+    assert.equal(await sessionsLeft(packageId), 9)
+  })
+
+  test('TEN-53 a member cancelling a scheduled request that names no session (its id cleared by migration 0140 or by an archive restore) is a 404 pt_session_not_found, not a 500, and the request is left as it was', async () => {
+    const dot = await member(one, 'Dot Orphan')
+    const packageId = await givePt(one, dot, '1on1')
+    const requestId = await requestOk(one, dot, { sessionType: '1on1', clientPackageId: packageId })
+    await scheduled(requestId)
+    await harness.db.execute(sql`UPDATE pt_requests SET scheduled_pt_session_id = NULL WHERE id = ${requestId}`)
+
+    const refused = await expectStatus(await memberCancel(dot, requestId), 404)
+
+    assert.equal(refused.error, 'pt_session_not_found')
+    assert.equal((await requestRow(requestId)).status, 'scheduled')
     assert.equal(await sessionsLeft(packageId), 9)
   })
 

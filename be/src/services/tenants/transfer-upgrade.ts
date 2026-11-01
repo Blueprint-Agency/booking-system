@@ -85,5 +85,20 @@ export function upgradeArchiveRows(rows: Readonly<Rows>, archived: { tenantName?
     )
   }
 
+  // Migration 0140: a request's `scheduled_pt_session_id` is a foreign key to
+  // `pt_sessions`. Before it, a request could name a session that was no
+  // longer there, and the migration cleared those ids; an archive taken before
+  // it still holds them, and the key would refuse them. A request is brought
+  // to what the migration made of it: no session.
+  const requests = rows.pt_requests
+  if (requests?.some(r => r.scheduled_pt_session_id != null)) {
+    const sessions = new Set((rows.pt_sessions ?? []).map(r => r.id))
+    out.pt_requests = requests.map(row =>
+      row.scheduled_pt_session_id != null && !sessions.has(row.scheduled_pt_session_id)
+        ? { ...row, scheduled_pt_session_id: null }
+        : row,
+    )
+  }
+
   return out
 }

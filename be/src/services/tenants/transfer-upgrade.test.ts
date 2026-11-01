@@ -95,6 +95,31 @@ test("STF-50 an archive from before #471 restores each instructor's photo as the
   assert.deepEqual(upgradeArchiveRows(current).staff_users, current.staff_users, 'a picture of their own is kept')
 })
 
+test('TEN-52 an archive from before migration 0140 restores a request whose session is not in it as one with no session, and leaves every real one', () => {
+  const SESSION = '33333333-3333-4333-8333-333333333333'
+  const GONE = '44444444-4444-4444-8444-444444444444'
+  const rows = upgradeArchiveRows({
+    pt_sessions: [{ id: SESSION, pt_request_id: 'r1' }],
+    pt_requests: [
+      { id: 'r1', status: 'scheduled', scheduled_pt_session_id: SESSION },
+      { id: 'r2', status: 'scheduled', scheduled_pt_session_id: GONE },
+      { id: 'r3', status: 'pending', scheduled_pt_session_id: null },
+      { id: 'r4', status: 'pending' },
+    ],
+  })
+  assert.deepEqual(rows.pt_requests, [
+    { id: 'r1', status: 'scheduled', scheduled_pt_session_id: SESSION },
+    { id: 'r2', status: 'scheduled', scheduled_pt_session_id: null },
+    { id: 'r3', status: 'pending', scheduled_pt_session_id: null },
+    { id: 'r4', status: 'pending' },
+  ])
+
+  const noSessions = upgradeArchiveRows({
+    pt_requests: [{ id: 'r2', status: 'scheduled', scheduled_pt_session_id: GONE }],
+  })
+  assert.deepEqual(noSessions.pt_requests, [{ id: 'r2', status: 'scheduled', scheduled_pt_session_id: null }])
+})
+
 test("the caller's archive is not changed", () => {
   const archive = { leave_pools: [{ instructor_id: ADA }] }
   upgradeArchiveRows(archive)

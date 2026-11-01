@@ -673,7 +673,7 @@ The simplified v1 flow has **no in-app back-and-forth** — all negotiation is o
 | message | text | nullable — free-form note from client |
 | status | enum `pt_request_status` | not null, default `'pending'` — `pending`, `scheduled`, `cancelled_before_scheduled`, `cancelled_after_scheduled`, `attended` (mirrored from booking check-in) |
 | expires_at | timestamptz | not null — `created_at + ttl` from `pt_booking_config` (sweep job, §5) |
-| scheduled_pt_session_id | uuid | FK → pt_sessions.id, nullable — set when status=`scheduled` |
+| scheduled_pt_session_id | uuid | FK → pt_sessions.id, nullable, `ON DELETE restrict` (migration `0140`, #508) — set when status=`scheduled`. A session a request names is cancelled, never deleted |
 | resolved_at, resolved_by_staff_id | | nullable — set on scheduled or either cancellation; staff id NULL for client-initiated / system (expiry) |
 | cancel_source | `cancellation_source` | nullable — who cancelled it: `client`, `admin`, `instructor` or `system` (an expiry, a Complimentary Package's Remove). A pending request has no `cancellations` row, so this is how its reads tell a Remove — which names its admin in `resolved_by_staff_id` — from a staff cancel (#352, migration 0103). Null while live and on requests cancelled before it |
 | created_at | timestamptz | not null |

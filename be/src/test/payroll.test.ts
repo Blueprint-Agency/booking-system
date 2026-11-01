@@ -344,6 +344,7 @@ describe('payroll over HTTP', { skip: integrationTestsEnabled ? false : SKIP_REA
     await harness.db.execute(sql`DELETE FROM inbox_items WHERE payload->>'clientId' IN (SELECT id::text FROM (${clients}) c)`)
     await harness.db.execute(sql`DELETE FROM audit_log WHERE actor_staff_id IN (${staffIds})`)
     await harness.db.execute(sql`DELETE FROM manual_payroll_entries WHERE instructor_id IN (${staffIds})`)
+    await harness.db.execute(sql`UPDATE pt_requests SET scheduled_pt_session_id = NULL WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM pt_sessions WHERE scheduled_by_staff_id IN (${staffIds})`)
     await harness.db.execute(sql`DELETE FROM pt_requests WHERE client_id IN (${clients})`)
     await harness.db.execute(sql`DELETE FROM classes WHERE created_by_staff_id IN (${staffIds})`)

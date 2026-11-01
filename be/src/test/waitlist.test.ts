@@ -299,6 +299,7 @@ describe('class waitlist over HTTP', { skip: integrationTestsEnabled ? false : S
     const sessions = sql`SELECT id FROM pt_sessions WHERE pt_request_id IN (${requests})`
     await harness.db.execute(sql`DELETE FROM pt_session_clients WHERE pt_session_id IN (${sessions})`)
     await harness.db.execute(sql`DELETE FROM pt_session_supporting_instructors WHERE pt_session_id IN (${sessions})`)
+    await harness.db.execute(sql`UPDATE pt_requests SET scheduled_pt_session_id = NULL WHERE id IN (${requests})`)
     await harness.db.execute(sql`DELETE FROM pt_sessions WHERE id IN (${sessions})`)
     await harness.db.execute(sql`DELETE FROM pt_request_slots WHERE pt_request_id IN (${requests})`)
     await harness.db.execute(sql`DELETE FROM pt_requests WHERE client_id IN (${clients})`)
