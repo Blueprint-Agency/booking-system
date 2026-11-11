@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { Loader2, Save } from "lucide-react";
-import { Button, Input, Label, PageHeader, Textarea } from "@/components/ui";
+import { Button, Input, Label, LoadFailure, PageHeader, Textarea } from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
 import { permissionRefusal } from "@/lib/access-refusal";
 import { ApiError } from "@/lib/api";
@@ -77,13 +77,12 @@ export default function InstructorProfilePage() {
         description="Your account details, and the picture and bio members can see."
       />
 
-      {error && (
-        <div className="mb-4 rounded-lg border border-error/30 bg-error/5 p-3 text-xs text-error">
-          Failed to load profile: {error}
+      {/* A profile that failed to load says so, with a retry, never an endless spinner. */}
+      {error && !loading ? (
+        <div className="rounded-xl border border-border bg-card shadow-soft">
+          <LoadFailure what="your profile" detail={error} onRetry={load} />
         </div>
-      )}
-
-      {loading || !profile ? (
+      ) : loading || !profile ? (
         <div className="flex items-center justify-center py-16 text-muted">
           <Loader2 className="h-5 w-5 animate-spin" />
         </div>
@@ -111,8 +110,7 @@ export default function InstructorProfilePage() {
               </div>
             </dl>
             <p className="mt-3 text-xs text-muted">
-              Manage your name, email, and password from the account menu (top
-              right).
+              Your name and email are edited by an admin from the Staff page.
             </p>
           </section>
 

@@ -1,29 +1,20 @@
 "use client";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CalendarPlus, ChevronLeft, ChevronRight, Loader2, UserPlus } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import {
-  Button,
-  Dialog,
-  DialogFooter,
-  EmptyState,
-  Label,
-  LoadFailure,
-  PageHeader,
-  StatusBadge,
-  Textarea,
-} from "@/components/ui";
+import { Button, EmptyState, LoadFailure, PageHeader, StatusBadge } from "@/components/ui";
+import { InstructorCancelClassDialog } from "@/components/schedule/instructor-cancel-class-dialog";
 import { cn } from "@/lib/utils";
 import { useWorkspace } from "@/lib/workspace-context";
 import { answeredElsewhere, loadError, type LoadError } from "@/lib/failed-read";
-import { formatDate, formatPlainDay, formatTime, todayIso } from "@/lib/formatters";
+import { formatDate, formatTime, todayIso } from "@/lib/formatters";
 import { localDay } from "@/lib/local-day";
-import { gridDays, gridWindow, upcomingWindow } from "@/lib/schedule-grid";
-import { addDays, addMonths } from "@/lib/studio-time";
+import { gridDays, gridWindow, upcomingWindow, type GridView } from "@/lib/schedule-grid";
 import { useStudioZone } from "@/components/brand/brand-provider";
 import { waitingTag } from "@/lib/class-waitlist";
-import { ManualPtSessionDialog } from "@/components/schedule/manual-pt-session-dialog";
+import { PtRequestPickerDialog } from "@/components/schedule/pt-request-picker-dialog";
 import {
   Legend,
   ScheduleCalendar,
@@ -31,7 +22,19 @@ import {
   WeekStrip,
   type CalendarResolver,
 } from "@/components/schedule/schedule-calendar";
-import { scheduleErrorMessage } from "@/lib/schedule";
+import {
+  ADD_TIP,
+  AddKindButtons,
+  FilterPill,
+  FiltersButton,
+  FiltersRow,
+  PickSlotBanner,
+  PrevTodayNext,
+  TYPE_FILTER_OPTIONS,
+  gridHeading,
+  stepCursor,
+} from "@/components/schedule/schedule-toolbar";
+import { slotHref, type Slot } from "@/lib/schedule";
 import { useSchedule } from "@/lib/use-schedule";
 import { useSchedulePosition } from "@/lib/use-schedule-position";
 import {
@@ -46,7 +49,22 @@ interface Room {
   location_id: string;
 }
 
-type Mode = "calendar" | "list";
+type AddKind = "class" | "pt";
+type FilterType = "all" | ScheduleEntry["kind"];
+/** The grid's three views, or the next 60 days as a list. */
+type Shown = GridView | "list";
+
+const SHOWN_OPTIONS: { v: Shown; label: string }[] = [
+  { v: "day", label: "Day" },
+  { v: "week", label: "Week" },
+  { v: "month", label: "Month" },
+  { v: "list", label: "List" },
+];
+
+const ADD_KINDS: { kind: AddKind; label: string; noun: string }[] = [
+  { kind: "class", label: "Class", noun: "class" },
+  { kind: "pt", label: "PT Session", noun: "PT session" },
+];
 
 const KIND_LABEL: Record<ScheduleEntry["kind"], string> = {
   class: "Class",
@@ -57,103 +75,32 @@ const KIND_LABEL: Record<ScheduleEntry["kind"], string> = {
 
 /**
  * An Instructor's own timetable: the classes they teach, the private sessions
- * they run, and the workshops and corporate sessions they are on. A calendar
- * (day, week, month), drawn as the Admin's Schedule is, or the next 60 days as
- * a list, where a class they lead can be cancelled.
+ * they run, and the workshops and corporate sessions they are on. The Admin's
+ * Schedule, drawn the same way — "+ Class" and "+ PT Session" arm the grid and
+ * the slot picked seeds the form — with only what their Instructor Permissions
+ * allow, and a List of the next 60 days beside the grids.
  */
 export default function InstructorSchedulePage() {
-  const { may } = useWorkspace();
+  const router = useRouter();
+  const { may, accessibleLocations, currentStaff } = useWorkspace();
+  const timezone = useStudioZone();
   // New class, Repeat weekly and Cancel are Schedule classes; the timetable is not.
   const canSchedule = may("schedule_classes");
-  // A manual PT session puts a private session on their calendar: Take PT bookings'.
+  // A PT session put on their calendar (from a request or by hand) is Take PT bookings'.
   const canTakePt = may("take_pt_bookings");
-  const [mode, setMode] = useState<Mode>("calendar");
-  const [addingPt, setAddingPt] = useState(false);
-  // Bumped when something this page did changes the timetable, so whichever
-  // view is showing reads it again.
-  const [changed, setChanged] = useState(0);
+  const addKinds = ADD_KINDS.filter((k) => (k.kind === "class" ? canSchedule : canTakePt));
 
-  return (
-    <div className={cn("space-y-6", mode === "list" && "mx-auto max-w-3xl")}>
-      {/* The action belongs to PageHeader, which already stacks it under the
-          title on a phone — a sibling flex row squeezed the description into a
-          sliver instead. */}
-      <PageHeader
-        title="My schedule"
-        description="Your classes, private sessions, workshops and corporate sessions."
-        actions={
-          <div className="flex flex-wrap gap-2">
-            <ModeToggle value={mode} onChange={setMode} />
-            {/* A private session agreed outside the app, run by this instructor. */}
-            {canTakePt && (
-              <Button variant="secondary" onClick={() => setAddingPt(true)}>
-                <UserPlus className="h-4 w-4" /> PT session
-              </Button>
-            )}
-            {canSchedule && (
-              <Link href="/instructor/schedule/new/class">
-                <Button>
-                  <CalendarPlus className="h-4 w-4" /> New class
-                </Button>
-              </Link>
-            )}
-          </div>
-        }
-      />
-
-      {addingPt && (
-        <ManualPtSessionDialog
-          role="instructor"
-          onClose={() => setAddingPt(false)}
-          onCreated={() => {
-            setAddingPt(false);
-            setChanged((n) => n + 1);
-          }}
-        />
-      )}
-
-      {mode === "calendar" ? (
-        <MyCalendar changed={changed} />
-      ) : (
-        <UpcomingList canSchedule={canSchedule} changed={changed} />
-      )}
-    </div>
-  );
-}
-
-function ModeToggle({ value, onChange }: { value: Mode; onChange: (m: Mode) => void }) {
-  const opts: { v: Mode; label: string }[] = [
-    { v: "calendar", label: "Calendar" },
-    { v: "list", label: "List" },
-  ];
-  return (
-    <div className="inline-flex h-10 items-center rounded-md border border-border bg-paper p-0.5">
-      {opts.map((o) => (
-        <button
-          key={o.v}
-          type="button"
-          aria-pressed={value === o.v}
-          onClick={() => onChange(o.v)}
-          className={cn(
-            "h-full rounded px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
-            value === o.v ? "bg-card text-ink shadow-soft" : "text-muted hover:text-ink",
-          )}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-/* ------------------------------- Calendar ------------------------------- */
-
-function MyCalendar({ changed }: { changed: number }) {
-  const { accessibleLocations, currentStaff } = useWorkspace();
-  const timezone = useStudioZone();
   // Kept across a trip to a class's page and back, as the Admin's Schedule is.
   const { cursor, view, today, ready, setDate, setView, open } =
     useSchedulePosition("instructor-schedule-position");
+  const [list, setList] = useState(false);
+  const [type, setType] = useState<FilterType>("all");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [addMode, setAddMode] = useState<AddKind | null>(null);
+  const [pickedSlot, setPickedSlot] = useState<Slot | null>(null);
+  // Bumped when something this page did changes the timetable, so the list
+  // reads it again.
+  const [changed, setChanged] = useState(0);
 
   const range = useMemo(
     () => ({ ...gridDays(view, cursor), ...gridWindow(timezone, view, cursor) }),
@@ -161,22 +108,17 @@ function MyCalendar({ changed }: { changed: number }) {
   );
   const { entries, loading, error, reload } = useSchedule(
     { from: range.from, to: range.to },
-    { surface: "instructor", enabled: ready },
+    { surface: "instructor", enabled: ready && !list },
   );
-
-  useEffect(() => {
-    if (changed > 0) void reload();
-    // Only a change this page made reads again; `reload` changes with the week.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [changed]);
 
   const visibleEntries = useMemo(
     () =>
       entries.filter((e) => {
+        if (type !== "all" && e.kind !== type) return false;
         const start = Date.parse(e.startsAt);
         return start >= Date.parse(range.from) && start < Date.parse(range.to);
       }),
-    [entries, range],
+    [entries, range, type],
   );
 
   const locationById = useMemo(
@@ -195,79 +137,156 @@ function MyCalendar({ changed }: { changed: number }) {
     [locationById, staffId],
   );
 
-  const headingLabel =
-    view === "day"
-      ? formatPlainDay(cursor, "EEEE, d MMM yyyy")
-      : view === "week"
-        ? `${formatPlainDay(range.first, "d MMM")} – ${formatPlainDay(range.last, "d MMM yyyy")}`
-        : formatPlainDay(cursor, "MMMM yyyy");
+  const clearAdd = () => {
+    setAddMode(null);
+    setPickedSlot(null);
+  };
 
-  const navigate = (dir: -1 | 0 | 1) => {
-    if (dir === 0) return setDate(today);
-    if (view === "day") return setDate(addDays(cursor, dir));
-    if (view === "week") return setDate(addDays(cursor, 7 * dir));
-    return setDate(addMonths(cursor, dir));
+  // Arming a "+" from the list goes back to the grid, where the slot is picked.
+  const arm = (kind: AddKind | null) => {
+    setAddMode(kind);
+    if (kind) setList(false);
+  };
+
+  // A class is created on its own page; a PT session from a pending request or
+  // by hand, in a picker over the grid.
+  const pickSlot = (slot: Slot) => {
+    if (addMode === "class") {
+      clearAdd();
+      router.push(slotHref("/instructor/schedule/new/class", slot));
+      return;
+    }
+    setPickedSlot(slot);
+  };
+
+  const afterScheduled = () => {
+    clearAdd();
+    setChanged((n) => n + 1);
+    void reload();
   };
 
   return (
     <div>
+      <PageHeader
+        title="My schedule"
+        description="Your classes, private sessions, workshops and corporate sessions."
+        actions={
+          addKinds.length > 0 ? (
+            <AddKindButtons kinds={addKinds} armed={addMode} onArm={arm} />
+          ) : undefined
+        }
+      />
+
       <div className="rounded-xl border border-border bg-card shadow-soft">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-3 border-b border-border p-3 sm:flex-nowrap sm:p-4">
-          <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" aria-label="Previous" onClick={() => navigate(-1)}>
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <Button variant="secondary" size="sm" className="h-9 sm:h-8" onClick={() => navigate(0)}>
-              Today
-            </Button>
-            <Button variant="ghost" size="icon" aria-label="Next" onClick={() => navigate(1)}>
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
+          {!list && <PrevTodayNext onStep={(dir) => setDate(stepCursor(view, cursor, today, dir))} />}
           <div className="min-w-0 flex-1 truncate text-sm font-semibold text-ink sm:text-base">
-            {headingLabel}
+            {list ? "The next 60 days" : gridHeading(view, cursor, range.first, range.last)}
           </div>
           <div className="flex w-full items-center gap-2 sm:w-auto">
-            <ViewToggle value={view} onChange={setView} />
+            <ViewToggle<Shown>
+              value={list ? "list" : view}
+              options={SHOWN_OPTIONS}
+              onChange={(v) => {
+                if (v === "list") {
+                  setList(true);
+                  setAddMode(null);
+                  return;
+                }
+                setList(false);
+                setView(v);
+              }}
+            />
+            <FiltersButton
+              open={filtersOpen}
+              active={type !== "all" ? 1 : 0}
+              onToggle={() => setFiltersOpen((o) => !o)}
+            />
           </div>
         </div>
 
-        {view === "day" && <WeekStrip day={cursor} onPick={setDate} />}
-
-        <div
-          className={cn(
-            "relative overflow-auto",
-            view !== "month" && "max-h-[calc(100dvh-16rem)] min-h-[420px]",
-          )}
-        >
-          {/* A schedule that failed to load is never drawn as an empty week. */}
-          {error ? (
-            <LoadFailure what="your schedule" onRetry={reload} className="py-16" />
-          ) : loading && entries.length === 0 ? (
-            <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted">
-              <Loader2 className="h-4 w-4 animate-spin" /> Loading schedule…
-            </div>
-          ) : (
-            <ScheduleCalendar
-              view={view}
-              cursor={cursor}
-              weekStart={range.first}
-              entries={visibleEntries}
-              resolver={resolver}
-              onPickSlot={null}
-              onOpenDay={(d) => open(d, "day")}
+        {filtersOpen && (
+          <FiltersRow onClear={type !== "all" ? () => setType("all") : null}>
+            <FilterPill
+              label="Type"
+              value={type}
+              options={TYPE_FILTER_OPTIONS}
+              onChange={(v) => setType(v as FilterType)}
             />
-          )}
-        </div>
+          </FiltersRow>
+        )}
+
+        {addMode && (
+          <PickSlotBanner
+            what={ADD_KINDS.find((k) => k.kind === addMode)?.noun ?? ""}
+            onCancel={() => setAddMode(null)}
+          />
+        )}
+
+        {list ? (
+          <UpcomingList canSchedule={canSchedule} changed={changed} type={type} />
+        ) : (
+          <>
+            {view === "day" && <WeekStrip day={cursor} onPick={setDate} />}
+            {/* Day and week scroll inside the card so the toolbar and day
+                headers stay put across the 6am–12am range. */}
+            <div
+              className={cn(
+                "relative overflow-auto",
+                view !== "month" && "max-h-[calc(100dvh-16rem)] min-h-[420px]",
+              )}
+            >
+              {/* A schedule that failed to load is never drawn as an empty week. */}
+              {error ? (
+                <LoadFailure what="your schedule" onRetry={reload} className="py-16" />
+              ) : loading && entries.length === 0 ? (
+                <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading schedule…
+                </div>
+              ) : (
+                <ScheduleCalendar
+                  view={view}
+                  cursor={cursor}
+                  weekStart={range.first}
+                  entries={visibleEntries}
+                  resolver={resolver}
+                  onPickSlot={addMode ? pickSlot : null}
+                  onOpenDay={(d) => open(d, "day")}
+                />
+              )}
+            </div>
+          </>
+        )}
       </div>
-      <Legend />
+
+      <Legend tip={addKinds.length > 0 && !list ? ADD_TIP : undefined} />
+
+      {addMode === "pt" && pickedSlot && (
+        <PtRequestPickerDialog
+          role="instructor"
+          slot={pickedSlot}
+          onClose={clearAdd}
+          onScheduled={() => {
+            toast.success("Session scheduled");
+            afterScheduled();
+          }}
+        />
+      )}
     </div>
   );
 }
 
 /* --------------------------------- List --------------------------------- */
 
-function UpcomingList({ canSchedule, changed }: { canSchedule: boolean; changed: number }) {
+function UpcomingList({
+  canSchedule,
+  changed,
+  type,
+}: {
+  canSchedule: boolean;
+  changed: number;
+  type: FilterType;
+}) {
   const { api, accessibleLocations, currentStaff } = useWorkspace();
   const timezone = useStudioZone();
   const [entries, setEntries] = useState<ScheduleEntry[]>([]);
@@ -276,9 +295,6 @@ function UpcomingList({ canSchedule, changed }: { canSchedule: boolean; changed:
   const [error, setError] = useState<LoadError | null>(null);
   // Cancel-own-class flow: only ever offered for a class this instructor leads.
   const [cancelling, setCancelling] = useState<ScheduleEntry | null>(null);
-  const [reason, setReason] = useState("");
-  const [cancelBusy, setCancelBusy] = useState(false);
-  const [cancelError, setCancelError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!api) return;
@@ -318,6 +334,7 @@ function UpcomingList({ canSchedule, changed }: { canSchedule: boolean; changed:
   const groups = useMemo(() => {
     const byDay = new Map<string, ScheduleEntry[]>();
     for (const e of entries) {
+      if (type !== "all" && e.kind !== type) continue;
       // Group by the STUDIO's calendar day so the day headers, grouping and the
       // "Today" badge all agree — see lib/local-day.ts for the rule.
       const k = localDay(timezone, e.starts_at);
@@ -326,60 +343,37 @@ function UpcomingList({ canSchedule, changed }: { canSchedule: boolean; changed:
       byDay.set(k, list);
     }
     return Array.from(byDay.entries()).sort((a, b) => a[0].localeCompare(b[0]));
-  }, [entries, timezone]);
+  }, [entries, timezone, type]);
 
   const todayKey = todayIso(timezone);
   const viewer = { staffId: currentStaff?.id ?? null, canScheduleClasses: canSchedule };
-
-  async function submitCancel() {
-    if (!api || !cancelling) return;
-    setCancelBusy(true);
-    setCancelError(null);
-    try {
-      await api.post(
-        `/portal/instructor/schedule/classes/${cancelling.id}/cancel`,
-        { reason: reason.trim() },
-      );
-      setCancelling(null);
-      setReason("");
-      toast.success(`${cancelling.label} cancelled`);
-      await load();
-    } catch (err) {
-      setCancelError(scheduleErrorMessage(err, "Failed to cancel", timezone));
-    } finally {
-      setCancelBusy(false);
-    }
-  }
 
   return (
     <>
       {/* A schedule that failed to load is never drawn as "Nothing scheduled". */}
       {error ? (
-        <LoadFailure
-          what="your schedule"
-          detail={error.detail}
-          onRetry={load}
-        />
+        <LoadFailure what="your schedule" detail={error.detail} onRetry={load} className="py-16" />
       ) : loading ? (
-        <div className="flex items-center justify-center py-16 text-muted">
-          <Loader2 className="h-5 w-5 animate-spin" />
+        <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading schedule…
         </div>
       ) : groups.length === 0 ? (
         <EmptyState
           title="Nothing scheduled"
           description={
-            canSchedule
-              ? "Classes and sessions you teach in the next 60 days show up here. Use “New class” to add one."
-              : "Classes and sessions you teach in the next 60 days show up here."
+            type !== "all"
+              ? "Nothing of this type in the next 60 days."
+              : canSchedule
+                ? "Classes and sessions you teach in the next 60 days show up here. Use “+ Class” to add one."
+                : "Classes and sessions you teach in the next 60 days show up here."
           }
         />
       ) : (
-        <div className="space-y-5">
-          <p className="text-sm text-muted">The next 60 days.</p>
+        <div className="divide-y divide-border">
           {groups.map(([day, items]) => (
             <section key={day}>
-              <div className="mb-2 flex items-center gap-2">
-                <h2 className="text-sm font-semibold text-ink">
+              <div className="flex items-center gap-2 bg-paper/50 px-4 py-2">
+                <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">
                   {formatDate(timezone, items[0].starts_at, "EEEE d MMM")}
                 </h2>
                 {day === todayKey && (
@@ -388,7 +382,7 @@ function UpcomingList({ canSchedule, changed }: { canSchedule: boolean; changed:
                   </span>
                 )}
               </div>
-              <ul className="divide-y divide-border rounded-xl border border-border bg-card shadow-soft">
+              <ul className="divide-y divide-border">
                 {items.map((e) => {
                   const row = myScheduleRow(e, viewer);
                   return (
@@ -441,11 +435,7 @@ function UpcomingList({ canSchedule, changed }: { canSchedule: boolean; changed:
                             variant="ghost"
                             size="sm"
                             className="h-10 text-error hover:bg-error/5 sm:h-8"
-                            onClick={() => {
-                              setCancelling(e);
-                              setReason("");
-                              setCancelError(null);
-                            }}
+                            onClick={() => setCancelling(e)}
                           >
                             Cancel
                           </Button>
@@ -460,57 +450,23 @@ function UpcomingList({ canSchedule, changed }: { canSchedule: boolean; changed:
         </div>
       )}
 
-      <Dialog
-        open={cancelling !== null}
-        onOpenChange={(o) => {
-          if (!o) setCancelling(null);
-        }}
-        title="Cancel this class?"
-        description={
+      <InstructorCancelClassDialog
+        target={
           cancelling
-            ? `${cancelling.label} · ${formatDate(timezone, cancelling.starts_at, "EEE d MMM")} ${formatTime(timezone, cancelling.starts_at)}`
-            : undefined
+            ? {
+                id: cancelling.id,
+                label: cancelling.label,
+                startsAt: cancelling.starts_at,
+                bookedCount: cancelling.booked_count ?? 0,
+              }
+            : null
         }
-      >
-        <p className="text-sm text-ink">
-          {cancelling?.booked_count ?? 0} member
-          {(cancelling?.booked_count ?? 0) === 1 ? "" : "s"} will get their credit or
-          session back — members on an Unlimited plan simply lose the place. This cannot be
-          undone, and all admins are notified.
-        </p>
-        <div className="mt-4 space-y-1.5">
-          <Label htmlFor="cancel-reason">Reason (required)</Label>
-          <Textarea
-            id="cancel-reason"
-            value={reason}
-            maxLength={500}
-            onChange={(ev) => setReason(ev.target.value)}
-            placeholder="Why are you cancelling this class?"
-          />
-        </div>
-        {cancelError && (
-          <div className="mt-3 rounded-lg border border-error/30 bg-error/5 p-3 text-xs text-error">
-            Failed to cancel: {cancelError}
-          </div>
-        )}
-        <DialogFooter>
-          <Button
-            variant="secondary"
-            onClick={() => setCancelling(null)}
-            disabled={cancelBusy}
-          >
-            Keep class
-          </Button>
-          <Button
-            variant="danger"
-            onClick={() => void submitCancel()}
-            disabled={cancelBusy || reason.trim().length === 0}
-          >
-            {cancelBusy && <Loader2 className="h-4 w-4 animate-spin" />}
-            Cancel class
-          </Button>
-        </DialogFooter>
-      </Dialog>
+        onClose={() => setCancelling(null)}
+        onCancelled={async () => {
+          setCancelling(null);
+          await load();
+        }}
+      />
     </>
   );
 }

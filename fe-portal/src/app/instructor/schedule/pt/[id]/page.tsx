@@ -1,10 +1,18 @@
 "use client";
 import { use, useCallback, useEffect, useState } from "react";
-import Link from "next/link";
-import { ArrowLeft, Ban, Loader2 } from "lucide-react";
+import { Ban } from "lucide-react";
 import { Badge, Button } from "@/components/ui";
 import { PtSessionMembers } from "@/components/schedule/pt-session-members";
 import { CancelPtDialog } from "@/components/pt-requests/cancel-pt-dialog";
+import {
+  DetailField,
+  DetailFrame,
+  DetailHeader,
+  DetailSection,
+  ErrorDetail,
+  LoadingDetail,
+  type DetailBack,
+} from "@/components/schedule/event-detail";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
 import { computeEventState } from "@/lib/event-state";
@@ -20,11 +28,14 @@ import {
   sessionTypeLabel,
 } from "@/lib/pt-manual";
 
+const BACK: DetailBack = { href: "/instructor/schedule", label: "Back to My schedule" };
+
 /**
- * A private session the instructor runs: who is on it and the package
- * paying each seat, with the Admin's page's member actions on a manual one —
- * remove a member, fill a free seat — and cancelling it. No pay, no editing
- * and no type change: those are the admin's page.
+ * A private session the instructor runs, drawn as the Admin's session page is:
+ * its details, who is on it and the package paying each seat, with the
+ * Admin's member actions on a manual one — remove a member, fill a free seat —
+ * and cancelling it. No pay, no editing and no type change: those are the
+ * admin's.
  */
 export default function InstructorPtPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -58,28 +69,11 @@ export default function InstructorPtPage({ params }: { params: Promise<{ id: str
     void load();
   }, [load]);
 
-  return (
-    <div className="mx-auto max-w-3xl">
-      <Link
-        href="/instructor/schedule"
-        className="mb-2 inline-flex min-h-10 items-center gap-1 text-sm text-muted hover:text-ink sm:min-h-0"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" /> Back to my schedule
-      </Link>
-
-      {loading && !data ? (
-        <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted">
-          <Loader2 className="h-4 w-4 animate-spin" /> Loading private session…
-        </div>
-      ) : error || !data ? (
-        <div className="mt-4 rounded-xl border border-error/30 bg-error/5 p-6 text-center text-sm text-error">
-          {error ?? "Private session not found."}
-        </div>
-      ) : (
-        <SessionPage data={data} onChanged={load} />
-      )}
-    </div>
-  );
+  // Only the first read shows the spinner; a re-read after an action keeps the page.
+  if (loading && !data) return <LoadingDetail back={BACK} label="private session" />;
+  if (error || !data)
+    return <ErrorDetail back={BACK} kind="Private session" message={error ?? "Private session not found."} />;
+  return <SessionPage data={data} onChanged={load} />;
 }
 
 function SessionPage({ data, onChanged }: { data: InstructorPtDetail; onChanged: () => void | Promise<void> }) {
@@ -89,7 +83,15 @@ function SessionPage({ data, onChanged }: { data: InstructorPtDetail; onChanged:
   const canTakePt = may("take_pt_bookings");
   const [cancelOpen, setCancelOpen] = useState(false);
   const state = computeEventState({ startsAt: data.starts_at, endsAt: data.ends_at, lifecycle: data.lifecycle });
-  const where = [data.location?.name, data.room?.name].filter(Boolean).join(" · ");
+  const typeLabel = sessionTypeLabel(data.session_type);
+  const time = `${formatTime(timezone, data.starts_at)} – ${formatTime(timezone, data.ends_at)}`;
+  const meta = [
+    formatDate(timezone, data.starts_at),
+    time,
+    data.instructor?.name,
+    data.location?.name,
+    data.room?.name,
+  ].filter((x): x is string => Boolean(x));
 
   async function cancelWithNote(note: string | null) {
     if (!api || !data.pt_request_id) return;
@@ -98,36 +100,32 @@ function SessionPage({ data, onChanged }: { data: InstructorPtDetail; onChanged:
   }
 
   return (
-    <>
-      <header className="mb-5 border-b border-border pb-5 sm:mb-6 sm:pb-6">
-        <div className="mb-2 flex flex-wrap items-center gap-2">
-          <Badge tone="accent">Private session</Badge>
-          {isManual(data) && <Badge tone="neutral">Manual</Badge>}
-          {state === "cancelled" && <Badge tone="error">Cancelled</Badge>}
-          {state === "ongoing" && <Badge tone="warning">Ongoing</Badge>}
-          {state === "completed" && <Badge tone="sage">Completed</Badge>}
-          {canCancelSession(data) && data.pt_request_id && canTakePt && (
+    <DetailFrame back={BACK}>
+      <DetailHeader
+        badge={
+          <>
+            <Badge tone="accent">Private session</Badge>
+            {isManual(data) && <Badge tone="neutral">Manual</Badge>}
+          </>
+        }
+        state={state}
+        title={`Private session · ${typeLabel}`}
+        meta={meta}
+        action={
+          canCancelSession(data) && data.pt_request_id && canTakePt ? (
             <Button
               type="button"
               variant="ghost"
               size="sm"
               onClick={() => setCancelOpen(true)}
-              className="ml-auto text-error hover:text-error"
+              className="text-error hover:text-error"
             >
               <Ban className="h-4 w-4" />
               Cancel session
             </Button>
-          )}
-        </div>
-        <h1 className="break-words text-xl font-semibold text-ink sm:text-2xl">
-          Private session · {sessionTypeLabel(data.session_type)}
-        </h1>
-        <p className="mt-1 text-sm text-muted">
-          {[formatDate(timezone, data.starts_at), `${formatTime(timezone, data.starts_at)} – ${formatTime(timezone, data.ends_at)}`, where]
-            .filter(Boolean)
-            .join(" · ")}
-        </p>
-      </header>
+          ) : undefined
+        }
+      />
 
       <CancelPtDialog
         open={cancelOpen}
@@ -138,7 +136,16 @@ function SessionPage({ data, onChanged }: { data: InstructorPtDetail; onChanged:
         errorMessage={(e) => sessionActionErrorMessage(e, "Couldn't cancel the session", timezone)}
       />
 
+      <DetailSection>
+        <DetailField label="Date" value={formatDate(timezone, data.starts_at)} />
+        <DetailField label="Time" value={time} />
+        <DetailField label="Format" value={typeLabel} />
+        <DetailField label="Instructor" value={data.instructor?.name ?? "—"} />
+        <DetailField label="Location" value={data.location?.name ?? "—"} />
+        <DetailField label="Room" value={data.room?.name ?? "—"} />
+      </DetailSection>
+
       <PtSessionMembers role="instructor" data={data} onChanged={onChanged} />
-    </>
+    </DetailFrame>
   );
 }

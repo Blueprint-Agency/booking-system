@@ -1,10 +1,20 @@
 "use client";
 import { use, useCallback, useEffect, useState } from "react";
-import Link from "next/link";
-import { ArrowLeft, Loader2 } from "lucide-react";
-import { Badge } from "@/components/ui";
+import { Ban } from "lucide-react";
+import { Badge, Button } from "@/components/ui";
 import { ClassRoster, SeatStats, Stat } from "@/components/schedule/class-roster";
 import { WaitlistPanel } from "@/components/schedule/waitlist-panel";
+import {
+  DetailField,
+  DetailFrame,
+  DetailHeader,
+  DetailSection,
+  DifficultyBadge,
+  ErrorDetail,
+  LoadingDetail,
+  type DetailBack,
+} from "@/components/schedule/event-detail";
+import { InstructorCancelClassDialog } from "@/components/schedule/instructor-cancel-class-dialog";
 import { useWorkspace } from "@/lib/workspace-context";
 import { permissionRefusal } from "@/lib/access-refusal";
 import { ApiError } from "@/lib/api";
@@ -12,14 +22,18 @@ import { computeEventState } from "@/lib/event-state";
 import { formatDate, formatTime } from "@/lib/formatters";
 import { useStudioZone } from "@/components/brand/brand-provider";
 import { fetchInstructorClass, type InstructorClassDetail } from "@/lib/schedule";
-import { acceptsLine } from "@/lib/package-rule";
+import { ruleSentence } from "@/lib/package-rule";
+
+const BACK: DetailBack = { href: "/instructor/schedule", label: "Back to My schedule" };
 
 /**
- * An instructor's own class (spec-waitlist.md §10): the seats, the roster with
- * each member's seat and check-in, Add member into a free online seat, else a
- * buffer seat (or the waitlist), and the Waitlist panel. Without Manage rosters
- * the roster and the line stay; Add member, Cancel and the line's actions go.
- * No pay and no editing — those are the admin's page.
+ * An instructor's own class (spec-waitlist.md §10), drawn as the Admin's class
+ * page is: its details, the seats, the roster with each member's seat and
+ * check-in, Add member into a free online seat, else a buffer seat (or the
+ * waitlist), and the Waitlist panel. Without Manage rosters the roster and the
+ * line stay; Add member, Cancel and the line's actions go. With Schedule
+ * classes they may cancel the class. No pay and no editing — those are the
+ * admin's.
  */
 export default function InstructorClassPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -55,62 +69,76 @@ export default function InstructorClassPage({ params }: { params: Promise<{ id: 
     void load();
   }, [load]);
 
-  return (
-    <div className="mx-auto max-w-3xl">
-      <Link
-        href="/instructor/schedule"
-        className="mb-2 inline-flex min-h-10 items-center gap-1 text-sm text-muted hover:text-ink sm:min-h-0"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" /> Back to my schedule
-      </Link>
-
-      {loading && !data ? (
-        <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted">
-          <Loader2 className="h-4 w-4 animate-spin" /> Loading class…
-        </div>
-      ) : error || !data ? (
-        <div className="mt-4 rounded-xl border border-error/30 bg-error/5 p-6 text-center text-sm text-error">
-          {error ?? "Class not found."}
-        </div>
-      ) : (
-        <ClassPage data={data} onChanged={load} />
-      )}
-    </div>
-  );
+  // Only the first read shows the spinner; a re-read after an action keeps the page.
+  if (loading && !data) return <LoadingDetail back={BACK} label="class" />;
+  if (error || !data) return <ErrorDetail back={BACK} kind="Class" message={error ?? "Class not found."} />;
+  return <ClassPage data={data} onChanged={load} />;
 }
 
-function ClassPage({ data, onChanged }: { data: InstructorClassDetail; onChanged: () => void }) {
+function ClassPage({ data, onChanged }: { data: InstructorClassDetail; onChanged: () => void | Promise<void> }) {
   const { may } = useWorkspace();
   const timezone = useStudioZone();
   // Add member (and its waitlist offer), Cancel and the Waitlist actions are
   // Manage rosters; the roster and the line are not.
   const managesRosters = may("manage_rosters");
+  // Cancelling the class is Schedule classes'.
+  const canSchedule = may("schedule_classes");
+  const [cancelOpen, setCancelOpen] = useState(false);
   const state = computeEventState({
     startsAt: data.starts_at,
     endsAt: data.ends_at,
     lifecycle: data.lifecycle,
   });
-  const where = [data.location?.name, data.room?.name].filter(Boolean).join(" · ");
+  const title = data.class_type?.name ?? "Class";
+  const time = `${formatTime(timezone, data.starts_at)} – ${formatTime(timezone, data.ends_at)}`;
+  const canCancel = canSchedule && data.lifecycle === "active" && state !== "completed";
 
   return (
-    <>
-      <header className="mb-5 border-b border-border pb-5 sm:mb-6 sm:pb-6">
-        <div className="mb-2 flex flex-wrap items-center gap-2">
-          <Badge tone="cyan">Class</Badge>
-          {state === "cancelled" && <Badge tone="error">Cancelled</Badge>}
-          {state === "ongoing" && <Badge tone="warning">Ongoing</Badge>}
-          {state === "completed" && <Badge tone="sage">Completed</Badge>}
-        </div>
-        <h1 className="break-words text-xl font-semibold text-ink sm:text-2xl">
-          {data.class_type?.name ?? "Class"}
-        </h1>
-        <p className="mt-1 text-sm text-muted">
-          {[formatDate(timezone, data.starts_at), `${formatTime(timezone, data.starts_at)} – ${formatTime(timezone, data.ends_at)}`, where]
-            .filter(Boolean)
-            .join(" · ")}
-        </p>
-        <p className="mt-1 break-words text-sm text-muted">{acceptsLine(data.package_rule)}</p>
-      </header>
+    <DetailFrame back={BACK}>
+      <DetailHeader
+        badge={<Badge tone="cyan">Class</Badge>}
+        state={state}
+        title={title}
+        meta={[formatDate(timezone, data.starts_at), time]}
+        action={
+          canCancel ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setCancelOpen(true)}
+              className="text-error hover:text-error"
+            >
+              <Ban className="h-4 w-4" />
+              Cancel class
+            </Button>
+          ) : undefined
+        }
+      />
+
+      <InstructorCancelClassDialog
+        target={
+          cancelOpen
+            ? { id: data.id, label: title, startsAt: data.starts_at, bookedCount: data.attendees.length }
+            : null
+        }
+        onClose={() => setCancelOpen(false)}
+        onCancelled={async () => {
+          setCancelOpen(false);
+          await onChanged();
+        }}
+      />
+
+      <DetailSection>
+        <DetailField label="Date" value={formatDate(timezone, data.starts_at)} />
+        <DetailField label="Time" value={time} />
+        <DetailField label="Location" value={data.location?.name ?? "—"} />
+        <DetailField label="Room" value={data.room?.name ?? "—"} />
+        <DetailField label="Difficulty">
+          <DifficultyBadge difficulty={data.difficulty} />
+        </DetailField>
+        <DetailField label="Accepts" value={ruleSentence(data.package_rule)} />
+      </DetailSection>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <SeatStats seats={data} />
@@ -137,6 +165,6 @@ function ClassPage({ data, onChanged }: { data: InstructorClassDetail; onChanged
         canAct={managesRosters && state === "scheduled"}
         onChanged={onChanged}
       />
-    </>
+    </DetailFrame>
   );
 }

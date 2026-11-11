@@ -1,7 +1,7 @@
 "use client";
 import { use, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Ban, Loader2, Save } from "lucide-react";
+import { Ban, Loader2, Save } from "lucide-react";
 import { Badge, Button, Dialog, DialogFooter, Input, Label, LoadFailure } from "@/components/ui";
 import { answeredElsewhere } from "@/lib/failed-read";
 import { LocationRoomFields } from "@/components/schedule/location-room-fields";
@@ -54,7 +54,6 @@ import {
   scheduleErrorMessage,
   type ClassPatch,
   type ScheduleClassDetail,
-  type ClassDifficulty,
   type ScheduleCorporatePackageBrief,
   type ScheduleCorporateSession,
   type SchedulePtDetail,
@@ -67,6 +66,16 @@ import {
   sessionActionErrorMessage,
 } from "@/lib/pt-manual";
 import { CancelPtDialog } from "@/components/pt-requests/cancel-pt-dialog";
+import {
+  DetailField,
+  DifficultyBadge,
+  DetailFrame,
+  DetailHeader,
+  DetailSection,
+  ErrorDetail,
+  LoadingDetail,
+  type DetailBack,
+} from "@/components/schedule/event-detail";
 import { PtSessionMembers } from "@/components/schedule/pt-session-members";
 import {
   fetchActiveClassTypes,
@@ -111,12 +120,7 @@ interface ApiWorkshopDetail {
   instructor_ids: string[];
 }
 
-const DIFFICULTY_LABEL: Record<ClassDifficulty, string> = {
-  general: "All levels",
-  beginner: "Beginner",
-  intermediate: "Intermediate",
-  advanced: "Advanced",
-};
+const BACK: DetailBack = { href: "/admin/schedule", label: "Back to Schedule" };
 
 export default function SessionDetailPage({
   params,
@@ -129,7 +133,7 @@ export default function SessionDetailPage({
   if (type === "class") return <ClassDetail id={id} />;
   if (type === "pt") return <PtDetail id={id} />;
   if (type === "corporate") return <CorporateDetail id={id} />;
-  return <ErrorDetail kind="Unknown" message="Unknown session type." />;
+  return <ErrorDetail back={BACK} kind="Unknown" message="Unknown session type." />;
 }
 
 /* ------------------------------- Class ------------------------------- */
@@ -187,8 +191,8 @@ function ClassDetail({ id }: { id: string }) {
     }
   }
 
-  if (loading) return <LoadingDetail label="class" />;
-  if (error || !data) return <ErrorDetail kind="Class" message={error ?? "Class not found."} />;
+  if (loading) return <LoadingDetail back={BACK} label="class" />;
+  if (error || !data) return <ErrorDetail back={BACK} kind="Class" message={error ?? "Class not found."} />;
 
   const state = computeEventState({
     startsAt: data.starts_at,
@@ -196,7 +200,7 @@ function ClassDetail({ id }: { id: string }) {
     lifecycle: data.lifecycle,
   });
   return (
-    <DetailFrame>
+    <DetailFrame back={BACK}>
       <DetailHeader
         badge={<Badge tone="cyan">Class</Badge>}
         state={state}
@@ -213,29 +217,24 @@ function ClassDetail({ id }: { id: string }) {
         </p>
       )}
 
-      <section className="mb-6 rounded-xl border border-border bg-card p-4 shadow-soft sm:p-5">
-        <h2 className="mb-4 text-sm font-semibold text-ink">Details</h2>
-        <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
-          <DetailField label="Date" value={formatDate(timezone, data.starts_at)} />
-          <DetailField
-            label="Time"
-            value={`${formatTime(timezone, data.starts_at)} – ${formatTime(timezone, data.ends_at)}`}
-          />
-          <DetailField label="Location" value={data.location?.name ?? "—"} />
-          <DetailField label="Room" value={data.room?.name ?? "—"} />
-          <DetailField label="Difficulty">
-            <Badge tone={data.difficulty === "general" ? "neutral" : "accent"}>
-              {DIFFICULTY_LABEL[data.difficulty]}
-            </Badge>
-          </DetailField>
-          <DetailField
-            label="Scheduled by"
-            value={data.scheduled_by?.name ?? "—"}
-            sub={`on ${formatDateTime(timezone, data.created_at)}`}
-          />
-          <DetailField label="Accepts" value={ruleSentence(data.package_rule)} />
-        </dl>
-      </section>
+      <DetailSection>
+        <DetailField label="Date" value={formatDate(timezone, data.starts_at)} />
+        <DetailField
+          label="Time"
+          value={`${formatTime(timezone, data.starts_at)} – ${formatTime(timezone, data.ends_at)}`}
+        />
+        <DetailField label="Location" value={data.location?.name ?? "—"} />
+        <DetailField label="Room" value={data.room?.name ?? "—"} />
+        <DetailField label="Difficulty">
+          <DifficultyBadge difficulty={data.difficulty} />
+        </DetailField>
+        <DetailField
+          label="Scheduled by"
+          value={data.scheduled_by?.name ?? "—"}
+          sub={`on ${formatDateTime(timezone, data.created_at)}`}
+        />
+        <DetailField label="Accepts" value={ruleSentence(data.package_rule)} />
+      </DetailSection>
 
       {data.series_id && (
         <SeriesPanel
@@ -667,9 +666,9 @@ function PtDetail({ id }: { id: string }) {
     await load();
   }
 
-  if (loading) return <LoadingDetail label="private session" />;
+  if (loading) return <LoadingDetail back={BACK} label="private session" />;
   if (error || !data)
-    return <ErrorDetail kind="Private session" message={error ?? "Private session not found."} />;
+    return <ErrorDetail back={BACK} kind="Private session" message={error ?? "Private session not found."} />;
 
   const state = computeEventState({
     startsAt: data.starts_at,
@@ -686,7 +685,7 @@ function PtDetail({ id }: { id: string }) {
   ].filter((x): x is string => Boolean(x));
 
   return (
-    <DetailFrame>
+    <DetailFrame back={BACK}>
       <DetailHeader
         badge={
           <>
@@ -728,20 +727,17 @@ function PtDetail({ id }: { id: string }) {
         </p>
       )}
 
-      <section className="mb-6 rounded-xl border border-border bg-card p-4 shadow-soft sm:p-5">
-        <h2 className="mb-4 text-sm font-semibold text-ink">Details</h2>
-        <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
-          <DetailField label="Date" value={formatDate(timezone, data.starts_at)} />
-          <DetailField
-            label="Time"
-            value={`${formatTime(timezone, data.starts_at)} – ${formatTime(timezone, data.ends_at)}`}
-          />
-          <DetailField label="Format" value={typeLabel} />
-          <DetailField label="Instructor" value={data.instructor?.name ?? "—"} />
-          <DetailField label="Location" value={data.location?.name ?? "—"} />
-          <DetailField label="Room" value={data.room?.name ?? "—"} />
-        </dl>
-      </section>
+      <DetailSection>
+        <DetailField label="Date" value={formatDate(timezone, data.starts_at)} />
+        <DetailField
+          label="Time"
+          value={`${formatTime(timezone, data.starts_at)} – ${formatTime(timezone, data.ends_at)}`}
+        />
+        <DetailField label="Format" value={typeLabel} />
+        <DetailField label="Instructor" value={data.instructor?.name ?? "—"} />
+        <DetailField label="Location" value={data.location?.name ?? "—"} />
+        <DetailField label="Room" value={data.room?.name ?? "—"} />
+      </DetailSection>
 
       <PtSessionMembers role="admin" data={data} onChanged={load} />
 
@@ -1030,8 +1026,8 @@ function WorkshopDetail({ id }: { id: string }) {
     }
   }
 
-  if (loading) return <LoadingDetail label="workshop" />;
-  if (error || !data) return <ErrorDetail kind="Workshop" message={error ?? "Workshop not found."} />;
+  if (loading) return <LoadingDetail back={BACK} label="workshop" />;
+  if (error || !data) return <ErrorDetail back={BACK} kind="Workshop" message={error ?? "Workshop not found."} />;
 
   const sortedDays = [...data.days].sort((a, b) => a.ord - b.ord);
   const sortedTiers = [...data.tiers].sort((a, b) => a.ord - b.ord);
@@ -1057,7 +1053,7 @@ function WorkshopDetail({ id }: { id: string }) {
     : "No days scheduled";
 
   return (
-    <DetailFrame>
+    <DetailFrame back={BACK}>
       <DetailHeader
         badge={<Badge tone="warning">Workshop</Badge>}
         state={eventState}
@@ -1217,10 +1213,10 @@ function CorporateDetail({ id }: { id: string }) {
     }
   }
 
-  if (loading) return <LoadingDetail label="corporate session" />;
+  if (loading) return <LoadingDetail back={BACK} label="corporate session" />;
   if (error || !data)
     return (
-      <ErrorDetail kind="Corporate session" message={error ?? "Corporate session not found."} />
+      <ErrorDetail back={BACK} kind="Corporate session" message={error ?? "Corporate session not found."} />
     );
 
   const state = computeEventState({
@@ -1244,7 +1240,7 @@ function CorporateDetail({ id }: { id: string }) {
   ].filter((x): x is string => Boolean(x));
 
   return (
-    <DetailFrame>
+    <DetailFrame back={BACK}>
       <DetailHeader
         badge={<Badge tone="neutral">Corporate</Badge>}
         state={state}
@@ -1595,99 +1591,3 @@ function detailError(err: unknown, notFoundMsg: string): string {
   return "Network error";
 }
 
-function DetailHeader({
-  badge,
-  state,
-  title,
-  meta,
-  action,
-}: {
-  badge: React.ReactNode;
-  state: EventState;
-  title: string;
-  meta: string[];
-  action?: React.ReactNode;
-}) {
-  return (
-    <header className="mb-5 border-b border-border pb-5 sm:mb-6 sm:pb-6">
-      {/* Wraps so a workshop's two actions drop under the badges on a phone
-          instead of pushing the row off-screen. */}
-      <div className="mb-2 flex flex-wrap items-center gap-2">
-        {badge}
-        <StateBadge state={state} />
-        {action && <div className="ml-auto">{action}</div>}
-      </div>
-      <h1 className="break-words text-xl font-semibold text-ink sm:text-2xl">{title}</h1>
-      {meta.length > 0 && <p className="mt-1 text-sm text-muted">{meta.join(" · ")}</p>}
-    </header>
-  );
-}
-
-// Read-only label/value pair for the Details section. Pass `children` for a
-// non-text value (e.g. a Badge); otherwise pass `value`.
-function DetailField({
-  label,
-  value,
-  sub,
-  children,
-}: {
-  label: string;
-  value?: string;
-  sub?: string;
-  children?: React.ReactNode;
-}) {
-  return (
-    <div className="min-w-0">
-      <dt className="text-xs font-medium uppercase tracking-wide text-muted">{label}</dt>
-      <dd className="mt-1 text-sm text-ink">{children ?? value}</dd>
-      {sub && <dd className="mt-0.5 text-xs text-muted">{sub}</dd>}
-    </div>
-  );
-}
-
-function LoadingDetail({ label }: { label: string }) {
-  return (
-    <DetailFrame>
-      <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted">
-        <Loader2 className="h-4 w-4 animate-spin" /> Loading {label}…
-      </div>
-    </DetailFrame>
-  );
-}
-
-function ErrorDetail({ kind, message }: { kind: string; message: string }) {
-  return (
-    <DetailFrame>
-      <header className="mb-5 border-b border-border pb-5 sm:mb-6 sm:pb-6">
-        <div className="mb-2 flex items-center gap-2">
-          <Badge tone="neutral">{kind}</Badge>
-        </div>
-        <h1 className="text-xl font-semibold text-ink sm:text-2xl">Couldn’t load detail</h1>
-      </header>
-      <div className="rounded-xl border border-error/30 bg-error/5 p-6 text-center text-sm text-error">
-        {message}
-      </div>
-    </DetailFrame>
-  );
-}
-
-function DetailFrame({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="mx-auto max-w-5xl">
-      <Link
-        href="/admin/schedule"
-        className="mb-2 inline-flex items-center gap-1 text-sm text-muted hover:text-ink"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" /> Back to Schedule
-      </Link>
-      {children}
-    </div>
-  );
-}
-
-function StateBadge({ state }: { state: EventState }) {
-  if (state === "scheduled") return <Badge tone="accent">Scheduled</Badge>;
-  if (state === "ongoing") return <Badge tone="warning">Ongoing</Badge>;
-  if (state === "completed") return <Badge tone="sage">Completed</Badge>;
-  return <Badge tone="error">Cancelled</Badge>;
-}

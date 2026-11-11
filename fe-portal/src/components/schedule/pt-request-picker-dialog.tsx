@@ -4,31 +4,51 @@ import { Button, Dialog, LoadFailure, Pagination, usePaged } from "@/components/
 import { rowsOf } from "@/lib/failed-read";
 import { useRead } from "@/lib/use-read";
 import { useWorkspace } from "@/lib/workspace-context";
-import { ScheduleFromRequestDialog } from "@/components/pt-requests/schedule-from-request-dialog";
+import {
+  ScheduleFromRequestDialog,
+  type SchedulableRequest,
+} from "@/components/pt-requests/schedule-from-request-dialog";
 import { ManualPtSessionDialog } from "@/components/schedule/manual-pt-session-dialog";
 import { type ApiPtRequest, ptClassTypeName, ptSlotTime } from "@/lib/pt-requests";
+import type { StaffRole } from "@/lib/class-seats";
 import type { Slot } from "@/lib/schedule";
 
+/** A pending request as the picker lists it: the Admin's queue row and the Instructor's both carry this. */
+type PickerRequest = SchedulableRequest & Pick<ApiPtRequest, "class_type"> & { client: { name: string } };
+
+/**
+ * "+ PT Session" on a timetable: schedule a pending request at the slot picked,
+ * or add a session agreed outside the app. An Instructor's queue is the
+ * requests they may take (their own members and the unbound ones), and what
+ * they schedule is theirs to run.
+ */
 export function PtRequestPickerDialog({
+  role = "admin",
   slot,
   onClose,
   onScheduled,
 }: {
+  role?: StaffRole;
   /** Slot picked off the timetable grid, seeding the scheduling form. */
   slot?: Slot;
   onClose: () => void;
   onScheduled: () => void;
 }) {
   const { activeLocation } = useWorkspace();
-  const [picked, setPicked] = useState<ApiPtRequest | null>(null);
+  const [picked, setPicked] = useState<PickerRequest | null>(null);
   /** Add manually: a session agreed outside the app, with no request behind it. */
   const [manual, setManual] = useState(false);
 
   // A failed read is "Couldn't load", never "No pending PT requests".
   const locationId = activeLocation?.id ?? null;
   const { read, retry } = useRead(
-    locationId ?? "",
-    async (api) => {
+    `${role}:${locationId ?? ""}`,
+    async (api): Promise<PickerRequest[]> => {
+      if (role === "instructor") {
+        // The instructor's queue takes no filters: it is already only pending.
+        const res = await api.get<{ pt_requests: PickerRequest[] }>("/portal/instructor/pt-requests");
+        return (res.pt_requests ?? []).filter((r) => r.location.id === locationId);
+      }
       const res = await api.get<{ pt_requests: ApiPtRequest[] }>("/portal/admin/pt-sessions", {
         status: "pending",
         location_id: locationId,
@@ -47,7 +67,7 @@ export function PtRequestPickerDialog({
   if (manual) {
     return (
       <ManualPtSessionDialog
-        role="admin"
+        role={role}
         slot={slot}
         onClose={() => setManual(false)}
         onCreated={onScheduled}
@@ -58,6 +78,7 @@ export function PtRequestPickerDialog({
   if (picked) {
     return (
       <ScheduleFromRequestDialog
+        role={role}
         request={picked}
         slot={slot}
         onClose={() => setPicked(null)}

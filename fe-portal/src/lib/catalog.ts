@@ -93,6 +93,12 @@ export async function fetchActiveRooms(api: Api): Promise<CatalogRoom[]> {
   return res.rooms;
 }
 
+/** The same rooms, read through the instructor's own catalog. */
+export async function fetchInstructorRooms(api: Api): Promise<CatalogRoom[]> {
+  const res = await cachedGet<{ rooms: CatalogRoom[] }>(api, "/portal/instructor/catalog/rooms");
+  return res.rooms;
+}
+
 /** Locations; archived ones are excluded by the backend. */
 export async function fetchActiveLocations(api: Api): Promise<CatalogLocation[]> {
   const res = await cachedGet<{ locations: CatalogLocation[] }>(api, "/portal/admin/locations");

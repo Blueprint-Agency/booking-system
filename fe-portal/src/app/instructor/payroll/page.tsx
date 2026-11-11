@@ -10,7 +10,6 @@ import { useWorkspace } from "@/lib/workspace-context";
 import { formatDate, formatDuration, formatSgd } from "@/lib/formatters";
 import {
   fetchInstructorPayroll,
-  payrollErrorMessage,
   type ApiInstructorPayrollResponse,
   type ApiPayrollRow,
 } from "@/lib/payroll";
@@ -99,7 +98,7 @@ export default function InstructorPayrollPage() {
           description="Classes and private sessions you've taught appear here once they've finished."
         />
       ) : (
-        <div className="rounded-xl border border-border bg-card shadow-soft">
+        <div className="overflow-hidden rounded-xl border border-border bg-card shadow-soft">
           {/* Below md each session is a stacked row — four columns don't fit a
               phone, and a sideways-scrolling table hides the pay off-screen. */}
           <ul className="divide-y divide-border md:hidden">

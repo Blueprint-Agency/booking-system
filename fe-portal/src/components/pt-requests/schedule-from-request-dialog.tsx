@@ -12,9 +12,11 @@ import { useWorkspace } from "@/lib/workspace-context";
 import {
   fetchActiveInstructors,
   fetchActiveRooms,
+  fetchInstructorRooms,
   type CatalogInstructor,
   type CatalogRoom,
 } from "@/lib/catalog";
+import type { StaffRole } from "@/lib/class-seats";
 import { scheduleErrorMessage, type Slot } from "@/lib/schedule";
 import { withClashConfirm } from "@/lib/time-clash";
 import { PAY_OPTIONAL_HINT, payOrNull } from "@/lib/pay";
@@ -39,7 +41,15 @@ const SCHEDULE_ERROR: Record<string, string> = {
   not_pending: "This request is no longer pending.",
   partner_account_required:
     "The partner needs a member account before this can be scheduled.",
+  pt_request_bound_to_other_instructor:
+    "This member's package is bound to another instructor. Ask an admin to schedule it.",
 };
+
+/** What scheduling needs of a request: the Admin's queue row and the Instructor's both carry it. */
+export type SchedulableRequest = Pick<
+  ApiPtRequest,
+  "id" | "session_type" | "slots" | "location" | "co_client" | "bound_instructor"
+>;
 
 const PARTNER_LINK_ERROR: Record<string, string> = {
   partner_client_not_found: "No active customer account was found for that email.",
@@ -59,22 +69,30 @@ function apiErrorCode(e: unknown): string {
     : "";
 }
 
+/**
+ * Schedule a pending PT request. An Admin picks who runs it and may price it;
+ * an Instructor runs it themselves and leaves pay to an admin, and has no
+ * partner-linking route, so those fields are not drawn for them.
+ */
 export function ScheduleFromRequestDialog({
+  role = "admin",
   request,
   slot,
   onScheduled,
   onRequestUpdated,
   onClose,
 }: {
-  request: ApiPtRequest;
+  role?: StaffRole;
+  request: SchedulableRequest;
   /** Slot picked off the timetable grid; overrides the request's own proposal. */
   slot?: Slot;
   onScheduled: () => void;
   onRequestUpdated?: (request: ApiPtRequest) => void;
   onClose: () => void;
 }) {
-  const { api, accessibleLocations } = useWorkspace();
+  const { api, accessibleLocations, currentStaff } = useWorkspace();
   const timezone = useStudioZone();
+  const isAdmin = role === "admin";
   const [linkedRequest, setLinkedRequest] = useState<ApiPtRequest | null>(null);
   const currentRequest = linkedRequest ?? request;
 
@@ -104,7 +122,7 @@ export function ScheduleFromRequestDialog({
   const [partnerEmail, setPartnerEmail] = useState(request.co_client?.email ?? "");
   const [partnerLinking, setPartnerLinking] = useState(false);
   const [partnerLinkError, setPartnerLinkError] = useState<string | null>(null);
-  const onLeave = useInstructorsOnLeave(date);
+  const onLeave = useInstructorsOnLeave(isAdmin ? date : "");
   const [note, setNote] = useState("");
   const offProposal = ptOffProposal(currentRequest.slots, date, startTime, endTime);
 
@@ -125,6 +143,14 @@ export function ScheduleFromRequestDialog({
     setRefFailed(false);
     void (async () => {
       try {
+        if (!isAdmin) {
+          // An Instructor runs the session themselves; the route ignores anyone else.
+          const rm = await fetchInstructorRooms(api);
+          if (cancelled) return;
+          setRooms(rm);
+          setInstructorId(currentStaff?.id ?? "");
+          return;
+        }
         const [ins, rm] = await Promise.all([
           fetchActiveInstructors(api),
           fetchActiveRooms(api),
@@ -160,7 +186,7 @@ export function ScheduleFromRequestDialog({
     return () => {
       cancelled = true;
     };
-  }, [api, request.id, request.bound_instructor?.id, refAttempt]);
+  }, [api, isAdmin, currentStaff?.id, request.id, request.bound_instructor?.id, refAttempt]);
 
   const activeLocations = useMemo(
     () => accessibleLocations.filter((l) => !l.archivedAt),
@@ -169,7 +195,8 @@ export function ScheduleFromRequestDialog({
   // A package can outlive the coach it was sold with: the
   // binding stays and shows as stale until an admin rebinds it.
   const boundInstructorArchived = Boolean(
-    !refLoading &&
+    isAdmin &&
+      !refLoading &&
       !refFailed &&
       currentRequest.bound_instructor &&
       !instructors.some((i) => i.id === currentRequest.bound_instructor!.id),
@@ -188,7 +215,7 @@ export function ScheduleFromRequestDialog({
     e.preventDefault();
     if (!api || partnerBlocked || saving) return;
     if (!instructorId || !locationId || !roomId) {
-      setErr("Pick an instructor, location, and room.");
+      setErr(isAdmin ? "Pick an instructor, location, and room." : "Pick a location and room.");
       return;
     }
     // Wall times at the studio, whatever zone this browser is in.
@@ -206,19 +233,27 @@ export function ScheduleFromRequestDialog({
     setErr(null);
     try {
       // A member booked elsewhere at this time is asked about first.
+      const placeAndTime = {
+        location_id: locationId,
+        room_id: roomId,
+        starts_at: startsAt.toISOString(),
+        ends_at: endsAt.toISOString(),
+        // Only with a time the member did not propose: a note typed and then
+        // left behind by picking one of their slots is not sent.
+        note: offProposal ? ptNoteOrNull(note) : null,
+      };
       await withClashConfirm("session", timezone, (extra) =>
-        api.post(`/portal/admin/pt-sessions/${currentRequest.id}/schedule`, {
-          instructor_id: instructorId,
-          location_id: locationId,
-          room_id: roomId,
-          starts_at: startsAt.toISOString(),
-          ends_at: endsAt.toISOString(),
-          instructor_pay_sgd: payOrNull(instructorPay),
-          // Only with a time the member did not propose: a note typed and then
-          // left behind by picking one of their slots is not sent.
-          note: offProposal ? ptNoteOrNull(note) : null,
-          ...extra,
-        }),
+        isAdmin
+          ? api.post(`/portal/admin/pt-sessions/${currentRequest.id}/schedule`, {
+              ...placeAndTime,
+              instructor_id: instructorId,
+              instructor_pay_sgd: payOrNull(instructorPay),
+              ...extra,
+            })
+          : api.post(`/portal/instructor/pt-requests/${currentRequest.id}/schedule`, {
+              ...placeAndTime,
+              ...extra,
+            }),
       );
       onScheduled();
     } catch (e) {
@@ -266,7 +301,9 @@ export function ScheduleFromRequestDialog({
             <p>
               Partner ({currentRequest.co_client?.name ?? currentRequest.co_client?.email ?? "—"}) is
               not linked to a member account yet.
+              {!isAdmin && " Ask an admin to link their account before this can be scheduled."}
             </p>
+            {isAdmin && (
             <div className="flex flex-col gap-2 sm:flex-row">
               <Input
                 type="email"
@@ -279,6 +316,7 @@ export function ScheduleFromRequestDialog({
                 {partnerLinking ? "Linking…" : "Link partner"}
               </Button>
             </div>
+            )}
             {partnerLinkError && <p className="text-error">{partnerLinkError}</p>}
           </div>
         )}
@@ -336,6 +374,8 @@ export function ScheduleFromRequestDialog({
               onChange={(e) => setEndTime(e.target.value)}
             />
           </div>
+          {isAdmin && (
+          <>
           <div className="space-y-1.5">
             <Label>Instructor</Label>
             <select
@@ -385,6 +425,8 @@ export function ScheduleFromRequestDialog({
               {PAY_OPTIONAL_HINT}
             </p>
           </div>
+          </>
+          )}
           <div className="space-y-1.5">
             <Label>Location</Label>
             <select
@@ -419,7 +461,7 @@ export function ScheduleFromRequestDialog({
         </div>
         {refFailed && (
           <LoadFailure
-            what="the instructors and rooms"
+            what={isAdmin ? "the instructors and rooms" : "the rooms"}
             className="py-3"
             onRetry={() => setRefAttempt((n) => n + 1)}
           />

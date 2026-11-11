@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 import { ArrowLeft, Loader2, Repeat, Save } from "lucide-react";
 import { Button, Input, Label, PageHeader } from "@/components/ui";
 import { CapacityFields } from "@/components/schedule/capacity-fields";
@@ -20,7 +20,7 @@ import {
   SeriesDatesSection,
   useSeriesDates,
 } from "@/components/schedule/repeat-weekly";
-import { createClassesLabel } from "@/lib/repeat-weekly";
+import { createClassesLabel, repeatWeeklyFromParams } from "@/lib/repeat-weekly";
 import { weekdayOf, type OwnSeriesInput } from "@/lib/series";
 import { LocationRoomFields } from "@/components/schedule/location-room-fields";
 import { useWorkspace } from "@/lib/workspace-context";
@@ -30,7 +30,7 @@ import { atLocalTime } from "@/lib/local-day";
 import { useStudioZone } from "@/components/brand/brand-provider";
 import { PERMISSION_REFUSED, permissionRefusal } from "@/lib/access-refusal";
 import { ApiError } from "@/lib/api";
-import { scheduleErrorMessage } from "@/lib/schedule";
+import { scheduleErrorMessage, slotFromParams } from "@/lib/schedule";
 import type { Capacity } from "@/types";
 
 interface ApiClassType {
@@ -49,7 +49,13 @@ interface ApiRoom {
  */
 export default function InstructorNewClassPage() {
   const { may } = useWorkspace();
-  if (may("schedule_classes")) return <InstructorNewClassForm />;
+  if (may("schedule_classes"))
+    return (
+      // The form reads the slot picked on My schedule from the address.
+      <Suspense fallback={<div className="min-h-screen bg-paper" />}>
+        <InstructorNewClassForm />
+      </Suspense>
+    );
   return (
     <div className="mx-auto max-w-3xl">
       <BackToSchedule />
@@ -67,7 +73,7 @@ function BackToSchedule() {
       href="/instructor/schedule"
       className="mb-2 inline-flex min-h-10 items-center gap-1 text-sm text-muted hover:text-ink sm:min-h-0"
     >
-      <ArrowLeft className="h-3.5 w-3.5" /> Back to my schedule
+      <ArrowLeft className="h-3.5 w-3.5" /> Back to My schedule
     </Link>
   );
 }
@@ -77,6 +83,10 @@ function InstructorNewClassForm() {
   const { api, activeLocationId } = useWorkspace();
   const timezone = useStudioZone();
   const waitlistsOn = useWaitlistsOn("instructor");
+  // Picking a slot on My schedule links here with that slot, so the form opens
+  // on the day and time already chosen, as the Admin's does.
+  const params = useSearchParams();
+  const slot = slotFromParams(params);
 
   const [classTypes, setClassTypes] = useState<ApiClassType[]>([]);
   const [rooms, setRooms] = useState<ApiRoom[]>([]);
@@ -85,12 +95,12 @@ function InstructorNewClassForm() {
   const [classTypeId, setClassTypeId] = useState("");
   const [locationId, setLocationId] = useState(activeLocationId ?? "");
   const [roomId, setRoomId] = useState("");
-  const [repeat, setRepeat] = useState(false);
+  const [repeat, setRepeat] = useState(() => repeatWeeklyFromParams(params));
   // With Repeat weekly on, `date` is the series' first date.
-  const [date, setDate] = useState("");
+  const [date, setDate] = useState(slot?.date ?? "");
   const [lastDate, setLastDate] = useState("");
-  const [startTime, setStartTime] = useState(currentHourTime(timezone));
-  const [endTime, setEndTime] = useState(currentHourTime(timezone, 1));
+  const [startTime, setStartTime] = useState(slot?.start ?? currentHourTime(timezone));
+  const [endTime, setEndTime] = useState(slot?.end ?? currentHourTime(timezone, 1));
   const [capacity, setCapacity] = useState<Capacity>({
     waitlist: 0,
     onlineBooking: 18,

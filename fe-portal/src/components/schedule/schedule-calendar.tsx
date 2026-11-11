@@ -89,12 +89,26 @@ export function ScheduleCalendar({
   );
 }
 
-export function ViewToggle({ value, onChange }: { value: View; onChange: (v: View) => void }) {
-  const opts: { v: View; label: string }[] = [
-    { v: "day", label: "Day" },
-    { v: "week", label: "Week" },
-    { v: "month", label: "Month" },
-  ];
+const GRID_VIEW_OPTIONS: readonly { v: View; label: string }[] = [
+  { v: "day", label: "Day" },
+  { v: "week", label: "Week" },
+  { v: "month", label: "Month" },
+];
+
+/**
+ * Day, week, month — or `options`, for a timetable with a view of its own
+ * beside the grids (My schedule's List).
+ */
+export function ViewToggle<V extends string = View>({
+  value,
+  onChange,
+  options,
+}: {
+  value: V;
+  onChange: (v: V) => void;
+  options?: readonly { v: V; label: string }[];
+}) {
+  const opts = options ?? (GRID_VIEW_OPTIONS as readonly { v: string; label: string }[] as readonly { v: V; label: string }[]);
   return (
     <div className="inline-flex items-center rounded-md border border-border bg-paper p-0.5">
       {opts.map((o) => (
