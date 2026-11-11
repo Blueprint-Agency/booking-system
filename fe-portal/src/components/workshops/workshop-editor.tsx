@@ -22,6 +22,7 @@ import { useStudioZone } from "@/components/brand/brand-provider";
 import { dayFromApi, dayToApi, inferMode } from "@/lib/workshop-form";
 import type { Slot } from "@/lib/schedule";
 import { workshopSaveError } from "@/lib/workshop-save-error";
+import { defaultWorkshopLocationId } from "@/lib/workshop-location";
 import { PAY_OPTIONAL_HINT, payOrNull } from "@/lib/pay";
 import { WORKSHOP_CANCEL_CONFIRM } from "@/lib/workshop-cancel";
 import {
@@ -211,7 +212,7 @@ export function WorkshopEditor({
   onSave: (id: string) => void;
   onCancel: () => void;
 }) {
-  const { api } = useWorkspace();
+  const { api, activeLocationId } = useWorkspace();
   const timezone = useStudioZone();
   const [catalog, setCatalog] = useState<Catalog>({
     locations: [],
@@ -278,11 +279,11 @@ export function WorkshopEditor({
       ]);
       setCatalog({ locations: loc, instructors: ins, rooms: rm });
       setCatalogLoaded(true);
-      if (!locationId && loc[0]) setLocationId(loc[0].id);
+      if (!locationId) setLocationId(defaultWorkshopLocationId(loc, activeLocationId));
     } catch (err) {
       if (!answeredElsewhere(err)) setCatalogFailed(true);
     }
-  }, [api, locationId]);
+  }, [api, locationId, activeLocationId]);
 
   useEffect(() => {
     void loadCatalog();

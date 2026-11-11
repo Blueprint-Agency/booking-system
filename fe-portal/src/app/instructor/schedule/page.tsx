@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CalendarPlus, Loader2, UserPlus } from "lucide-react";
+import { CalendarPlus, ChevronLeft, ChevronRight, Loader2, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import {
   Button,
@@ -17,21 +17,36 @@ import {
 import { cn } from "@/lib/utils";
 import { useWorkspace } from "@/lib/workspace-context";
 import { answeredElsewhere, loadError, type LoadError } from "@/lib/failed-read";
-import { ApiError } from "@/lib/api";
-import { formatDate, formatTime, todayIso } from "@/lib/formatters";
+import { formatDate, formatPlainDay, formatTime, todayIso } from "@/lib/formatters";
 import { localDay } from "@/lib/local-day";
-import { upcomingWindow } from "@/lib/schedule-grid";
+import { gridDays, gridWindow, upcomingWindow } from "@/lib/schedule-grid";
+import { addDays, addMonths } from "@/lib/studio-time";
 import { useStudioZone } from "@/components/brand/brand-provider";
 import { waitingTag } from "@/lib/class-waitlist";
 import { ManualPtSessionDialog } from "@/components/schedule/manual-pt-session-dialog";
+import {
+  Legend,
+  ScheduleCalendar,
+  ViewToggle,
+  WeekStrip,
+  type CalendarResolver,
+} from "@/components/schedule/schedule-calendar";
 import { scheduleErrorMessage } from "@/lib/schedule";
-import { myScheduleRow, type MyScheduleEntry as ScheduleEntry } from "@/lib/my-schedule";
+import { useSchedule } from "@/lib/use-schedule";
+import { useSchedulePosition } from "@/lib/use-schedule-position";
+import {
+  myCalendarHref,
+  myScheduleRow,
+  type MyScheduleEntry as ScheduleEntry,
+} from "@/lib/my-schedule";
 
 interface Room {
   id: string;
   name: string;
   location_id: string;
 }
+
+type Mode = "calendar" | "list";
 
 const KIND_LABEL: Record<ScheduleEntry["kind"], string> = {
   class: "Class",
@@ -40,13 +55,221 @@ const KIND_LABEL: Record<ScheduleEntry["kind"], string> = {
   corporate: "Corporate",
 };
 
+/**
+ * An Instructor's own timetable: the classes they teach, the private sessions
+ * they run, and the workshops and corporate sessions they are on. A calendar
+ * (day, week, month), drawn as the Admin's Schedule is, or the next 60 days as
+ * a list, where a class they lead can be cancelled.
+ */
 export default function InstructorSchedulePage() {
-  const { api, accessibleLocations, currentStaff, may } = useWorkspace();
-  const timezone = useStudioZone();
+  const { may } = useWorkspace();
   // New class, Repeat weekly and Cancel are Schedule classes; the timetable is not.
   const canSchedule = may("schedule_classes");
   // A manual PT session puts a private session on their calendar: Take PT bookings'.
   const canTakePt = may("take_pt_bookings");
+  const [mode, setMode] = useState<Mode>("calendar");
+  const [addingPt, setAddingPt] = useState(false);
+  // Bumped when something this page did changes the timetable, so whichever
+  // view is showing reads it again.
+  const [changed, setChanged] = useState(0);
+
+  return (
+    <div className={cn("space-y-6", mode === "list" && "mx-auto max-w-3xl")}>
+      {/* The action belongs to PageHeader, which already stacks it under the
+          title on a phone — a sibling flex row squeezed the description into a
+          sliver instead. */}
+      <PageHeader
+        title="My schedule"
+        description="Your classes, private sessions, workshops and corporate sessions."
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <ModeToggle value={mode} onChange={setMode} />
+            {/* A private session agreed outside the app, run by this instructor. */}
+            {canTakePt && (
+              <Button variant="secondary" onClick={() => setAddingPt(true)}>
+                <UserPlus className="h-4 w-4" /> PT session
+              </Button>
+            )}
+            {canSchedule && (
+              <Link href="/instructor/schedule/new/class">
+                <Button>
+                  <CalendarPlus className="h-4 w-4" /> New class
+                </Button>
+              </Link>
+            )}
+          </div>
+        }
+      />
+
+      {addingPt && (
+        <ManualPtSessionDialog
+          role="instructor"
+          onClose={() => setAddingPt(false)}
+          onCreated={() => {
+            setAddingPt(false);
+            setChanged((n) => n + 1);
+          }}
+        />
+      )}
+
+      {mode === "calendar" ? (
+        <MyCalendar changed={changed} />
+      ) : (
+        <UpcomingList canSchedule={canSchedule} changed={changed} />
+      )}
+    </div>
+  );
+}
+
+function ModeToggle({ value, onChange }: { value: Mode; onChange: (m: Mode) => void }) {
+  const opts: { v: Mode; label: string }[] = [
+    { v: "calendar", label: "Calendar" },
+    { v: "list", label: "List" },
+  ];
+  return (
+    <div className="inline-flex h-10 items-center rounded-md border border-border bg-paper p-0.5">
+      {opts.map((o) => (
+        <button
+          key={o.v}
+          type="button"
+          aria-pressed={value === o.v}
+          onClick={() => onChange(o.v)}
+          className={cn(
+            "h-full rounded px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+            value === o.v ? "bg-card text-ink shadow-soft" : "text-muted hover:text-ink",
+          )}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/* ------------------------------- Calendar ------------------------------- */
+
+function MyCalendar({ changed }: { changed: number }) {
+  const { accessibleLocations, currentStaff } = useWorkspace();
+  const timezone = useStudioZone();
+  // Kept across a trip to a class's page and back, as the Admin's Schedule is.
+  const { cursor, view, today, ready, setDate, setView, open } =
+    useSchedulePosition("instructor-schedule-position");
+
+  const range = useMemo(
+    () => ({ ...gridDays(view, cursor), ...gridWindow(timezone, view, cursor) }),
+    [view, cursor, timezone],
+  );
+  const { entries, loading, error, reload } = useSchedule(
+    { from: range.from, to: range.to },
+    { surface: "instructor", enabled: ready },
+  );
+
+  useEffect(() => {
+    if (changed > 0) void reload();
+    // Only a change this page made reads again; `reload` changes with the week.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [changed]);
+
+  const visibleEntries = useMemo(
+    () =>
+      entries.filter((e) => {
+        const start = Date.parse(e.startsAt);
+        return start >= Date.parse(range.from) && start < Date.parse(range.to);
+      }),
+    [entries, range],
+  );
+
+  const locationById = useMemo(
+    () => new Map(accessibleLocations.map((l) => [l.id, l.name])),
+    [accessibleLocations],
+  );
+  const staffId = currentStaff?.id ?? null;
+  const resolver = useMemo<CalendarResolver>(
+    () => ({
+      // It is their own calendar, so a block names no instructor and keeps the
+      // row for the kind of session and the place.
+      instructorName: () => "",
+      locationName: (id) => (id ? (locationById.get(id) ?? "Studio") : ""),
+      href: (e) => myCalendarHref(e, staffId),
+    }),
+    [locationById, staffId],
+  );
+
+  const headingLabel =
+    view === "day"
+      ? formatPlainDay(cursor, "EEEE, d MMM yyyy")
+      : view === "week"
+        ? `${formatPlainDay(range.first, "d MMM")} – ${formatPlainDay(range.last, "d MMM yyyy")}`
+        : formatPlainDay(cursor, "MMMM yyyy");
+
+  const navigate = (dir: -1 | 0 | 1) => {
+    if (dir === 0) return setDate(today);
+    if (view === "day") return setDate(addDays(cursor, dir));
+    if (view === "week") return setDate(addDays(cursor, 7 * dir));
+    return setDate(addMonths(cursor, dir));
+  };
+
+  return (
+    <div>
+      <div className="rounded-xl border border-border bg-card shadow-soft">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-3 border-b border-border p-3 sm:flex-nowrap sm:p-4">
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="icon" aria-label="Previous" onClick={() => navigate(-1)}>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Button variant="secondary" size="sm" className="h-9 sm:h-8" onClick={() => navigate(0)}>
+              Today
+            </Button>
+            <Button variant="ghost" size="icon" aria-label="Next" onClick={() => navigate(1)}>
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+          <div className="min-w-0 flex-1 truncate text-sm font-semibold text-ink sm:text-base">
+            {headingLabel}
+          </div>
+          <div className="flex w-full items-center gap-2 sm:w-auto">
+            <ViewToggle value={view} onChange={setView} />
+          </div>
+        </div>
+
+        {view === "day" && <WeekStrip day={cursor} onPick={setDate} />}
+
+        <div
+          className={cn(
+            "relative overflow-auto",
+            view !== "month" && "max-h-[calc(100dvh-16rem)] min-h-[420px]",
+          )}
+        >
+          {/* A schedule that failed to load is never drawn as an empty week. */}
+          {error ? (
+            <LoadFailure what="your schedule" onRetry={reload} className="py-16" />
+          ) : loading && entries.length === 0 ? (
+            <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted">
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading schedule…
+            </div>
+          ) : (
+            <ScheduleCalendar
+              view={view}
+              cursor={cursor}
+              weekStart={range.first}
+              entries={visibleEntries}
+              resolver={resolver}
+              onPickSlot={null}
+              onOpenDay={(d) => open(d, "day")}
+            />
+          )}
+        </div>
+      </div>
+      <Legend />
+    </div>
+  );
+}
+
+/* --------------------------------- List --------------------------------- */
+
+function UpcomingList({ canSchedule, changed }: { canSchedule: boolean; changed: number }) {
+  const { api, accessibleLocations, currentStaff } = useWorkspace();
+  const timezone = useStudioZone();
   const [entries, setEntries] = useState<ScheduleEntry[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
@@ -56,7 +279,6 @@ export default function InstructorSchedulePage() {
   const [reason, setReason] = useState("");
   const [cancelBusy, setCancelBusy] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
-  const [addingPt, setAddingPt] = useState(false);
 
   const load = useCallback(async () => {
     if (!api) return;
@@ -80,7 +302,7 @@ export default function InstructorSchedulePage() {
 
   useEffect(() => {
     void load();
-  }, [load]);
+  }, [load, changed]);
 
   const locName = useMemo(() => {
     const m = new Map<string, string>();
@@ -130,45 +352,7 @@ export default function InstructorSchedulePage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
-      {/* The action belongs to PageHeader, which already stacks it under the
-          title on a phone — a sibling flex row squeezed the description into a
-          sliver instead. */}
-      <PageHeader
-        title="My schedule"
-        description="Your classes and private sessions over the next 60 days."
-        actions={
-          canSchedule || canTakePt ? (
-            <div className="flex flex-wrap gap-2">
-              {/* A private session agreed outside the app, run by this instructor. */}
-              {canTakePt && (
-                <Button variant="secondary" onClick={() => setAddingPt(true)}>
-                  <UserPlus className="h-4 w-4" /> PT session
-                </Button>
-              )}
-              {canSchedule && (
-                <Link href="/instructor/schedule/new/class">
-                  <Button>
-                    <CalendarPlus className="h-4 w-4" /> New class
-                  </Button>
-                </Link>
-              )}
-            </div>
-          ) : null
-        }
-      />
-
-      {addingPt && (
-        <ManualPtSessionDialog
-          role="instructor"
-          onClose={() => setAddingPt(false)}
-          onCreated={() => {
-            setAddingPt(false);
-            void load();
-          }}
-        />
-      )}
-
+    <>
       {/* A schedule that failed to load is never drawn as "Nothing scheduled". */}
       {error ? (
         <LoadFailure
@@ -191,6 +375,7 @@ export default function InstructorSchedulePage() {
         />
       ) : (
         <div className="space-y-5">
+          <p className="text-sm text-muted">The next 60 days.</p>
           {groups.map(([day, items]) => (
             <section key={day}>
               <div className="mb-2 flex items-center gap-2">
@@ -326,6 +511,6 @@ export default function InstructorSchedulePage() {
           </Button>
         </DialogFooter>
       </Dialog>
-    </div>
+    </>
   );
 }

@@ -1,4 +1,5 @@
 import type { EventState } from "@/types";
+import type { ScheduleEntry } from "./schedule-entry";
 
 export interface MyScheduleEntry {
   kind: "class" | "workshop" | "pt" | "corporate";
@@ -42,4 +43,17 @@ export function myScheduleRow(e: MyScheduleEntry, viewer: MyScheduleViewer): MyS
     cancelled,
     canCancel: viewer.canScheduleClasses && leadsClass && !cancelled && e.event_state !== "completed",
   };
+}
+
+/**
+ * Where an entry on an Instructor's calendar opens: the same pages as the list
+ * (`myScheduleRow`), a class they lead or a private session they run. A class
+ * they support, a workshop or a corporate session shows on the calendar but
+ * has no Instructor page to open.
+ */
+export function myCalendarHref(e: ScheduleEntry, staffId: string | null): string | null {
+  if (staffId === null) return null;
+  if (e.kind === "class" && e.mainInstructorId === staffId) return `/instructor/schedule/class/${e.id}`;
+  if (e.kind === "pt" && e.instructorIds.includes(staffId)) return `/instructor/schedule/pt/${e.id}`;
+  return null;
 }
