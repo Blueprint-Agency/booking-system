@@ -15,12 +15,16 @@ export default function NewWorkshopPage() {
 function NewWorkshop() {
   const router = useRouter();
   const params = useSearchParams();
+  const slot = slotFromParams(params);
+  // Opened from a slot on the timetable: go back to it, which opens on the
+  // week it was left on. Opened from Workshops: back to that list.
+  const back = slot ? "/admin/schedule" : "/admin/packages/workshops";
   return (
     <WorkshopEditor
       initial={null}
-      slot={slotFromParams(params) ?? undefined}
-      onCancel={() => router.push("/admin/packages/workshops")}
-      onSave={() => router.push("/admin/packages/workshops")}
+      slot={slot ?? undefined}
+      onCancel={() => router.push(back)}
+      onSave={() => router.push(back)}
     />
   );
 }

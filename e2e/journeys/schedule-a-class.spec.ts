@@ -57,7 +57,8 @@ test('TEN-137 an admin creates a class at 10:00, and the instructor and a member
   await field('Start time').fill('10:00')
   await field('End time').fill('11:00')
   await admin.getByRole('button', { name: 'Create class' }).click()
-  await admin.waitForURL(/\/admin\/schedule$/)
+  // Back on the timetable, which writes the week it opens on into its address (SCH-46).
+  await admin.waitForURL(/\/admin\/schedule(\?date=[\d-]+&view=\w+)?$/)
   await adminContext.close()
 
   const instructorContext = await browser.newContext()
@@ -65,6 +66,9 @@ test('TEN-137 an admin creates a class at 10:00, and the instructor and a member
   await signInStaff(instructor, staff.instructor)
   await instructor.waitForURL(/\/instructor\/schedule/)
   await expect(instructor.getByRole('heading', { name: 'My schedule' })).toBeVisible()
+  // My schedule opens on this week's calendar (SCH-47); the class is eight days
+  // out, so read it from the list of the next 60 days.
+  await instructor.getByRole('button', { name: 'List', exact: true }).click()
   const entry = instructor.getByText(catalogue.portalClassType, { exact: true })
   await expect(entry).toBeVisible()
   await expect(

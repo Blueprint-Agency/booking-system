@@ -55,11 +55,17 @@ export default function EditWorkshopPage() {
       </div>
     );
   }
+  // Opened from the workshop's page on the timetable (`?from=schedule`): go
+  // back there. Read when leaving, so the page needs no Suspense boundary.
+  const back = () =>
+    new URLSearchParams(window.location.search).get("from") === "schedule"
+      ? `/admin/schedule/workshop/${id}`
+      : "/admin/packages/workshops";
   return (
     <WorkshopEditor
       initial={workshop}
-      onCancel={() => router.push("/admin/packages/workshops")}
-      onSave={() => router.push("/admin/packages/workshops")}
+      onCancel={() => router.push(back())}
+      onSave={() => router.push(back())}
     />
   );
 }
