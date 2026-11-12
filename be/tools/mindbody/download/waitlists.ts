@@ -21,7 +21,7 @@ import { isoClock, isoDay, normaliseClassName, normaliseStaffName, zonedToInstan
 /** The sheet's columns, which `readWaitlists` reads by name. */
 const WAITLIST_HEADER = ['Class date', 'Start', 'Description', 'Staff', 'Client ID', 'Client', 'Position', 'Payment status'] as const
 
-export type FutureClass = Pick<ScheduledClassRow, 'date' | 'start' | 'description' | 'staff'>
+export type FutureClass = Pick<ScheduledClassRow, 'date' | 'start' | 'description' | 'staff' | 'location'>
 
 /**
  * Every class the Staff Schedule has after `now`, once each. The report lists a
@@ -33,7 +33,7 @@ export function futureClasses(schedule: ScheduledClassRow[], now: Date, timeZone
   for (const r of schedule) {
     if (zonedToInstant({ ...r.date, ...r.start, second: 0 }, timeZone) <= now) continue
     const key = `${isoDay(r.date)} ${isoClock(r.start)} ${normaliseClassName(r.description)} ${normaliseStaffName(r.staff)}`
-    if (!seen.has(key)) seen.set(key, { date: r.date, start: r.start, description: r.description, staff: r.staff })
+    if (!seen.has(key)) seen.set(key, { date: r.date, start: r.start, description: r.description, staff: r.staff, location: r.location })
   }
   return [...seen.values()].sort(
     (a, b) => isoDay(a.date).localeCompare(isoDay(b.date)) || isoClock(a.start).localeCompare(isoClock(b.start)) || a.description.localeCompare(b.description),
@@ -84,9 +84,10 @@ export function linkDay(href: string): string | null {
 
 /**
  * The sign-in link for each class of one day, matched on the start time and the
- * class name its row shows — and, where two rows share both, the teacher. The
- * class list shows the whole week around the day asked for, so a link naming
- * another day is never a match.
+ * class name its row shows — and, where two rows share both, the teacher, then
+ * the Location (one teacher's class can be set up at two Locations at the same
+ * minute, one of them cancelled and hidden). The class list shows the whole
+ * week around the day asked for, so a link naming another day is never a match.
  * A class with no link, or with two it cannot tell apart, is returned in
  * `missing` for the caller to refuse.
  */
@@ -108,6 +109,10 @@ export function matchSignInLinks(classes: FutureClass[], links: DayLink[]): { fo
         const words = normaliseStaffName(rows.find(r => r.href === h)!.rowText).split(' ')
         return teacher.every(w => words.includes(w))
       })
+    }
+    if (chosen.length > 1 && cls.location.trim()) {
+      const location = normaliseClassName(cls.location)
+      chosen = chosen.filter(h => rows.find(r => r.href === h)!.text.includes(location))
     }
     if (chosen.length === 1) found.push({ cls, href: chosen[0]!, rowText: rows.find(r => r.href === chosen[0])!.rowText })
     else missing.push(cls)

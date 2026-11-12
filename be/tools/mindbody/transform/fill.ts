@@ -273,8 +273,18 @@ function fillConfig(starter: Json, answers: StudioAnswers, facts: ReportFacts, s
   c.offSiteVenues = answers.offSiteVenues
 
   // Workshops, retreats and courses: their own service category, never the class timetable.
+  // A category with a `workshops` entry is one too, even with no day on the schedule any more
+  // (a retreat whose dates the studio took down while places on it are still held).
   const classLike = pattern(`^(${answers.notWorkshopCategories})$`)
-  c.workshopCategories = facts.categories.filter(cat => !classLike.test(cat.trim()))
+  const onSchedule = facts.categories.filter(cat => !classLike.test(cat.trim()))
+  const categoryKeys = new Set(onSchedule.map(nameKey))
+  c.workshopCategories = [...onSchedule]
+  for (const w of c.workshops as Json[]) {
+    const cat = w.category as string
+    if (categoryKeys.has(nameKey(cat))) continue
+    categoryKeys.add(nameKey(cat))
+    c.workshopCategories.push(cat)
+  }
   for (const w of c.workshops) if (w.migrate == null) w.migrate = answers.workshopsMigrate
 
   c.ptAppointmentNames = facts.ptNames

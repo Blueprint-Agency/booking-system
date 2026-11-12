@@ -76,7 +76,7 @@ test('a workshop or retreat session is a course, by the service categories the C
 })
 
 test('a class\'s sign-in link is the one on its row, by start time and name, and by teacher where two share both', () => {
-  const hatha: FutureClass = { date: { year: 2090, month: 1, day: 2 }, start: { hour: 19, minute: 0 }, description: 'Hatha', staff: 'IVY INSTRUCTOR' }
+  const hatha: FutureClass = { date: { year: 2090, month: 1, day: 2 }, start: { hour: 19, minute: 0 }, description: 'Hatha', staff: 'IVY INSTRUCTOR', location: 'Main Hall' }
   const hathaOlive: FutureClass = { ...hatha, staff: 'OLIVE OWNER' }
   const yin: FutureClass = { ...hatha, start: { hour: 7, minute: 0 }, description: 'Yin' }
   const lost: FutureClass = { ...hatha, description: 'Mystery Class' }
@@ -102,9 +102,9 @@ test('a class\'s sign-in link is the one on its row, by start time and name, and
 })
 
 test('on Mindbody\'s class list, which shows the whole week, each class takes its own day\'s Sign In link', () => {
-  const monday: FutureClass = { date: { year: 2090, month: 1, day: 2 }, start: { hour: 7, minute: 30 }, description: 'Warm Yoga', staff: 'MASTER VISHAL' }
+  const monday: FutureClass = { date: { year: 2090, month: 1, day: 2 }, start: { hour: 7, minute: 30 }, description: 'Warm Yoga', staff: 'MASTER OAK', location: 'East Wing' }
   const tuesday: FutureClass = { ...monday, date: { year: 2090, month: 1, day: 3 } }
-  const row = 'Sign In (2/35) Warm Yoga Master Vishal Tai Seng Taiseng Studio Edit class setup Cancel or delete class'
+  const row = 'Sign In (2/35) Warm Yoga Master Oak East Wing East Studio Edit class setup Cancel or delete class'
   const { found, missing } = matchSignInLinks(
     [monday, tuesday],
     [
@@ -124,7 +124,7 @@ test('on Mindbody\'s class list, which shows the whole week, each class takes it
 
 test('only a class that could hold a line is opened: full, or starting within the margin; a row with no seat count is opened', () => {
   const now = new Date('2090-01-02T00:00:00Z') // 8am in Singapore
-  const soon: FutureClass = { date: { year: 2090, month: 1, day: 2 }, start: { hour: 19, minute: 0 }, description: 'Hatha', staff: 'IVY INSTRUCTOR' }
+  const soon: FutureClass = { date: { year: 2090, month: 1, day: 2 }, start: { hour: 19, minute: 0 }, description: 'Hatha', staff: 'IVY INSTRUCTOR', location: 'Main Hall' }
   const later: FutureClass = { ...soon, date: { year: 2090, month: 1, day: 5 } }
   assert.equal(mightHaveWaitlist('7:00 pm Sign In (35/35) Hatha', later, now, TZ), true, 'full: people may be waiting')
   assert.equal(mightHaveWaitlist('7:00 pm Sign In (12/35) Hatha', later, now, TZ), false, 'seats free and days away: the line would have moved into them')
@@ -176,8 +176,27 @@ test('the Waitlist section reads in queue order, with the id from the cell or th
   assert.deepEqual(readWaitlistSection(cells(['Client', 'Status'])), { waiting: [], unread: 0 }, 'an empty section is an empty line')
 })
 
+test('where one teacher\'s class is set up at two Locations at the same minute, each class takes the link on its own Location\'s row', () => {
+  const day: FutureClass = { date: { year: 2090, month: 1, day: 7 }, start: { hour: 10, minute: 0 }, description: 'Calm Yoga', staff: 'IVY', location: 'North Wing' }
+  const elsewhere: FutureClass = { ...day, location: 'South Wing' }
+  const nowhere: FutureClass = { ...day, location: 'East Wing' }
+  // Mindbody draws each class twice: its cancelled variant (notes link only) and its live one (the Sign In link).
+  const links = [
+    { href: '/ASP/adm/adm_cls_notes_e.asp?clsDate=1/7/2090&clsID=21', rowText: '10:00 am - 11:00 am Cancelled (Hidden) Calm Yoga Ivy (Trainee Teacher) South Wing' },
+    { href: '/ASP/adm/adm_cls_list.asp?pDate=1/7/2090&pClsID=21', rowText: '10:00 am - 11:00 am Sign In (0/20) Calm Yoga Ivy (Trainee Teacher) South Wing Edit class setup' },
+    { href: '/ASP/adm/adm_cls_notes_e.asp?clsDate=1/7/2090&clsID=25', rowText: '10:00 am - 11:00 am Cancelled Calm Yoga Ivy (Trainee Teacher) North Wing North Studio Undo class cancellation' },
+    { href: '/ASP/adm/adm_cls_list.asp?pDate=1/7/2090&pClsID=25', rowText: '10:00 am - 11:00 am Sign In (0/20) Calm Yoga Ivy (Trainee Teacher) North Wing North Studio' },
+  ]
+  const { found, missing } = matchSignInLinks([day, elsewhere, nowhere], links)
+  assert.deepEqual(
+    found.map(f => `${f.cls.location} → ${f.href}`),
+    ['North Wing → /ASP/adm/adm_cls_list.asp?pDate=1/7/2090&pClsID=25', 'South Wing → /ASP/adm/adm_cls_list.asp?pDate=1/7/2090&pClsID=21'],
+  )
+  assert.deepEqual(missing, [nowhere], 'still two links and neither at its Location: refused, never guessed')
+})
+
 test('the workbook it writes is what the transform reads: a row per waiting client, in order, classes with none left out', async () => {
-  const hatha: FutureClass = { date: { year: 2090, month: 1, day: 2 }, start: { hour: 19, minute: 0 }, description: 'Hatha', staff: 'IVY INSTRUCTOR' }
+  const hatha: FutureClass = { date: { year: 2090, month: 1, day: 2 }, start: { hour: 19, minute: 0 }, description: 'Hatha', staff: 'IVY INSTRUCTOR', location: 'Main Hall' }
   const rows = waitlistSheet([
     {
       cls: hatha,

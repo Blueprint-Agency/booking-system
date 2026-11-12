@@ -66,7 +66,7 @@ describe('a Mindbody studio\'s waitlists, transformed and imported', { skip: int
     const dir = mkdtempSync(path.join(os.tmpdir(), 'mb-waitlists-'))
     copies.push(dir)
     cpSync(path.join(FIXTURES, 'reports'), dir, { recursive: true })
-    const cls = { date: { year: 2090, month: 1, day: 9 }, start: { hour: 19, minute: 0 }, description: 'Hatha', staff: 'IVY INSTRUCTOR' }
+    const cls = { date: { year: 2090, month: 1, day: 9 }, start: { hour: 19, minute: 0 }, description: 'Hatha', staff: 'IVY INSTRUCTOR', location: 'Main Hall' }
     const rows = waitlistSheet([{ cls, waiting: waiting.map(([clientId, position]) => ({ clientId, client: '', position, paymentStatus: 'Unpaid' })) }])
     mkdirSync(path.join(dir, 'Clients', '45 Class Waitlists'), { recursive: true })
     writeFileSync(path.join(dir, 'Clients', '45 Class Waitlists', '45 Class Waitlists.xlsx'), await writeXlsx(rows, 'Class Waitlists'))

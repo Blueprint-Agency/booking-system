@@ -138,6 +138,22 @@ test('a filled config, once a person sizes what the roster could not, is one the
   assert.doesNotThrow(() => validateConfig(c))
 })
 
+test('a workshop the starter lists whose days are off the schedule now is still a workshop category, so the transform accepts it', async () => {
+  const reports = await readReports(path.join(FIXTURES, 'reports'))
+  const asOf = dateOfIso(AS_OF.slice(0, 10))
+  const starter = starterConfig(reports, AS_OF) as Record<string, any>
+  const gone = 'Island Retreat 2091'
+  starter.workshops = [...starter.workshops, { category: gone, name: gone, location: null, capacity: null, migrate: null, tiers: [] }]
+  const facts = reportFacts(reports, asOf, { offSiteVenues: ANSWERS.offSiteVenues })
+  assert.ok(!facts.categories.includes(gone), 'no day of it on the schedule')
+  const c = structuredClone(fillConfigs(starter, ANSWERS, facts, staffFacts(reports, asOf)).local!)
+  assert.ok((c.workshopCategories as string[]).includes(gone))
+  assert.equal((c.workshopCategories as string[]).filter(cat => cat === gone).length, 1)
+  for (const r of c.rooms) r.capacity ??= 20
+  for (const t of c.classTypes) if (t.capacity == null) t.capacity = 20
+  assert.doesNotThrow(() => validateConfig(c))
+})
+
 test('reply-to and footer in the answers reach the studio\'s settings and every email', async () => {
   const answers: StudioAnswers = {
     ...ANSWERS,

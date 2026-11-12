@@ -116,11 +116,13 @@ single rule from `be/tools/mindbody/report-files.json` — the transform's own l
 test against the matchers and the single/required rules (`REPORT_RULES` in `transform.ts`) — and
 `download/plan.test.ts` checks that the names it works out from each report's number, view and page
 type are exactly that list, so neither side can drift from the other. After a real run every file
-written is checked against its expected name as well — but not yet against its dates: a
-per-year piece can come back holding another year's rows and still count as ok (#306). Until
-that check lands, read the year table `transform` prints before going on. A year with classes
-and `0 attended` means that year's attendance file is wrong: download again, do not transform
-it. The history cutoff the download starts
+written is checked against its expected name as well. A date-split `.xlsx` piece (Attendance
+without Revenue, Schedule at a Glance) is also checked against its own dates: Mindbody sometimes
+answers one year's request with another year's rows (#306), so a piece whose `Date` column
+names a day outside its range is asked for again, and after three such answers fails the
+report. Payroll's `.xls` pieces are not checked that way yet, so still read the year table
+`transform` prints before going on. A year with classes and `0 attended` means that year's
+attendance file is wrong: download again, do not transform it. The history cutoff the download starts
 from (`MB_START`, default 2023-01-01) must be on or before the config's `history.from`. Every
 date range is computed from the run date:
 

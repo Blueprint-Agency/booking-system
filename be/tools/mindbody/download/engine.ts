@@ -7,6 +7,8 @@ import { REPORTS as TRANSFORM_READS } from '../transform/transform'
 import { readStaffSchedule } from '../transform/readers'
 import type { TableRow } from '../transform/html-table'
 import { isoClock, isoDay } from '../transform/values'
+import { readXlsxTable } from '../transform/xlsx'
+import { strayDates } from './piece-dates'
 import { BASE } from './session'
 import { futureClasses, isSignInLink, linkDay, matchSignInLinks, mightHaveWaitlist, readWaitlistSection, splitCourses, waitlistSheet, WINDOW_MARGIN_HOURS, type DayLink, type FutureClass, type WaitingClient } from './waitlists'
 import { writeXlsx } from './xlsx-write'
@@ -483,7 +485,15 @@ export function createEngine(o: EngineOptions) {
     if (!hasDates || level >= startLevel) {
       let file: string | null = null
       try {
-        file = await RUNNERS[r.type](r, set, base)
+        // A piece Mindbody answered with another range's rows is asked for again, then refused.
+        for (let attempt = 1; ; attempt++) {
+          file = await RUNNERS[r.type](r, set, base)
+          const stray = win && file && /\.xlsx$/i.test(file) ? strayDates(await readXlsxTable(readFileSync(file)), win) : null
+          if (!stray) break
+          unlinkSync(file)
+          if (attempt === 3) throw new Error(`${path.basename(file)}: ${stray}, ${attempt} times — Mindbody keeps answering with another range; re-run`)
+          console.log(`   ${path.basename(file)}: ${stray}; asking again`)
+        }
       } catch (e) {
         if (!(e instanceof TooManyError) || !hasDates) throw e
         problem = e.message
