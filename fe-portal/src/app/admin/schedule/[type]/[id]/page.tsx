@@ -1062,7 +1062,7 @@ function WorkshopDetail({ id }: { id: string }) {
         action={
           <div className="flex flex-wrap items-center justify-end gap-2">
             <Link
-              href={`/admin/packages/workshops/${data.id}/edit?from=schedule`}
+              href={`/admin/schedule/workshop/${data.id}/edit`}
               className="inline-flex h-9 items-center rounded-md border border-border bg-card px-3 text-xs text-muted hover:border-accent/40 hover:text-ink sm:h-8"
             >
               Edit content

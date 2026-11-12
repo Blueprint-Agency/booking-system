@@ -7,7 +7,6 @@ import {
   Layers,
   UserRound,
   Briefcase,
-  GraduationCap,
   CalendarDays,
   CalendarOff,
   CalendarMinus,
@@ -77,7 +76,6 @@ export const NAV_ITEMS: NavItem[] = [
 
   // --- Packages (global, shared across locations) ---
   { group: "Packages", label: "Classes", href: "/admin/classes", icon: Layers, scope: "global" },
-  { group: "Packages", label: "Workshops", href: "/admin/packages/workshops", icon: GraduationCap, scope: "global" },
   { group: "Packages", label: "Private Sessions", href: "/admin/private-sessions", icon: UserRound, scope: "global" },
   { group: "Packages", label: "Corporate", href: "/admin/packages/corporate", icon: Briefcase, scope: "global" },
   // Merch is shop-floor stock, not a schedulable product — both roles manage it,

@@ -8,18 +8,26 @@ import { ChevronLeft, ChevronRight, Filter as FilterIcon, MousePointerClick, Plu
 import { Button } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { formatPlainDay } from "@/lib/formatters";
-import type { GridView } from "@/lib/schedule-grid";
+import type { ScheduleView } from "@/lib/schedule-grid";
 import { addDays, addMonths } from "@/lib/studio-time";
 
-/** The day, week or month the grid shows, as its toolbar names it. */
-export function gridHeading(view: GridView, cursor: string, first: string, last: string): string {
+/** The view toggle's choices, the same on every timetable: the three grids, then the List. */
+export const SCHEDULE_VIEW_OPTIONS: readonly { v: ScheduleView; label: string }[] = [
+  { v: "day", label: "Day" },
+  { v: "week", label: "Week" },
+  { v: "month", label: "Month" },
+  { v: "list", label: "List" },
+];
+
+/** The day, week or month the timetable shows, as its toolbar names it. */
+export function gridHeading(view: ScheduleView, cursor: string, first: string, last: string): string {
   if (view === "day") return formatPlainDay(cursor, "EEEE, d MMM yyyy");
   if (view === "week") return `${formatPlainDay(first, "d MMM")} – ${formatPlainDay(last, "d MMM yyyy")}`;
   return formatPlainDay(cursor, "MMMM yyyy");
 }
 
-/** The day the grid moves to: back or on one of its view, or today. */
-export function stepCursor(view: GridView, cursor: string, today: string, dir: -1 | 0 | 1): string {
+/** The day the timetable moves to: back or on one of its view (the list steps a month), or today. */
+export function stepCursor(view: ScheduleView, cursor: string, today: string, dir: -1 | 0 | 1): string {
   if (dir === 0) return today;
   if (view === "day") return addDays(cursor, dir);
   if (view === "week") return addDays(cursor, 7 * dir);

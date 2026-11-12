@@ -1,6 +1,6 @@
 /**
- * Where a timetable is open: the day it is on and the view (day, week or
- * month) it draws that day in.
+ * Where a timetable is open: the day it is on and the view (day, week, month,
+ * or the month as a list) it draws that day in.
  *
  * Staff set a week up a class at a time, leaving the timetable for each class's
  * form or detail and coming back. So the position rides in the timetable's
@@ -9,15 +9,15 @@
  * every other way in: a save that sends the form back to the bare timetable,
  * "Back to Schedule", the sidebar. "Today" is how to leave it.
  */
-import type { GridView } from "./schedule-grid";
+import type { ScheduleView } from "./schedule-grid";
 
 export interface SchedulePosition {
   /** A plain `YYYY-MM-DD` on the studio's calendar. */
   date: string;
-  view: GridView;
+  view: ScheduleView;
 }
 
-const VIEWS: readonly GridView[] = ["day", "week", "month"];
+const VIEWS: readonly ScheduleView[] = ["day", "week", "month", "list"];
 
 /** A real calendar day as `YYYY-MM-DD`: `2026-02-30` and `2026-13-01` are not. */
 export function isPlainDay(value: string): boolean {
@@ -29,7 +29,7 @@ export function isPlainDay(value: string): boolean {
   return t.getUTCFullYear() === y && t.getUTCMonth() === mo - 1 && t.getUTCDate() === d;
 }
 
-function isView(value: unknown): value is GridView {
+function isView(value: unknown): value is ScheduleView {
   return typeof value === "string" && (VIEWS as readonly string[]).includes(value);
 }
 

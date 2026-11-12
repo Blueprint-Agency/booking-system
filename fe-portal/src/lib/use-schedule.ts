@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError } from "@/lib/api";
 import { answeredElsewhere } from "@/lib/failed-read";
 import { useWorkspace } from "@/lib/workspace-context";
@@ -47,8 +47,13 @@ export function useSchedule(
   const path = TIMETABLE_PATH[opts.surface ?? "admin"];
   const enabled = opts.enabled ?? true;
 
+  // Only the latest read may land: stepping quickly (a month at a time on the
+  // List) must never draw the range just left over the one now shown.
+  const latest = useRef(0);
+
   const load = useCallback(async () => {
     if (!api || !enabled) return;
+    const seq = ++latest.current;
     setLoading(true);
     setError(null);
     try {
@@ -61,8 +66,10 @@ export function useSchedule(
         location_id: locationId,
       };
       const res = await api.get<{ entries: ApiScheduleEntry[] }>(path, query);
+      if (seq !== latest.current) return;
       setEntries(res.entries.map(scheduleEntryFromApi));
     } catch (err) {
+      if (seq !== latest.current) return;
       // A `401` ends the session (`lib/session-expiry.ts`) and the shell sends
       // the person to sign in; maintenance puts up the maintenance screen. Both
       // replace this page, so no failure is drawn for them.
@@ -71,7 +78,7 @@ export function useSchedule(
       }
       setEntries([]);
     } finally {
-      setLoading(false);
+      if (seq === latest.current) setLoading(false);
     }
   }, [api, enabled, path, from, to, type, instructorId, classTypeId, locationId]);
 

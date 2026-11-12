@@ -1,29 +1,14 @@
 import test from "node:test";
 import assert from "node:assert";
-import { myCalendarHref, myScheduleRow, type MyScheduleEntry } from "./my-schedule";
+import { myCalendarHref, myScheduleRow } from "./my-schedule";
 import { scheduleEntryFromApi, type ApiScheduleEntry } from "./schedule-entry";
 
 const ME = "staff-me";
 const lead = { staffId: ME, canScheduleClasses: true };
 
-function entry(overrides: Partial<MyScheduleEntry> = {}): MyScheduleEntry {
-  return {
-    kind: "class",
-    id: "class-1",
-    label: "Morning Flow",
-    subtitle: null,
-    main_instructor_id: ME,
-    instructor_ids: [ME],
-    location_id: null,
-    room_id: null,
-    starts_at: "2026-09-27T02:00:00.000Z",
-    ends_at: "2026-09-27T03:00:00.000Z",
-    capacity: 10,
-    booked_count: 0,
-    waiting: null,
-    event_state: "scheduled",
-    ...overrides,
-  };
+/** An entry on My schedule's List, as the Instructor's `GET /schedule` sends it. */
+function entry(overrides: Partial<ApiScheduleEntry> = {}) {
+  return onCalendar({ starts_at: "2026-09-27T02:00:00.000Z", ends_at: "2026-09-27T03:00:00.000Z", ...overrides });
 }
 
 test("SCH-34 a cancelled class on My schedule is marked cancelled and offers no Cancel", () => {

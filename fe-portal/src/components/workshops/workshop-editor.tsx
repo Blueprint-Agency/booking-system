@@ -203,12 +203,15 @@ async function createWorkshop(
 export function WorkshopEditor({
   initial,
   slot,
+  back,
   onSave,
   onCancel,
 }: {
   initial: Workshop | null;
   /** Slot picked off the timetable grid — seeds the workshop's first day. */
   slot?: Slot;
+  /** The link above the title: where the page was opened from. */
+  back: { href: string; label: string };
   onSave: (id: string) => void;
   onCancel: () => void;
 }) {
@@ -412,10 +415,10 @@ export function WorkshopEditor({
     <div className="mx-auto max-w-3xl space-y-8 pb-12">
       <div>
         <Link
-          href="/admin/packages/workshops"
+          href={back.href}
           className="mb-2 inline-flex items-center gap-1 text-sm text-muted hover:text-ink"
         >
-          <ArrowLeft className="h-3.5 w-3.5" /> Back to Workshops
+          <ArrowLeft className="h-3.5 w-3.5" /> {back.label}
         </Link>
         <PageHeader
           title={initial ? "Edit workshop" : "New workshop"}

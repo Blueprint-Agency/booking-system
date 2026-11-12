@@ -67,8 +67,9 @@ test('TEN-137 an admin creates a class at 10:00, and the instructor and a member
   await instructor.waitForURL(/\/instructor\/schedule/)
   await expect(instructor.getByRole('heading', { name: 'My schedule' })).toBeVisible()
   // My schedule opens on this week's calendar (SCH-47); the class is eight days
-  // out, so read it from the list of the next 60 days.
-  await instructor.getByRole('button', { name: 'List', exact: true }).click()
+  // out, perhaps next month, so read it from the List of its own month (SCH-48).
+  await instructor.goto(`${urls.portal}/instructor/schedule?date=${date}&view=list`)
+  await expect(instructor.getByRole('button', { name: 'List', exact: true })).toHaveAttribute('aria-pressed', 'true')
   const entry = instructor.getByText(catalogue.portalClassType, { exact: true })
   await expect(entry).toBeVisible()
   await expect(

@@ -5,7 +5,6 @@ import {
   gridWindow,
   minutesFromMidnight,
   startsOnDay,
-  upcomingWindow,
 } from "./schedule-grid";
 
 const SYDNEY = "Australia/Sydney";
@@ -61,16 +60,12 @@ test("TEN-130 an event sits under the studio's day and at the studio's hour, so 
   assert.equal(startsOnDay(SYDNEY, "2026-10-04T08:00:00.000Z", "2026-10-04"), true);
 });
 
-test("TEN-131 the instructor's 60-day list runs from the studio's midnight today to its midnight 60 calendar days on", () => {
-  // 00:30 on 12 August in Sydney: the list starts on the 12th there, not the 11th.
-  const at = Date.parse("2026-08-11T14:30:00.000Z");
-  const sydney = upcomingWindow(SYDNEY, 60, at);
-  assert.equal(sydney.from, "2026-08-11T14:00:00.000Z");
-  assert.equal(sydney.to, "2026-10-10T13:00:00.000Z");
-  const singapore = upcomingWindow(SINGAPORE, 60, at);
-  assert.equal(singapore.from, "2026-08-10T16:00:00.000Z");
-  assert.equal(singapore.to, "2026-10-09T16:00:00.000Z");
-  // Sixty calendar days from 12 August in Sydney is 11 October, whose midnight is
-  // an hour earlier in UTC than 60 x 24 hours on, because the clocks went forward on 4 October.
-  assert.equal((Date.parse(sydney.to) - Date.parse(sydney.from)) / HOUR, 60 * 24 - 1);
+test("SCH-48 the list view asks for its month, from the studio's midnight on the 1st to its midnight after the last day", () => {
+  assert.deepEqual(gridDays("list", "2026-08-12"), { first: "2026-08-01", last: "2026-08-31" });
+  assert.deepEqual(gridDays("list", "2028-02-10"), { first: "2028-02-01", last: "2028-02-29" });
+  const sydney = gridWindow(SYDNEY, "list", "2026-10-15");
+  assert.equal(sydney.from, "2026-09-30T14:00:00.000Z");
+  assert.equal(sydney.to, "2026-10-31T13:00:00.000Z");
+  // October holds Sydney's 23-hour day, when the clocks go forward on the 4th.
+  assert.equal((Date.parse(sydney.to) - Date.parse(sydney.from)) / HOUR, 31 * 24 - 1);
 });

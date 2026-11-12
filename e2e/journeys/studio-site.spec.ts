@@ -3,7 +3,7 @@ import { openDayOf } from '../src/schedule'
 import { signInMember, studio, visitSignedOut } from '../src/studio'
 
 /**
- * Journeys: the frame every member page sits in — the top bar, the footer —
+ * Journeys: the frame every member page sits in — the top bar —
  * and what the schedule shows of cost (fe-client-features §3.1, §9).
  */
 
@@ -34,30 +34,6 @@ test('CAT-05 the class schedule shows each class its credit cost and never a mon
     await expect(detail.getByText(/1 credit/).first()).toBeVisible()
     await expect(detail).not.toContainText(MONEY)
     await context.close()
-  }
-})
-
-test('CAT-07 the footer shows only the studio own info, Locations and legal links, and no platform link', async ({ page }) => {
-  const { urls, site } = studio()
-  await visitSignedOut(page)
-
-  for (const path of ['/', '/packages']) {
-    await page.goto(`${urls.client}${path}`)
-    const footer = page.getByRole('contentinfo')
-    await expect(footer.getByText(site.name, { exact: true }).first()).toBeVisible()
-    await expect(footer.getByText(site.tagline)).toBeVisible()
-    await expect(footer.getByText(site.footerText)).toBeVisible()
-    await expect(footer.getByText(site.locationName, { exact: true })).toBeVisible()
-    await expect(footer.getByText(site.locationAddress)).toBeVisible()
-    await expect(footer.getByRole('link', { name: 'Terms' })).toHaveAttribute('href', site.termsUrl)
-    await expect(footer.getByRole('link', { name: 'Privacy' })).toHaveAttribute('href', site.privacyUrl)
-    await expect(footer.getByRole('link', { name: 'Instagram' })).toHaveAttribute('href', site.instagramUrl)
-    await expect(footer.getByText(`© ${new Date().getFullYear()} ${site.name}`)).toBeVisible()
-
-    // Every link it holds is one the studio set: nothing of the platform's.
-    const hrefs = await footer.getByRole('link').evaluateAll(links => links.map(a => a.getAttribute('href')))
-    expect(hrefs.sort()).toEqual([site.instagramUrl, site.privacyUrl, site.termsUrl].sort())
-    await expect(footer).not.toContainText(/for business|powered by|reservetoday/i)
   }
 })
 

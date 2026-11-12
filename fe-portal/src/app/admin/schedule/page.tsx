@@ -24,10 +24,12 @@ import {
   FiltersRow,
   PickSlotBanner,
   PrevTodayNext,
+  SCHEDULE_VIEW_OPTIONS,
   TYPE_FILTER_OPTIONS,
   gridHeading,
   stepCursor,
 } from "@/components/schedule/schedule-toolbar";
+import { ScheduleListView } from "@/components/schedule/schedule-list-view";
 import { useWorkspace } from "@/lib/workspace-context";
 import { useSchedule } from "@/lib/use-schedule";
 import { useSchedulePosition } from "@/lib/use-schedule-position";
@@ -55,7 +57,7 @@ const NEW_PAGE: Partial<Record<AddKind, string>> = {
   // A weekly series starts here too, with Repeat weekly: the slot picked becomes
   // its first date (and so its weekday) and times.
   class: "/admin/schedule/new/class",
-  workshop: "/admin/packages/workshops/new",
+  workshop: "/admin/schedule/new/workshop",
 };
 
 export default function SchedulePage() {
@@ -73,6 +75,13 @@ export default function SchedulePage() {
   // click chooses when the thing goes. Nothing is placeable until then.
   const [addMode, setAddMode] = useState<AddKind | null>(null);
   const [pickedSlot, setPickedSlot] = useState<Slot | null>(null);
+  const list = view === "list";
+
+  // A slot is picked on a grid, so arming a "+" from the List opens the week.
+  const arm = (kind: AddKind | null) => {
+    setAddMode(kind);
+    if (kind && list) setView("week");
+  };
 
   const [instructorsList, setInstructorsList] = useState<ApiInstructor[]>([]);
   // The instructor names could not be read: say so, never "Unknown".
@@ -188,7 +197,7 @@ export default function SchedulePage() {
       <PageHeader
         title="Schedule"
         description="Unified timetable of classes, workshops, and private sessions."
-        actions={<AddKindButtons kinds={ADD_KINDS} armed={addMode} onArm={setAddMode} />}
+        actions={<AddKindButtons kinds={ADD_KINDS} armed={addMode} onArm={arm} />}
       />
 
       <div className="rounded-xl border border-border bg-card shadow-soft">
@@ -203,7 +212,14 @@ export default function SchedulePage() {
           </div>
 
           <div className="flex w-full items-center gap-2 sm:w-auto">
-            <ViewToggle value={view} onChange={setView} />
+            <ViewToggle
+              value={view}
+              options={SCHEDULE_VIEW_OPTIONS}
+              onChange={(v) => {
+                setView(v);
+                if (v === "list") setAddMode(null);
+              }}
+            />
             <FiltersButton
               open={filtersOpen}
               active={activeFilters}
@@ -252,11 +268,12 @@ export default function SchedulePage() {
         {view === "day" && <WeekStrip day={cursor} onPick={setCursor} />}
 
         {/* Calendar surface — day/week scroll internally so the toolbar and day
-            headers stay put across the 6am–12am range. */}
+            headers stay put across the 6am–12am range; month and the List grow
+            with the page. */}
         <div
           className={cn(
             "relative overflow-auto",
-            view !== "month" && "max-h-[calc(100dvh-16rem)] min-h-[420px]"
+            (view === "day" || view === "week") && "max-h-[calc(100dvh-16rem)] min-h-[420px]"
           )}
         >
           {instructorsFailed && !error && (
@@ -275,6 +292,14 @@ export default function SchedulePage() {
             <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted">
               <Loader2 className="h-4 w-4 animate-spin" /> Loading schedule…
             </div>
+          ) : view === "list" ? (
+            <ScheduleListView
+              key={range.first}
+              cursor={cursor}
+              entries={visibleEntries}
+              resolver={resolver}
+              empty={activeFilters > 0 ? "Nothing matching the filters this week." : "Nothing scheduled this week."}
+            />
           ) : (
             <ScheduleCalendar
               view={view}
@@ -289,7 +314,7 @@ export default function SchedulePage() {
         </div>
       </div>
 
-      <Legend tip={ADD_TIP} />
+      <Legend tip={list ? undefined : ADD_TIP} />
 
       {addMode === "pt" && pickedSlot && (
         <PtRequestPickerDialog

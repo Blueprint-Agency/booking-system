@@ -836,7 +836,8 @@ function EventBlock({
   );
 }
 
-const KIND: Record<
+/** Each kind's name and colours, on the grids, the legend and the List (`schedule-list-view.tsx`). */
+export const KIND: Record<
   Entry["kind"],
   { label: string; chip: string; text: string; solid: string; swatch: string }
 > = {
@@ -870,7 +871,7 @@ const KIND: Record<
   },
 };
 
-function kindClasses(entry: Entry): string {
+export function kindClasses(entry: Entry): string {
   if (entry.eventState === "cancelled") {
     return "bg-error/10 border-error/40 border-l-error hover:bg-error/15";
   }

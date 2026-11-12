@@ -21,16 +21,16 @@ Locations are workspaces. Surfaces are partitioned as follows:
 
 | Tier | Surfaces |
 |---|---|
-| **Global (admin-only)** | Locations CRUD, Class Types, Rooms, Packages → Classes, Packages → Workshops, Packages → Private Sessions, Promotions (nested in packages), Global Policy, Staff |
+| **Global (admin-only)** | Locations CRUD, Class Types, Rooms, Packages → Classes, Packages → Private Sessions, Promotions (nested in packages), Global Policy, Staff |
 | **Workspace-scoped** | Schedule, Check-in, PT Requests (clients pick a `location_id` at request time — see §9) |
 | **Cross-workspace (global)** | Clients — cross-location credits mean a client record spans workspaces; admin sees and manages every client (kebab actions, expiry edits, set-balance, manual adjustments, block/unblock) |
 
-> **Workshops are a global package surface.** Like Classes and Private Sessions, Packages → Workshops is **not** filtered by the topbar workspace switcher — it lists every workshop across all locations. Each workshop still carries a `location_id` chosen in the editor (its days' rooms come from that location); the surface is simply not workspace-scoped.
+> **Workshops live on the Schedule.** There is no Packages → Workshops page and no list of workshops: one is created with "+ Workshop" on the Schedule and edited from its page there (§7c). Each workshop carries a `location_id` chosen in the editor (its days' rooms come from that location), so its days show on that workspace's Schedule.
 
 ### Workspace switcher (topbar)
 
 - The admin shell topbar carries a `<WorkspaceSwitcher />` dropdown listing the studio's active locations. The sidebar **no longer has a "Locations" entry** — moved into this dropdown's "Manage locations" modal.
-- The active location is global state, persisted in localStorage under `rt.activeLocationId`. All workspace-scoped pages (Schedule, Rooms, Check-in, PT Requests) read it directly — there are **no per-page LocationFilterChips** and **no CheckinLocationPill**. (Workshops is **not** workspace-scoped — see the Workshops note above.)
+- The active location is global state, persisted in localStorage under `rt.activeLocationId`. All workspace-scoped pages (Schedule, Rooms, Check-in, PT Requests) read it directly — there are **no per-page LocationFilterChips** and **no CheckinLocationPill**.
 - Dropdown contents:
   - List of the studio's active locations (current marked).
   - "+ Add location" and "Manage locations" (modal CRUD reusing `LocationFormDialog`).
@@ -50,7 +50,7 @@ Locations are workspaces. Surfaces are partitioned as follows:
 
 Every date and time in the staff portal, and every time an admin or instructor types into it, is read on **the studio's time zone** (`tenants.timezone`), never the browser's. An admin travelling abroad, or a Platform administrator acting as the studio, who schedules a 19:00 class makes a 19:00 class at the studio, and the instructor and the member read it at 19:00. The zone arrives with the slug lookup the proxy already makes, through the brand object the root layout provides (`useStudioZone`); no new endpoint or header. Three modules in `fe-portal/src/lib` take it as an argument and are the only way a date reaches the screen: `studio-time.ts` (the rules), `formatters.ts` (printing) and `local-day.ts` (the day an instant falls on, and the instants a day spans).
 
-- **A day** is the half-open window from the studio's midnight to the next midnight, so 23 or 25 hours on a daylight-saving change. The schedule's day, week and month views, the instructor's 60-day list, the leave calendar and every date-range filter (Finance, Teaching log, Receipts) open and end on the studio's midnights, and "Today", "This week" and "This month" are the studio's.
+- **A day** is the half-open window from the studio's midnight to the next midnight, so 23 or 25 hours on a daylight-saving change. The schedule's day, week and month views and its List (the Admin's and the Instructor's), the leave calendar and every date-range filter (Finance, Teaching log, Receipts) open and end on the studio's midnights, and "Today", "This week" and "This month" are the studio's.
 - **A typed wall time** (a class, a private session, a workshop day, an early-bird cutoff, a corporate session) is the studio's wall clock, turned into an instant through the zone's rules on that date: one in a spring-forward gap lands an hour later, one that occurs twice takes its first occurrence. A picked day (a package's expiry, a promotion, a promo code's last day, a manual finance entry) runs to the studio's midnight or the last instant of the studio's day.
 - **A plain date** (a leave day, a birthday, a series' first date) names a day, not a moment, and reads as that day in every zone.
 - **No studio, no clock.** The super portal's own hostname has no zone and reading one is an error, never UTC; a zone this browser does not know shows a notice in place of the app rather than a blank screen.
@@ -350,7 +350,8 @@ Studio goods surfaced in the member app at `/merch`. **Admins** manage them — 
 ### 7a. Timetable
 
 - Google Calendar-style unified view of all classes, workshops, and private sessions **scoped to the active workspace** (`rt.activeLocationId`). Switching workspace via the topbar re-renders the calendar.
-- Admin navigates by day / week / month.
+- Admin navigates by day / week / month, or switches to **List**.
+- **List view** (`components/schedule/schedule-list-view.tsx`, `lib/schedule-list.ts`): one month at a time (the arrows step a month, the heading names it), laid out in its weeks, Monday to Sunday and cut to the month at either end. Each week is a section that opens and closes, headed by its dates and how many sessions it holds; inside, the days that have something on, each row with the time, name, instructors, location, booked/capacity, waitlist and a Cancelled badge, its kind told by its colour (the grid's tint and left stripe, explained by the legend), opening the same page as the grid's block. In the month holding today the weeks already over start closed; any other month opens whole. The Type and Instructor filters narrow it like the grids. The view rides in the address (`?view=list`) like the others, and arming a "+" from it opens the week grid to pick the slot. An Instructor's My schedule has the same List, with Cancel on a class they lead.
 
 **Filters (no Location filter — workspace is global now):**
 - Instructor — dropdown of all instructors
@@ -359,7 +360,7 @@ Studio goods surfaced in the member app at `/merch`. **Admins** manage them — 
 
 **What influences the timetable:**
 - Admin creates a class instance → immediately appears on the Schedule timetable AND occupies that slot on the assigned instructor's calendar.
-- Admin creates a workshop in `/admin/packages/workshops` → each `WorkshopDay` auto-renders on the Schedule timetable as one tile with a `Day N/M` chip. The scheduler can *start* that creation (§7c) but the workshop is still configured and saved in the Packages editor.
+- Admin creates a workshop from the Schedule's "+ Workshop" (§7c) → each `WorkshopDay` auto-renders on the Schedule timetable as one tile with a `Day N/M` chip.
 - Admin (or assigned instructor in a later phase) schedules a PT session from a PT Request (§9) → confirmed session appears on the Schedule timetable AND occupies that slot on the instructor's calendar.
 
 **Admin-initiated cancellation:**
@@ -399,11 +400,11 @@ Classes made by a series show a repeat mark on the Schedule. Their detail page s
 
 ### 7c. Workshops on the Schedule
 
-Workshops are still *configured* under Packages (§7e) — the scheduler only picks when one starts.
+The Schedule is the only place a workshop is created and edited; there is no workshop page under Packages and no list of workshops.
 
-- The scheduler's **"+ Workshop"** button arms the timetable grid (§7f). Clicking a slot opens the Packages workshop editor at `/admin/packages/workshops/new` with that slot as the workshop's **first day** — date, start and end pre-filled, range mode ready to extend across further days. Nothing is saved until the admin completes the editor.
-- Existing workshops are never re-picked from the scheduler: their `WorkshopDay` tiles already render on the timetable automatically (one tile per day, `Day N/M` chip).
-- Cancelling a workshop still happens from the Schedule detail page (nobody is refunded automatically — an admin refunds each paid place, per §7a).
+- The scheduler's **"+ Workshop"** button arms the timetable grid (§7f). Clicking a slot opens the workshop editor at `/admin/schedule/new/workshop` with that slot as the workshop's **first day** — date, start and end pre-filled, range mode ready to extend across further days. Nothing is saved until the admin completes the editor (Basics → Days → Tiers, §18); saving or leaving goes back to the timetable on the week it was left on.
+- An existing workshop is opened from any of its `WorkshopDay` tiles (one tile per day, `Day N/M` chip) or its row in the List, at `/admin/schedule/workshop/:id`. **Edit content** there opens the same editor at `/admin/schedule/workshop/:id/edit`, which goes back to that page on save or leave.
+- Cancelling a workshop happens from its Schedule page or the editor (nobody is refunded automatically — an admin refunds each paid place, per §7a).
 
 **"+ Corporate" picker (replaces the old direct-create).** The scheduler's **"+ Corporate"** button opens a picker of **pending corporate requests** — selecting one opens the schedule dialog (instructor, location, room, date/time). The old "+ corporate" package dropdown and the `/admin/schedule/new/corporate` direct-create page (which took a freeform client name) are **removed**: a `corporate_session` is now created **only** by scheduling a corporate request, and its client name is derived from the member record. See §9b.
 
@@ -426,9 +427,9 @@ A shared `<CapacityFields />` block appears on every scheduling form, reading "A
 
 **Session page** (admin and instructor): **Booked** `attending / attendance capacity` (e.g. 8 / 16); **Seats** `online used / online · buffer used / buffer`, plus "N overbooked" when any; the roster tags each buffer and overbook row; **Add member** searches the studio's members and books one on; when the member holds more than one package that can pay, a **Pay with** select opens on their row with the Default payer chosen and Ineligible packages greyed with their reason (a Dormant one says "Starts today, runs until {date}"), and with one or none the booking goes straight through (#333). The timetable cell reads `attending / attendance capacity`. An instructor reaches this page for the classes they lead.
 
-### 7e. Workshops are configured under Packages (not Schedule)
+### 7e. No Workshops page under Packages
 
-Workshops live at `/admin/packages/workshops` — workspace-scoped (each workshop is tied to a `location_id`, so admins see only their workspace's workshops). See §18 for the full spec.
+The old Packages → Workshops list and its `/admin/packages/workshops` pages are gone, with no redirect: workshops are created and edited on the Schedule (§7c). Each is tied to a `location_id`, so it shows on that workspace's Schedule. See §18 for the full spec.
 
 ---
 
@@ -933,9 +934,9 @@ The emails' triggers and variables, for reference. Some rows below (the PT reque
 
 ---
 
-## 18. Workshops (multi-day, under Packages)
+## 18. Workshops (multi-day, on the Schedule)
 
-Workshops are configured at `/admin/packages/workshops` — **workspace-scoped** (each workshop carries a `location_id`, so admins see only their workspace's workshops). They no longer have a creation surface in the scheduler (see §7c).
+Workshops are created and edited from the Schedule (§7c) — **workspace-scoped** (each workshop carries a `location_id`, so its days show on that workspace's Schedule). There is no Packages → Workshops page.
 
 ### 18a. Data shape
 

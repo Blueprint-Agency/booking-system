@@ -51,6 +51,15 @@ test("SCH-46 with nothing kept, the timetable opens on today: week view, or day 
   });
 });
 
+test("SCH-48 the List is a view the timetable keeps like the grids, in its address and for the tab", () => {
+  assert.deepStrictEqual(positionFromSearch("?date=2026-11-16&view=list"), { date: "2026-11-16", view: "list" });
+  assert.strictEqual(positionSearch({ date: "2026-11-16", view: "list" }), "?date=2026-11-16&view=list");
+  assert.deepStrictEqual(parseStoredPosition(JSON.stringify({ date: "2026-11-16", view: "list" })), {
+    date: "2026-11-16",
+    view: "list",
+  });
+});
+
 test("SCH-46 a day or view that is not real, in the address or the tab, reads as absent", () => {
   assert.deepStrictEqual(positionFromSearch("?date=2026-02-30&view=year"), {});
   assert.deepStrictEqual(positionFromSearch("?date=2026-13-01"), {});

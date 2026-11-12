@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useStudioZone } from "@/components/brand/brand-provider";
 import { localDay } from "@/lib/local-day";
-import type { GridView } from "@/lib/schedule-grid";
+import type { ScheduleView } from "@/lib/schedule-grid";
 import {
   openingPosition,
   parseStoredPosition,
@@ -62,8 +62,8 @@ export function useSchedulePosition(storageKey: string) {
   }, [pos, ready, storageKey]);
 
   const setDate = useCallback((date: string) => setPos((p) => ({ ...p, date })), []);
-  const setView = useCallback((view: GridView) => setPos((p) => ({ ...p, view })), []);
-  const open = useCallback((date: string, view: GridView) => setPos({ date, view }), []);
+  const setView = useCallback((view: ScheduleView) => setPos((p) => ({ ...p, view })), []);
+  const open = useCallback((date: string, view: ScheduleView) => setPos({ date, view }), []);
 
   return { cursor: pos.date, view: pos.view, today, ready, setDate, setView, open };
 }
