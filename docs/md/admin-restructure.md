@@ -25,7 +25,7 @@ Locations are workspaces. Surfaces are partitioned as follows:
 | **Workspace-scoped** | Schedule, Check-in, PT Requests (clients pick a `location_id` at request time — see §9) |
 | **Cross-workspace (global)** | Clients — cross-location credits mean a client record spans workspaces; admin sees and manages every client (kebab actions, expiry edits, set-balance, manual adjustments, block/unblock) |
 
-> **Workshops live on the Schedule.** There is no Packages → Workshops page and no list of workshops: one is created with "+ Workshop" on the Schedule and edited from its page there (§7c). Each workshop carries a `location_id` chosen in the editor (its days' rooms come from that location), so its days show on that workspace's Schedule.
+> **Workshops live on the Schedule.** There is no Packages → Workshops page and no list of workshops: one is created with "+ Workshop" on the Schedule, and clicking it there opens its editor (§7c). Each workshop carries a `location_id` chosen in the editor (its days' rooms come from that location), so its days show on that workspace's Schedule.
 
 ### Workspace switcher (topbar)
 
@@ -351,7 +351,7 @@ Studio goods surfaced in the member app at `/merch`. **Admins** manage them — 
 
 - Google Calendar-style unified view of all classes, workshops, and private sessions **scoped to the active workspace** (`rt.activeLocationId`). Switching workspace via the topbar re-renders the calendar.
 - Admin navigates by day / week / month, or switches to **List**.
-- **List view** (`components/schedule/schedule-list-view.tsx`, `lib/schedule-list.ts`): one month at a time (the arrows step a month, the heading names it), laid out in its weeks, Monday to Sunday and cut to the month at either end. Each week is a section that opens and closes, headed by its dates and how many sessions it holds; inside, the days that have something on, each row with the time, name, instructors, location, booked/capacity, waitlist and a Cancelled badge, its kind told by its colour (the grid's tint and left stripe, explained by the legend), opening the same page as the grid's block. In the month holding today the weeks already over start closed; any other month opens whole. The Type and Instructor filters narrow it like the grids. The view rides in the address (`?view=list`) like the others, and arming a "+" from it opens the week grid to pick the slot. An Instructor's My schedule has the same List, with Cancel on a class they lead.
+- **List view** (`components/schedule/schedule-list-view.tsx`, `lib/schedule-list.ts`): one month at a time (the arrows step a month, the heading names it), laid out in its weeks, Monday to Sunday and cut to the month at either end. Each week is a section that opens and closes, headed by its dates and how many sessions it holds; inside, the days that have something on, each row with the time, name, instructors, location, booked/capacity, waitlist and a Cancelled badge, its kind told by its colour (the grid's tint and left stripe, explained by the legend). A click anywhere on the row opens the same page as the grid's block (a row's own action, such as an Instructor's Cancel, keeps its click). In the month holding today the weeks already over start closed; any other month opens whole. The Type and Instructor filters narrow it like the grids. The view rides in the address (`?view=list`) like the others, and arming a "+" from it opens the week grid to pick the slot. An Instructor's My schedule has the same List, with Cancel on a class they lead.
 
 **Filters (no Location filter — workspace is global now):**
 - Instructor — dropdown of all instructors
@@ -403,8 +403,8 @@ Classes made by a series show a repeat mark on the Schedule. Their detail page s
 The Schedule is the only place a workshop is created and edited; there is no workshop page under Packages and no list of workshops.
 
 - The scheduler's **"+ Workshop"** button arms the timetable grid (§7f). Clicking a slot opens the workshop editor at `/admin/schedule/new/workshop` with that slot as the workshop's **first day** — date, start and end pre-filled, range mode ready to extend across further days. Nothing is saved until the admin completes the editor (Basics → Days → Tiers, §18); saving or leaving goes back to the timetable on the week it was left on.
-- An existing workshop is opened from any of its `WorkshopDay` tiles (one tile per day, `Day N/M` chip) or its row in the List, at `/admin/schedule/workshop/:id`. **Edit content** there opens the same editor at `/admin/schedule/workshop/:id/edit`, which goes back to that page on save or leave.
-- Cancelling a workshop happens from its Schedule page or the editor (nobody is refunded automatically — an admin refunds each paid place, per §7a).
+- An existing workshop opens straight in the same editor, at `/admin/schedule/workshop/:id/edit`, from any of its `WorkshopDay` tiles (one tile per day, `Day N/M` chip) or its row in the List; saving or leaving goes back to the timetable. There is no separate workshop page: `/admin/schedule/workshop/:id` goes on to the editor.
+- Cancelling a workshop happens from the editor's **Cancel workshop** (nobody is refunded automatically — an admin refunds each paid place, per §7a). A cancelled workshop's editor shows a **Cancelled** badge in its place.
 
 **"+ Corporate" picker (replaces the old direct-create).** The scheduler's **"+ Corporate"** button opens a picker of **pending corporate requests** — selecting one opens the schedule dialog (instructor, location, room, date/time). The old "+ corporate" package dropdown and the `/admin/schedule/new/corporate` direct-create page (which took a freeform client name) are **removed**: a `corporate_session` is now created **only** by scheduling a corporate request, and its client name is derived from the member record. See §9b.
 
@@ -540,7 +540,7 @@ The client reflects status back on `/account/corporate` (`fe-client-features.md`
 
 ## 10. Session Detail Pages
 
-Every scheduled item (class, workshop, PT) becomes clickable on the Schedule timetable and opens its own dedicated detail page.
+Every scheduled item (class, workshop, PT) is clickable on the Schedule timetable. A class, PT or corporate session opens its own dedicated detail page; a workshop opens straight in its editor (§7c), which has no roster.
 
 **Common shape (all three types):**
 - Header: title, type badge (Class / Workshop / PT), date/time, location, instructor(s)
@@ -556,10 +556,7 @@ Every scheduled item (class, workshop, PT) becomes clickable on the Schedule tim
 - **Cancelled (n)** (#352) — a collapsed section under the roster, on the admin page and the instructor's session page alike: each booking cancelled off the class with the member's name (linked to their profile for an admin), when it was cancelled and by whom (Member / the staff member's name / Automatic / Studio), and where the credit went in the profile's words; a Late cancel reads "Late cancel · credit not returned", marked as a warning. These rows carry no check-in and no Cancel. A cancelled class shows who was booked here, open from the start, instead of "No bookings yet."
 - **Packages accepted** — the class's Package rule as a sentence ("All group packages" / "Only: …" / "All except: …"), on the admin page and the instructor's session page. The admin editor changes it with the same `PackageRuleField` as §7b. A change that would cancel bookings is previewed first (`PATCH …/classes/:id` with `preview: true` → `{ would_cancel: n }`): above zero, a confirm step says **"This will cancel N bookings"** before anything is saved. Saving cancels exactly the bookings paid by a package the class no longer accepts (never one already checked in) — each refunded in full to the package that paid, its seat offered to the waitlist, not counted against the member's cancellations, and the member emailed `class_rule_cancelled`. A change that cancels nobody saves without the confirm.
 
-**Workshop detail page additions:**
-- Per-tier breakdown (which tier each attendee bought)
-- No check-in (workshops are not check-in tracked)
-- Cancel workshop action (admin) → cancels its bookings; nobody is refunded automatically. Each paid booking stays refundable from the member's Workshop purchases card (#272)
+**Workshops** have no detail page (§7c): the editor carries **Cancel workshop** (admin) → cancels its bookings; nobody is refunded automatically. Each paid booking stays refundable from the member's Workshop purchases card (#272). Workshops are not check-in tracked.
 
 **PT detail page additions:**
 - Single client (1-on-1) or two clients (2-on-1)

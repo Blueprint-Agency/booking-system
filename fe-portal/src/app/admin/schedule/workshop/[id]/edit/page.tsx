@@ -1,12 +1,14 @@
 "use client";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { Loader2 } from "lucide-react";
 import { WorkshopEditor, fromApiWorkshop } from "@/components/workshops/workshop-editor";
+import { ErrorDetail, LoadingDetail, type DetailBack } from "@/components/schedule/event-detail";
 import { useStudioZone } from "@/components/brand/brand-provider";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
 import type { Workshop } from "@/types";
+
+const BACK: DetailBack = { href: "/admin/schedule", label: "Back to Schedule" };
 
 export default function EditWorkshopPage() {
   const { id } = useParams<{ id: string }>();
@@ -29,7 +31,13 @@ export default function EditWorkshopPage() {
       const d = (await api.get(`/portal/admin/workshops/${id}`)) as any;
       setWorkshop(fromApiWorkshop(d, timezone));
     } catch (err) {
-      setError(err instanceof ApiError ? `HTTP ${err.status}` : "Network error");
+      setError(
+        err instanceof ApiError
+          ? err.status === 404
+            ? "Workshop not found."
+            : `Failed to load: HTTP ${err.status}`
+          : "Failed to load: network error",
+      );
     } finally {
       setLoading(false);
     }
@@ -39,30 +47,15 @@ export default function EditWorkshopPage() {
     void load();
   }, [load]);
 
-  if (loading) {
-    return (
-      <div className="flex h-64 items-center justify-center gap-2 text-sm text-muted">
-        <Loader2 className="h-4 w-4 animate-spin" /> Loading workshop…
-      </div>
-    );
-  }
-  if (error || !workshop) {
-    return (
-      <div className="mx-auto max-w-3xl rounded-xl border border-error/30 bg-error/5 p-6 text-center">
-        <p className="text-sm text-error">
-          {error ? `Failed to load: ${error}` : "Workshop not found."}
-        </p>
-      </div>
-    );
-  }
-  // Opened from the workshop's page on the timetable: saving or leaving goes back there.
-  const back = `/admin/schedule/workshop/${id}`;
+  // Opened straight from the timetable: saving or leaving goes back there.
+  if (loading) return <LoadingDetail back={BACK} label="workshop" />;
+  if (error || !workshop) return <ErrorDetail back={BACK} kind="Workshop" message={error ?? "Workshop not found."} />;
   return (
     <WorkshopEditor
       initial={workshop}
-      back={{ href: back, label: "Back to workshop" }}
-      onCancel={() => router.push(back)}
-      onSave={() => router.push(back)}
+      back={BACK}
+      onCancel={() => router.push(BACK.href)}
+      onSave={() => router.push(BACK.href)}
     />
   );
 }

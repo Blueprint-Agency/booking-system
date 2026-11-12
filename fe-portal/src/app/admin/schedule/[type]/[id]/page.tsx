@@ -1,6 +1,7 @@
 "use client";
 import { use, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Ban, Loader2, Save } from "lucide-react";
 import { Badge, Button, Dialog, DialogFooter, Input, Label, LoadFailure } from "@/components/ui";
 import { answeredElsewhere } from "@/lib/failed-read";
@@ -33,11 +34,10 @@ import {
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
 import { computeEventState } from "@/lib/event-state";
-import { LATEST_DATE, formatDate, formatTime, formatDateTime, formatSgd } from "@/lib/formatters";
+import { LATEST_DATE, formatDate, formatTime, formatDateTime } from "@/lib/formatters";
 import { atLocalTime, localDay } from "@/lib/local-day";
 import { localClock } from "@/lib/studio-time";
 import { useStudioZone } from "@/components/brand/brand-provider";
-import { WORKSHOP_CANCEL_CONFIRM } from "@/lib/workshop-cancel";
 import {
   CLASS_CANCEL_CONFIRM,
   cancelClass,
@@ -85,40 +85,7 @@ import {
   type CatalogInstructor,
   type CatalogRoom,
 } from "@/lib/catalog";
-import type { Capacity, EventState } from "@/types";
-
-interface ApiWorkshopDay {
-  id: string;
-  ord: number;
-  starts_at: string;
-  ends_at: string;
-  capacity_online: number;
-  capacity_waitlist: number;
-  capacity_buffer: number;
-}
-
-interface ApiWorkshopTier {
-  id: string;
-  name: string;
-  description: string | null;
-  regular_price_sgd: string;
-  early_bird_price_sgd: string | null;
-  early_bird_quota: number | null;
-  early_bird_cutoff_at: string | null;
-  ord: number;
-  day_ids: string[];
-}
-
-interface ApiWorkshopDetail {
-  id: string;
-  name: string;
-  location_id: string;
-  description_html: string | null;
-  lifecycle: "active" | "cancelled";
-  days: ApiWorkshopDay[];
-  tiers: ApiWorkshopTier[];
-  instructor_ids: string[];
-}
+import type { Capacity } from "@/types";
 
 const BACK: DetailBack = { href: "/admin/schedule", label: "Back to Schedule" };
 
@@ -129,7 +96,8 @@ export default function SessionDetailPage({
 }) {
   const { type, id } = use(params);
 
-  if (type === "workshop") return <WorkshopDetail id={id} />;
+  // A workshop's page on the timetable is its editor.
+  if (type === "workshop") redirect(`/admin/schedule/workshop/${id}/edit`);
   if (type === "class") return <ClassDetail id={id} />;
   if (type === "pt") return <PtDetail id={id} />;
   if (type === "corporate") return <CorporateDetail id={id} />;
@@ -976,186 +944,6 @@ function PtEditor({
   );
 }
 
-
-/* ------------------------------- Workshop ------------------------------- */
-
-function WorkshopDetail({ id }: { id: string }) {
-  const { api, accessibleLocations } = useWorkspace();
-  const timezone = useStudioZone();
-  const [data, setData] = useState<ApiWorkshopDetail | null>(null);
-  const [instructors, setInstructors] = useState<CatalogInstructor[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [cancelBusy, setCancelBusy] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    if (!api) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const [w, ins] = await Promise.all([
-        api.get<ApiWorkshopDetail>(`/portal/admin/workshops/${id}`),
-        fetchActiveInstructors(api),
-      ]);
-      setData(w);
-      setInstructors(ins);
-    } catch (err) {
-      setError(detailError(err, "Workshop not found."));
-    } finally {
-      setLoading(false);
-    }
-  }, [api, id]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  async function handleCancelWorkshop() {
-    if (!api || !data) return;
-    if (!confirm(WORKSHOP_CANCEL_CONFIRM)) return;
-    setCancelBusy(true);
-    setActionError(null);
-    try {
-      await api.post(`/portal/admin/schedule/workshops/${data.id}/cancel`);
-      await load();
-    } catch (err) {
-      setActionError(detailError(err, "Workshop not found."));
-    } finally {
-      setCancelBusy(false);
-    }
-  }
-
-  if (loading) return <LoadingDetail back={BACK} label="workshop" />;
-  if (error || !data) return <ErrorDetail back={BACK} kind="Workshop" message={error ?? "Workshop not found."} />;
-
-  const sortedDays = [...data.days].sort((a, b) => a.ord - b.ord);
-  const sortedTiers = [...data.tiers].sort((a, b) => a.ord - b.ord);
-  const first = sortedDays[0];
-  const last = sortedDays[sortedDays.length - 1];
-  const eventState: EventState = first
-    ? computeEventState({
-        startsAt: first.starts_at,
-        endsAt: last!.ends_at,
-        lifecycle: data.lifecycle,
-      })
-    : data.lifecycle === "cancelled"
-      ? "cancelled"
-      : "scheduled";
-  const locName = accessibleLocations.find((l) => l.id === data.location_id)?.name ?? "—";
-  const instructorNames = data.instructor_ids
-    .map((iid) => instructors.find((i) => i.id === iid)?.name ?? "Unknown")
-    .join(" & ");
-  const dateMeta = first
-    ? sortedDays.length === 1
-      ? formatDate(timezone, first.starts_at)
-      : `${formatDate(timezone, first.starts_at)} – ${formatDate(timezone, last!.ends_at)}`
-    : "No days scheduled";
-
-  return (
-    <DetailFrame back={BACK}>
-      <DetailHeader
-        badge={<Badge tone="warning">Workshop</Badge>}
-        state={eventState}
-        title={data.name}
-        meta={[dateMeta, locName, instructorNames].filter(Boolean)}
-        action={
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <Link
-              href={`/admin/schedule/workshop/${data.id}/edit`}
-              className="inline-flex h-9 items-center rounded-md border border-border bg-card px-3 text-xs text-muted hover:border-accent/40 hover:text-ink sm:h-8"
-            >
-              Edit content
-            </Link>
-            {data.lifecycle === "active" && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={handleCancelWorkshop}
-                disabled={cancelBusy}
-                className="text-error hover:text-error"
-              >
-                {cancelBusy ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Ban className="h-4 w-4" />
-                )}
-                Cancel workshop
-              </Button>
-            )}
-          </div>
-        }
-      />
-
-      {actionError && (
-        <p className="mb-4 rounded-md border border-error/30 bg-error/5 px-3 py-2 text-xs text-error">
-          {actionError}
-        </p>
-      )}
-
-      <section className="mb-6 rounded-xl border border-border bg-card p-4 shadow-soft sm:p-5">
-        <h2 className="mb-3 text-sm font-semibold text-ink">Days</h2>
-        {sortedDays.length === 0 ? (
-          <p className="text-sm text-muted">No days scheduled.</p>
-        ) : (
-          <ul className="divide-y divide-border">
-            {sortedDays.map((d) => (
-              <li
-                key={d.id}
-                className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2 text-sm"
-              >
-                <div className="min-w-0">
-                  <div className="font-medium text-ink">
-                    Day {d.ord} — {formatDate(timezone, d.starts_at)}
-                  </div>
-                  <div className="text-xs text-muted">
-                    {formatTime(timezone, d.starts_at)} – {formatTime(timezone, d.ends_at)}
-                  </div>
-                </div>
-                <div className="text-xs text-muted">
-                  Capacity {d.capacity_online + d.capacity_buffer}
-                  {d.capacity_waitlist > 0 && ` · Waitlist ${d.capacity_waitlist}`}
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section className="rounded-xl border border-border bg-card p-4 shadow-soft sm:p-5">
-        <h2 className="mb-3 text-sm font-semibold text-ink">Pricing tiers</h2>
-        {sortedTiers.length === 0 ? (
-          <p className="text-sm text-muted">No tiers configured.</p>
-        ) : (
-          <ul className="divide-y divide-border">
-            {sortedTiers.map((t) => (
-              <li key={t.id} className="py-3 text-sm">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 break-words font-medium text-ink">{t.name}</div>
-                  <div className="shrink-0 text-ink">
-                    {formatSgd(Number(t.regular_price_sgd))}
-                  </div>
-                </div>
-                {t.description && <p className="mt-1 text-xs text-muted">{t.description}</p>}
-                {t.early_bird_price_sgd && (
-                  <p className="mt-1 text-xs text-muted">
-                    Early bird {formatSgd(Number(t.early_bird_price_sgd))}
-                    {t.early_bird_cutoff_at && ` until ${formatDate(timezone, t.early_bird_cutoff_at)}`}
-                    {t.early_bird_quota !== null && ` · quota ${t.early_bird_quota}`}
-                  </p>
-                )}
-                <p className="mt-1 text-xs text-muted">
-                  Grants access to {t.day_ids.length} day{t.day_ids.length === 1 ? "" : "s"}
-                </p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-    </DetailFrame>
-  );
-}
 
 /* ------------------------------- Corporate ------------------------------- */
 

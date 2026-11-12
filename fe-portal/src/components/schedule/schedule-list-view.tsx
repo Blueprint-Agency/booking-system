@@ -171,6 +171,10 @@ function ListRow({
   ]
     .filter(Boolean)
     .join(" · ");
+  const places =
+    entry.capacity !== null && entry.bookedCount !== null
+      ? `${entry.bookedCount} booked of ${entry.capacity} places`
+      : null;
   const dayChip =
     entry.kind === "workshop" && entry.dayCount > 1 ? `Day ${entry.dayIndex}/${entry.dayCount}` : null;
 
@@ -180,17 +184,21 @@ function ListRow({
   return (
     <li
       className={cn(
-        "flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-md border border-l-4 px-3 py-2",
+        "relative flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-md border border-l-4 px-3 py-2",
         kindClasses(entry),
+        href && "transition-shadow hover:shadow-hover",
         cancelled && "opacity-80",
       )}
     >
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-1.5 text-sm">
           {href ? (
+            // The link stretches over the whole row, so a click anywhere on it opens the page.
             <Link
               href={href}
-              className="min-w-0 truncate rounded-sm hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              // The overlay covers the chips, so the places tooltip rides on the link.
+              title={places ?? undefined}
+              className="min-w-0 truncate rounded-sm after:absolute after:inset-0 after:rounded-md after:content-[''] focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-accent"
             >
               {title}
             </Link>
@@ -218,7 +226,7 @@ function ListRow({
         {entry.capacity !== null && entry.bookedCount !== null && (
           <span
             className="rounded bg-ink/[0.07] px-1.5 py-0.5 text-[11px] font-bold tabular-nums text-ink/75"
-            title={`${entry.bookedCount} booked of ${entry.capacity} places`}
+            title={places ?? undefined}
           >
             {entry.bookedCount}/{entry.capacity}
           </span>
@@ -228,7 +236,8 @@ function ListRow({
         )}
         {/* No kind label: the row's colour says it, as the legend under the card explains. */}
         <span className="sr-only">{kind.label}</span>
-        {action}
+        {/* Above the row's link, so the action takes its own clicks. */}
+        {action && <div className="relative z-10">{action}</div>}
       </div>
     </li>
   );

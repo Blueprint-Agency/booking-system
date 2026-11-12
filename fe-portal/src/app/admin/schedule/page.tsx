@@ -120,7 +120,9 @@ export default function SchedulePage() {
     () => ({
       instructorName: (id) => instructorById.get(id) ?? (instructorsFailed ? "—" : "Unknown"),
       locationName: (id) => (id ? (locationById.get(id) ?? "Unknown") : "—"),
-      href: (e) => `/admin/schedule/${e.kind}/${e.kind === "workshop" ? e.raw.id : e.id}`,
+      // A workshop opens straight in its editor; the others open their page.
+      href: (e) =>
+        e.kind === "workshop" ? `/admin/schedule/workshop/${e.raw.id}/edit` : `/admin/schedule/${e.kind}/${e.id}`,
     }),
     [instructorById, locationById, instructorsFailed],
   );

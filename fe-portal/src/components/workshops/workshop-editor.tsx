@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Save, Ban, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { Button, Input, Label, LoadFailure, PageHeader, Badge } from "@/components/ui";
+import { Button, Input, Label, LoadFailure, PageHeader, Badge, StatusBadge } from "@/components/ui";
 import { answeredElsewhere } from "@/lib/failed-read";
 import { WorkshopDaysEditor, newDay } from "./workshop-days-editor";
 import { WorkshopTiersEditor } from "./workshop-tiers-editor";
@@ -428,11 +428,14 @@ export function WorkshopEditor({
               : "Configure basics first, then days, then pricing tiers."
           }
           actions={
-            initial && initial.lifecycle === "active" ? (
+            !initial ? undefined : initial.lifecycle === "active" ? (
               <Button variant="secondary" size="sm" onClick={handleCancelWorkshop}>
                 <Ban className="h-3.5 w-3.5" /> Cancel workshop
               </Button>
-            ) : undefined
+            ) : (
+              // Opened straight from the timetable, the editor is where a cancelled workshop says so.
+              <StatusBadge status="cancelled" />
+            )
           }
         />
       </div>
