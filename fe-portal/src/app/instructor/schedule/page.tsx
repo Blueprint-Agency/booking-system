@@ -1,9 +1,17 @@
 "use client";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { Button, LoadFailure, PageHeader } from "@/components/ui";
+import { Button, LoadFailure, PageHeader, Select } from "@/components/ui";
+import { answeredElsewhere } from "@/lib/failed-read";
+import { fetchInstructorNames, type InstructorName } from "@/lib/catalog";
+import {
+  SCOPE_OPTIONS,
+  matchesStudioFilters,
+  parseScope,
+  type ScheduleScope,
+} from "@/lib/instructor-schedule-scope";
 import { InstructorCancelClassDialog } from "@/components/schedule/instructor-cancel-class-dialog";
 import { cn } from "@/lib/utils";
 import { useWorkspace } from "@/lib/workspace-context";
@@ -39,21 +47,38 @@ import { myCalendarHref, myScheduleRow } from "@/lib/my-schedule";
 type AddKind = "class" | "pt";
 type FilterType = "all" | ScheduleEntry["kind"];
 
+/** Where the tab keeps whether the page is on My schedule or the Full studio schedule. */
+const SCOPE_KEY = "instructor-schedule-scope";
+
+const noSubscription = () => () => {};
+
+function readStoredScope(): string {
+  try {
+    return window.sessionStorage.getItem(SCOPE_KEY) ?? "";
+  } catch {
+    // Storage blocked: open on My schedule.
+    return "";
+  }
+}
+
 const ADD_KINDS: { kind: AddKind; label: string; noun: string }[] = [
   { kind: "class", label: "Class", noun: "class" },
   { kind: "pt", label: "PT Session", noun: "PT session" },
 ];
 
 /**
- * An Instructor's own timetable: the classes they teach, the private sessions
- * they run, and the workshops and corporate sessions they are on. The Admin's
- * Schedule, drawn the same way — "+ Class" and "+ PT Session" arm the grid and
- * the slot picked seeds the form, and the List lays the month out by week —
- * with only what their Instructor Permissions allow.
+ * An Instructor's timetable: their own (the classes they teach, the private
+ * sessions they run, and the workshops and corporate sessions they are on), or,
+ * switched to the Full studio schedule, the studio's whole one — every
+ * instructor's, with booked counts — to pick a slot knowing what else is on.
+ * The Admin's Schedule, drawn the same way — "+ Class" and "+ PT Session" arm
+ * the grid and the slot picked seeds the form, and the List lays the month out
+ * by week — with only what their Instructor Permissions allow. Only their own
+ * class or private session opens a page.
  */
 export default function InstructorSchedulePage() {
   const router = useRouter();
-  const { may, accessibleLocations, currentStaff } = useWorkspace();
+  const { api, may, accessibleLocations, currentStaff } = useWorkspace();
   const timezone = useStudioZone();
   // New class, Repeat weekly and Cancel are Schedule classes; the timetable is not.
   const canSchedule = may("schedule_classes");
@@ -65,7 +90,25 @@ export default function InstructorSchedulePage() {
   const { cursor, view, today, ready, setDate, setView, open } =
     useSchedulePosition("instructor-schedule-position");
   const list = view === "list";
+  // My schedule or the Full studio schedule, kept for the tab like the position.
+  // The stored choice is only known in the browser: null while the server draws
+  // the page and through hydration, then what the tab kept ("" for nothing).
+  const storedScope = useSyncExternalStore(noSubscription, readStoredScope, () => null);
+  const scopeReady = storedScope !== null;
+  const [chosenScope, setChosenScope] = useState<ScheduleScope | null>(null);
+  const scope = chosenScope ?? parseScope(storedScope);
+  const chooseScope = (next: ScheduleScope) => {
+    setChosenScope(next);
+    try {
+      window.sessionStorage.setItem(SCOPE_KEY, next);
+    } catch {
+      // Not kept for the tab.
+    }
+  };
+  const studio = scope === "studio";
   const [type, setType] = useState<FilterType>("all");
+  const [instructorId, setInstructorId] = useState("all");
+  const [locationId, setLocationId] = useState("all");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [addMode, setAddMode] = useState<AddKind | null>(null);
   const [pickedSlot, setPickedSlot] = useState<Slot | null>(null);
@@ -78,17 +121,47 @@ export default function InstructorSchedulePage() {
   );
   const { entries, loading, error, reload } = useSchedule(
     { from: range.from, to: range.to },
-    { surface: "instructor", enabled: ready },
+    { surface: studio ? "instructorStudio" : "instructor", enabled: ready && scopeReady },
+  );
+
+  // The names the Full studio schedule puts on other instructors' entries.
+  const [instructors, setInstructors] = useState<InstructorName[]>([]);
+  const [instructorsFailed, setInstructorsFailed] = useState(false);
+  const [instructorsAttempt, setInstructorsAttempt] = useState(0);
+  useEffect(() => {
+    if (!api || !studio) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        // Cached for a minute, so switching back and forth asks once.
+        const rows = await fetchInstructorNames(api);
+        if (cancelled) return;
+        setInstructors(rows);
+        setInstructorsFailed(false);
+      } catch (err) {
+        if (!cancelled && !answeredElsewhere(err)) setInstructorsFailed(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [api, studio, instructorsAttempt]);
+  const instructorById = useMemo(() => new Map(instructors.map((i) => [i.id, i.name])), [instructors]);
+  const filterInstructors = useMemo(
+    // A pending invitee can be scheduled, so can be filtered to.
+    () => instructors.filter((i) => !i.archived_at),
+    [instructors],
   );
 
   const visibleEntries = useMemo(
     () =>
       entries.filter((e) => {
         if (type !== "all" && e.kind !== type) return false;
+        if (studio && !matchesStudioFilters(e, { instructorId, locationId })) return false;
         const start = Date.parse(e.startsAt);
         return start >= Date.parse(range.from) && start < Date.parse(range.to);
       }),
-    [entries, range, type],
+    [entries, range, type, studio, instructorId, locationId],
   );
 
   const locationById = useMemo(
@@ -98,14 +171,26 @@ export default function InstructorSchedulePage() {
   const staffId = currentStaff?.id ?? null;
   const resolver = useMemo<CalendarResolver>(
     () => ({
-      // It is their own calendar, so a block names no instructor and keeps the
-      // row for the kind of session and the place.
-      instructorName: () => "",
+      // On their own calendar a block names no instructor and keeps the row for
+      // the kind of session and the place; the studio's names whose it is.
+      instructorName: studio
+        ? (id) =>
+            instructorById.get(id) ?? (instructorsFailed ? "—" : instructors.length > 0 ? "Unknown" : "")
+        : () => "",
       locationName: (id) => (id ? (locationById.get(id) ?? "Studio") : ""),
+      // Only their own class or private session opens; another's shows but opens nothing.
       href: (e) => myCalendarHref(e, staffId),
     }),
-    [locationById, staffId],
+    [studio, instructorById, instructors.length, instructorsFailed, locationById, staffId],
   );
+  const activeFilters = [type !== "all", studio && instructorId !== "all", studio && locationId !== "all"].filter(
+    Boolean,
+  ).length;
+  const clearFilters = () => {
+    setType("all");
+    setInstructorId("all");
+    setLocationId("all");
+  };
   const viewer = { staffId, canScheduleClasses: canSchedule };
 
   const clearAdd = () => {
@@ -133,12 +218,28 @@ export default function InstructorSchedulePage() {
   return (
     <div>
       <PageHeader
-        title="My schedule"
-        description="Your classes, private sessions, workshops and corporate sessions."
+        title={studio ? "Studio schedule" : "My schedule"}
+        description={
+          studio
+            ? "Everything on at the studio: every instructor's classes with their bookings, private sessions, workshops and corporate sessions."
+            : "Your classes, private sessions, workshops and corporate sessions."
+        }
         actions={
-          addKinds.length > 0 ? (
-            <AddKindButtons kinds={addKinds} armed={addMode} onArm={arm} />
-          ) : undefined
+          <div className="flex flex-wrap items-center gap-2">
+            <Select
+              aria-label="Whose schedule"
+              value={scope}
+              onChange={(e) => chooseScope(parseScope(e.target.value))}
+              className="h-9 w-auto font-medium"
+            >
+              {SCOPE_OPTIONS.map((o) => (
+                <option key={o.val} value={o.val}>
+                  {o.label}
+                </option>
+              ))}
+            </Select>
+            {addKinds.length > 0 && <AddKindButtons kinds={addKinds} armed={addMode} onArm={arm} />}
+          </div>
         }
       />
 
@@ -159,21 +260,52 @@ export default function InstructorSchedulePage() {
             />
             <FiltersButton
               open={filtersOpen}
-              active={type !== "all" ? 1 : 0}
+              active={activeFilters}
               onToggle={() => setFiltersOpen((o) => !o)}
             />
           </div>
         </div>
 
         {filtersOpen && (
-          <FiltersRow onClear={type !== "all" ? () => setType("all") : null}>
+          <FiltersRow onClear={activeFilters > 0 ? clearFilters : null}>
             <FilterPill
               label="Type"
               value={type}
               options={TYPE_FILTER_OPTIONS}
               onChange={(v) => setType(v as FilterType)}
             />
+            {studio && (
+              <FilterPill
+                label="Instructor"
+                value={instructorId}
+                options={[
+                  { val: "all", label: "All" },
+                  ...filterInstructors.map((i) => ({ val: i.id, label: i.name })),
+                ]}
+                onChange={setInstructorId}
+              />
+            )}
+            {/* Still shown while a location is picked, so a filter in force can be undone. */}
+            {studio && (accessibleLocations.length > 1 || locationId !== "all") && (
+              <FilterPill
+                label="Location"
+                value={locationId}
+                options={[
+                  { val: "all", label: "All" },
+                  ...accessibleLocations.map((l) => ({ val: l.id, label: l.name })),
+                ]}
+                onChange={setLocationId}
+              />
+            )}
           </FiltersRow>
+        )}
+
+        {studio && instructorsFailed && !error && (
+          <LoadFailure
+            what="the instructor names"
+            detail="Entries show no instructor until they load."
+            onRetry={() => setInstructorsAttempt((n) => n + 1)}
+          />
         )}
 
         {addMode && (
@@ -195,7 +327,7 @@ export default function InstructorSchedulePage() {
         >
           {/* A schedule that failed to load is never drawn as an empty week. */}
           {error ? (
-            <LoadFailure what="your schedule" onRetry={reload} className="py-16" />
+            <LoadFailure what={studio ? "the studio schedule" : "your schedule"} onRetry={reload} className="py-16" />
           ) : loading && entries.length === 0 ? (
             <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted">
               <Loader2 className="h-4 w-4 animate-spin" /> Loading schedule…
@@ -206,7 +338,13 @@ export default function InstructorSchedulePage() {
               cursor={cursor}
               entries={visibleEntries}
               resolver={resolver}
-              empty={type !== "all" ? "Nothing of this type this week." : "Nothing on your schedule this week."}
+              empty={
+                activeFilters > 0
+                  ? "Nothing matching the filters this week."
+                  : studio
+                    ? "Nothing on at the studio this week."
+                    : "Nothing on your schedule this week."
+              }
               rowAction={(e) =>
                 myScheduleRow(e, viewer).canCancel ? (
                   <Button

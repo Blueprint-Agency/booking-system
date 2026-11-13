@@ -48,12 +48,14 @@ type Narrowing = Pick<Parameters<typeof timetable.listSchedule>[1], 'instructorI
 
 /**
  * `GET /` — the timetable, optionally windowed by `from`/`to` and `type`. The
- * two surfaces differ in whose it is:
+ * mounts differ in whose it is:
  *
  *   admin       the studio's, narrowed by the filters the query names.
  *   instructor  the caller's own classes and private sessions (and the
  *               workshops and corporate sessions they are assigned to),
  *               forced to the caller; the Admin's filters are not parsed.
+ *   studio      an Instructor's Full studio schedule: the studio's, as the
+ *               Admin's, less the Class Series id (`studioTimetableRoutes`).
  */
 function timetableFor<Query extends Window>(spec: {
   query: BodyOf<Query>
@@ -72,16 +74,20 @@ function timetableFor<Query extends Window>(spec: {
   })
 }
 
+/** The studio's whole timetable, narrowed only by the filters the query names. */
+const studioQuery = windowQuery.extend({
+  instructor_id: z.string().uuid().optional(),
+  class_type_id: z.string().uuid().optional(),
+  location_id: z.string().uuid().optional(),
+})
+const studioNarrowing = (q: z.infer<typeof studioQuery>): Narrowing => ({
+  instructorId: q.instructor_id,
+  classTypeId: q.class_type_id,
+  locationId: q.location_id,
+})
+
 const surfaces: Record<Surface, Hono> = {
-  admin: timetableFor({
-    query: windowQuery.extend({
-      instructor_id: z.string().uuid().optional(),
-      class_type_id: z.string().uuid().optional(),
-      location_id: z.string().uuid().optional(),
-    }),
-    narrowing: q => ({ instructorId: q.instructor_id, classTypeId: q.class_type_id, locationId: q.location_id }),
-    admin: true,
-  }),
+  admin: timetableFor({ query: studioQuery, narrowing: studioNarrowing, admin: true }),
   instructor: timetableFor({
     query: windowQuery,
     narrowing: (_q, self) => ({ instructorId: self }),
@@ -90,3 +96,16 @@ const surfaces: Record<Surface, Hono> = {
 }
 
 export const timetableRoutes = (surface: Surface): Hono => surfaces[surface]
+
+/**
+ * `GET /` — the studio's whole timetable for an Instructor's Full studio
+ * schedule: every instructor's classes, private sessions, workshops and
+ * corporate sessions, with their booked counts, so a slot can be picked knowing
+ * what else is on. It reads as the Admin's does, filters and all, less the
+ * Class Series id — so a private session's label names its members and a
+ * corporate session's subtitle its client (admin-restructure §7g). A class's
+ * roster is not here: only booked counts; who is booked stays on the session
+ * pages, which an Instructor opens for their own sessions only.
+ */
+export const studioTimetableRoutes = (): Hono =>
+  timetableFor({ query: studioQuery, narrowing: studioNarrowing, admin: false })

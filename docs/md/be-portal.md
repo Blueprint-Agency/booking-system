@@ -706,6 +706,7 @@ Scoped to the authenticated instructor. `staffAuth` loads `staff_users` and reso
 | Method | Path | Effect |
 |---|---|---|
 | GET | `/schedule` | All `classes` + `pt_sessions` + `workshops` where the instructor is assigned, with `event_state` computed. A cancelled class or private session stays listed with `event_state: 'cancelled'` (#445). |
+| GET | `/schedule/studio` | The studio's whole timetable for the Full studio schedule (admin-restructure §7g): every instructor's classes, private sessions, workshops and corporate sessions, with booked counts and waiting — the admin `GET /schedule` read and its `instructor_id` / `class_type_id` / `location_id` filters, without `series_id`. Rosters stay on `/sessions/*`, the caller's own only. No Instructor Permission. |
 | POST | `/schedule/classes` | **`schedule_classes`.** Create a class. The admin body without `main_instructor_id`, supporting instructors or `instructor_pay_sgd`: the caller is forced as main instructor, nobody supports, and pay is `null` (Unpriced). Those fields, if sent, are ignored. |
 | POST | `/schedule/series/preview` | **`schedule_classes`.** **Class Series** preview — the admin contract (§2 `schedule.ts`) with the same forcing as a single class: the caller is the main instructor, no supporting instructors, pay `null`. Location and room come from the body. `main_instructor_id`, `instructor_pay_sgd` and `supporting_instructors`, if sent, are ignored. |
 | POST | `/schedule/series` | **`schedule_classes`.** Commit the same body, all or nothing: `201 { series, class_ids }`, `409 series_conflict { dates }`. There is no instructor extend or end: those are admin only (`403` on the admin routes). |
@@ -732,6 +733,7 @@ Scoped to the authenticated instructor. `staffAuth` loads `staff_users` and reso
 | Method | Path | Effect |
 |---|---|---|
 | GET | `/catalog/class-types`, `/catalog/rooms` | The scheduling forms' pick lists, archived rows left out. |
+| GET | `/catalog/instructors` | `{ instructors: [{ id, name, status, archived_at }] }` — every instructor of the studio, archived included, names only (no email, phone or pay): the Full studio schedule's names and Instructor filter. |
 | GET | `/catalog/features` | `{ waitlist_enabled }` — the studio switch, so the capacity fields can label the Waitlist input "(waitlists are off)" (spec-waitlist §8). |
 
 ### `check-in.ts`

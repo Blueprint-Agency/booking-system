@@ -431,6 +431,10 @@ A shared `<CapacityFields />` block appears on every scheduling form, reading "A
 
 The old Packages → Workshops list and its `/admin/packages/workshops` pages are gone, with no redirect: workshops are created and edited on the Schedule (§7c). Each is tied to a `location_id`, so it shows on that workspace's Schedule. See §18 for the full spec.
 
+### 7g. An Instructor's Full studio schedule
+
+An Instructor's schedule page (`/instructor/schedule`) has a dropdown beside its "+" buttons: **My schedule** (the default: their own classes, private sessions, workshops and corporate sessions) or **Full studio schedule** (titled "Studio schedule"): the whole studio's timetable, read from `GET /portal/instructor/schedule/studio`. That means every instructor's classes with their booked/capacity and waiting counts, private sessions with their members' names, workshops and corporate sessions, so an instructor picks a slot knowing what else is on. It draws in the same day, week, month and List views, and the "+ Class" / "+ PT Session" buttons work on it as on My schedule. Its filters add **Instructor** (active instructors, from `GET /portal/instructor/catalog/instructors`) and, with more than one location, **Location** to Type. Only the instructor's own class or private session opens its page (and offers Cancel); another instructor's entry shows but opens nothing, so other classes' rosters stay unseen. The choice is kept for the tab (session storage), like the position.
+
 ---
 
 ## 8. Instructor Availability — REMOVED

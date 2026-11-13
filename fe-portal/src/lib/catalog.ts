@@ -94,6 +94,23 @@ export async function fetchActiveRooms(api: Api): Promise<CatalogRoom[]> {
 }
 
 /** The same rooms, read through the instructor's own catalog. */
+/** An instructor as the Instructor portal's catalog names them: no contact details or pay. */
+export interface InstructorName {
+  id: string;
+  name: string;
+  status: "pending" | "active" | "archived";
+  archived_at: string | null;
+}
+
+/**
+ * Every instructor of the studio, archived included, for the Full studio
+ * schedule's names and Instructor filter.
+ */
+export async function fetchInstructorNames(api: Api): Promise<InstructorName[]> {
+  const res = await cachedGet<{ instructors: InstructorName[] }>(api, "/portal/instructor/catalog/instructors");
+  return res.instructors;
+}
+
 export async function fetchInstructorRooms(api: Api): Promise<CatalogRoom[]> {
   const res = await cachedGet<{ rooms: CatalogRoom[] }>(api, "/portal/instructor/catalog/rooms");
   return res.rooms;

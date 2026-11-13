@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import * as classTypesSvc from '../../../services/catalog/class-types'
+import * as instructorsSvc from '../../../services/catalog/instructors'
 import * as roomsSvc from '../../../services/catalog/rooms'
 import * as classPackagesSvc from '../../../services/packages/class-packages'
 import { waitlistEnabled } from '../../../services/waitlist/line'
@@ -35,6 +36,15 @@ const app = new Hono()
   // The studio switches a scheduling form reads: the capacity fields label the
   // Waitlist input "(waitlists are off)" when the studio has them off.
   .get('/features', c => c.json({ waitlist_enabled: waitlistEnabled(tenantId(c)) }))
+  // The names the Full studio schedule puts on another instructor's entries and
+  // its Instructor filter. Names only — no email, phone or pay. Archived ones
+  // stay, flagged, so a past entry still names who taught it.
+  .get('/instructors', async c => {
+    const rows = await instructorsSvc.listInstructors(tenantId(c), {})
+    return c.json({
+      instructors: rows.map(r => ({ id: r.id, name: r.name, status: r.status, archived_at: r.archivedAt })),
+    })
+  })
   .get('/rooms', zValidator('query', roomsQuery), async c => {
     const q = c.req.valid('query')
     const rows = await roomsSvc.listRooms(tenantId(c), { locationId: q.location_id, includeArchived: false })

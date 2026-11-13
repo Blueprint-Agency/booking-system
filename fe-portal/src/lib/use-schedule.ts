@@ -23,11 +23,13 @@ export interface ScheduleFilters {
 
 /**
  * Whose timetable: the Admin's is the studio's, narrowed by the filters; the
- * Instructor's is the caller's own, and the backend ignores the narrowing.
+ * Instructor's is the caller's own, and the backend ignores the narrowing; the
+ * Instructor's Full studio schedule is the studio's, as the Admin's.
  */
 const TIMETABLE_PATH = {
   admin: "/portal/admin/schedule",
   instructor: "/portal/instructor/schedule",
+  instructorStudio: "/portal/instructor/schedule/studio",
 } as const;
 
 export function useSchedule(
@@ -50,10 +52,16 @@ export function useSchedule(
   // Only the latest read may land: stepping quickly (a month at a time on the
   // List) must never draw the range just left over the one now shown.
   const latest = useRef(0);
+  // Whose timetable `entries` holds: another's is never drawn under this one's title.
+  const shownPath = useRef(path);
 
   const load = useCallback(async () => {
     if (!api || !enabled) return;
     const seq = ++latest.current;
+    if (shownPath.current !== path) {
+      shownPath.current = path;
+      setEntries([]);
+    }
     setLoading(true);
     setError(null);
     try {

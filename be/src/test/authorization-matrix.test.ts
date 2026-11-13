@@ -366,6 +366,7 @@ const EXPECTATIONS: Record<string, Expectation> = {
   // The Instructor's schedule. The gate here is the role's: which Instructor
   // Permission each route needs is judged by `instructor-permissions.test.ts`.
   'GET /api/v1/portal/instructor/schedule': { gate: STUDIO_STAFF },
+  'GET /api/v1/portal/instructor/schedule/studio': { gate: STUDIO_STAFF },
   'POST /api/v1/portal/instructor/schedule/classes': { gate: STUDIO_STAFF },
   'GET /api/v1/portal/instructor/schedule/classes/:id/packages': { gate: STUDIO_STAFF },
   'POST /api/v1/portal/instructor/schedule/classes/:id/bookings': { gate: STUDIO_STAFF },

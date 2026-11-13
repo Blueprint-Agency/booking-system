@@ -9,13 +9,16 @@ import { classBookingRoutes } from '../class-booking'
 import { classCreateRoutes } from '../class-create'
 import { classSeriesCreateRoutes } from '../class-series'
 import { idParam } from '../parse'
-import { timetableRoutes } from '../timetable-read'
+import { studioTimetableRoutes, timetableRoutes } from '../timetable-read'
 
 /**
  * Instructor schedule surface.
  *
  *   GET  /schedule        — the caller's own classes + PT (+ workshops/corporate
  *                           they're assigned to), optionally windowed by from/to.
+ *   GET  /schedule/studio — the studio's whole timetable, every instructor's,
+ *                           for the Full studio schedule: the Admin's read and
+ *                           filters, less the Class Series id.
  *   POST /schedule/classes — create a class. The instructor and pay are NOT
  *                           accepted from the body: main_instructor_id is forced
  *                           to the acting instructor, there are no supporting
@@ -66,6 +69,7 @@ const app = new Hono()
   // Add to class (never an overbook), Remove (spec-waitlist.md §7).
   .route('/', classWaitlistRoutes('instructor'))
   .route('/', timetableRoutes('instructor'))
+  .route('/studio', studioTimetableRoutes())
   .route('/', classCreateRoutes('instructor'))
   .route('/', classSeriesCreateRoutes('instructor'))
   // A member's packages for a class the caller teaches, and booking them onto it.
