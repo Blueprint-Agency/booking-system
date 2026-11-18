@@ -15,6 +15,9 @@ import {
   usePaged,
 } from "@/components/ui";
 import { ClassPackageDialog } from "@/components/packages/class-package-dialog";
+import { EntityBadge, EntityFilter } from "@/components/packages/entity-filter";
+import { filterByEntity, packageEntityFromApi } from "@/lib/entities";
+import { useEntities } from "@/lib/use-entities";
 import { formatSgd } from "@/lib/formatters";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
@@ -38,11 +41,15 @@ interface ApiClassPackage {
   status: "active" | "archived";
   archived_at: string | null;
   promotions?: ApiPromotion[];
+  // Optional: an API that predates Entities does not send them.
+  entity_id?: string | null;
+  entity?: { id: string; name: string; slug: string } | null;
 }
 
 function fromApi(r: ApiClassPackage): ClassPackage {
   return {
     id: r.id,
+    ...packageEntityFromApi(r),
     name: r.name,
     description: r.description ?? "",
     kind: r.kind,
@@ -63,6 +70,9 @@ export default function ClassPackagesPage() {
   const [dialog, setDialog] =
     useState<{ kind: "create" } | { kind: "edit"; pkg: ClassPackage } | null>(null);
   const [view, setView] = useState<"active" | "archived">("active");
+  // The studio's Entities: for the filter, which is hidden at one. "" is every Entity.
+  const { entities, reload: reloadEntities } = useEntities();
+  const [entityFilter, setEntityFilter] = useState("");
 
   // `loading` starts true and is never set again: a reload after a save refreshes
   // the list in place, so the pager keeps the page the admin was on.
@@ -85,15 +95,18 @@ export default function ClassPackagesPage() {
     void load();
   }, [load]);
 
-  const active = packages.filter((p) => p.status === "active");
-  const archived = packages.filter((p) => p.status === "archived");
-  const activeTrials = active.filter((p) => p.kind === "trial");
+  const shown = filterByEntity(packages, entityFilter);
+  const active = shown.filter((p) => p.status === "active");
+  const archived = shown.filter((p) => p.status === "archived");
+  // The trial warning is about what customers see, whatever the filter shows.
+  const activeTrials = packages.filter((p) => p.status === "active" && p.kind === "trial");
 
   async function handleSave(pkg: ClassPackage) {
     if (!api) return;
     const isEdit = packages.some((p) => p.id === pkg.id);
     const payload = {
       name: pkg.name,
+      entity_id: pkg.entityId,
       description: pkg.description || null,
       credits: pkg.credits ?? null,
       validity_days: pkg.validityDays ?? null,
@@ -108,6 +121,7 @@ export default function ClassPackagesPage() {
         await api.post("/portal/admin/class-packages", { ...payload, kind: pkg.kind });
       }
       setDialog(null);
+      reloadEntities();
       await load();
       toast.success("Package saved.");
     } catch (err) {
@@ -191,7 +205,8 @@ export default function ClassPackagesPage() {
         />
       ) : (
         <div>
-          {active.length + archived.length > 0 && (
+          <EntityFilter entities={entities} value={entityFilter} onChange={setEntityFilter} />
+          {packages.length > 0 && (
             <Tabs value={view} onValueChange={(v) => setView(v as "active" | "archived")} className="mb-6">
               <TabsList>
                 <TabsTrigger value="active">Active ({active.length})</TabsTrigger>
@@ -365,7 +380,10 @@ function PackageCard({
             </p>
           ))}
         </div>
-        {archived && <Badge tone="neutral">Archived</Badge>}
+        <div className="flex shrink-0 flex-wrap justify-end gap-1">
+          <EntityBadge name={pkg.entityName} />
+          {archived && <Badge tone="neutral">Archived</Badge>}
+        </div>
       </div>
       {pkg.description && (
         <p className="mb-3 line-clamp-2 text-xs text-muted">{pkg.description}</p>

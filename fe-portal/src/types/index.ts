@@ -55,6 +55,9 @@ export type ClassPackageKind = "credit_bundle" | "unlimited" | "trial";
 
 export interface ClassPackage {
   id: string;
+  /** The Entity it is sold under. Optional: a row from an API that predates Entities has none. */
+  entityId?: string | null;
+  entityName?: string | null;
   name: string;
   description: string;
   kind: ClassPackageKind;
@@ -70,6 +73,9 @@ export type PtSessionType = "1on1" | "2on1";
 
 export interface PtPackage {
   id: string;
+  /** The Entity it is sold under; see `ClassPackage.entityId`. */
+  entityId?: string | null;
+  entityName?: string | null;
   name: string;
   sessionType: PtSessionType;
   numSessions: number;

@@ -4,8 +4,8 @@ import { refusalMessage } from "./refusal-message";
 /**
  * Entities: the lines of practice a studio sells packages for (Yoga, Pilates).
  * The settings screen lists them, makes, renames, reorders and archives them
- * (be-portal.md § entities.ts). Nothing is assigned to one yet, so what is
- * "in use" is zero until packages and class types take an Entity.
+ * (be-portal.md § entities.ts). Every package belongs to one, and the package
+ * forms pick it (`components/packages/entity-picker.tsx`).
  */
 
 export interface EntityUsage {
@@ -34,6 +34,42 @@ export interface Entity {
 
 export function entityFromApi(e: ApiEntity): Entity {
   return { id: e.id, name: e.name, slug: e.slug, archivedAt: e.archived_at, inUse: e.in_use };
+}
+
+/**
+ * What a package row says about the Entity it belongs to. Both optional, as
+ * every new response field is: the portal and the API deploy apart, so a row
+ * from a build that predates Entities carries neither.
+ */
+export interface PackageEntityFields {
+  entity_id?: string | null;
+  entity?: { id: string; name: string; slug: string } | null;
+}
+
+export function packageEntityFromApi(r: PackageEntityFields): { entityId: string | null; entityName: string | null } {
+  return { entityId: r.entity_id ?? null, entityName: r.entity?.name ?? null };
+}
+
+/** The Entity filter on a packages list is for a studio with more than one line; with one it would filter nothing. */
+export function showEntityFilter(entities: readonly unknown[]): boolean {
+  return entities.length >= 2;
+}
+
+/** The items in `entityId`, or all of them for "" (no filter). */
+export function filterByEntity<T extends { entityId?: string | null }>(items: readonly T[], entityId: string): T[] {
+  return entityId === "" ? [...items] : items.filter((item) => item.entityId === entityId);
+}
+
+/** The Entity a new package starts in: the studio's first, in its display order. "" when the list has none yet. */
+export function defaultEntityId(entities: readonly { id: string }[]): string {
+  return entities[0]?.id ?? "";
+}
+
+/** What the form says before a package is moved to another Entity, so the admin knows who it takes along. */
+export function moveNotice(membersHolding: number): string {
+  if (membersHolding === 0) return "No member holds this package, so nobody is affected by the move.";
+  const who = membersHolding === 1 ? "1 member holds" : `${membersHolding} members hold`;
+  return `${who} this package. It moves with it, and nothing is cancelled.`;
 }
 
 /** The ids with the one at `index` swapped with its neighbour; unchanged at either end. */
@@ -92,6 +128,10 @@ export function entityRefusal(err: unknown, fallback: string): string {
     }
     case "entity_order_invalid":
       return "The list changed while you were editing. Reload the page and try again.";
+    case "entity_archived":
+      return "That entity is archived. Pick another one.";
+    case "entity_not_found":
+      return "That entity no longer exists. Reload the page and pick another.";
     default:
       return refusalMessage(err, fallback);
   }

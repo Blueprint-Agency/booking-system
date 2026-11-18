@@ -15,9 +15,15 @@ import { useStudioZone } from "@/components/brand/brand-provider";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
 import { formatSgd, formatDate } from "@/lib/formatters";
+import { EntityBadge, EntityFilter } from "@/components/packages/entity-filter";
+import { filterByEntity, packageEntityFromApi } from "@/lib/entities";
+import { useEntities } from "@/lib/use-entities";
 
 interface ApiCorporatePackage {
   id: string;
+  // Optional: an API that predates Entities does not send them.
+  entity_id?: string | null;
+  entity?: { id: string; name: string; slug: string } | null;
   name: string;
   description: string | null;
   price_sgd: string;
@@ -35,7 +41,14 @@ export default function CorporatePackagesListPage() {
   const [packages, setPackages] = useState<ApiCorporatePackage[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { visible, pagination } = usePaged(packages);
+  // The studio's Entities: for the filter, which is hidden at one. "" is every Entity.
+  const { entities } = useEntities();
+  const [entityFilter, setEntityFilter] = useState("");
+  const shown = filterByEntity(
+    packages.map((p) => ({ ...p, ...packageEntityFromApi(p) })),
+    entityFilter,
+  );
+  const { visible, pagination } = usePaged(shown);
 
   const load = useCallback(async () => {
     if (!api) return;
@@ -84,6 +97,8 @@ export default function CorporatePackagesListPage() {
           cta={{ href: "/admin/packages/corporate/new", label: "New corporate package" }}
         />
       ) : (
+        <div>
+        <EntityFilter entities={entities} value={entityFilter} onChange={setEntityFilter} />
         <div className="overflow-hidden rounded-xl border border-border bg-card shadow-soft">
           <ul className="divide-y divide-border">
             {visible.map((p) => (
@@ -93,7 +108,10 @@ export default function CorporatePackagesListPage() {
                   className="flex items-center justify-between gap-4 px-4 py-3 hover:bg-paper"
                 >
                   <div className="min-w-0 flex-1">
-                    <div className="break-words font-medium text-ink">{p.name}</div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="break-words font-medium text-ink">{p.name}</span>
+                      <EntityBadge name={p.entityName} />
+                    </div>
                     <div className="mt-1 text-xs text-muted">
                       {/* The price column is hidden on a phone; it rides here. */}
                       <span className="text-ink sm:hidden">
@@ -117,6 +135,7 @@ export default function CorporatePackagesListPage() {
             ))}
           </ul>
           <Pagination {...pagination} noun="corporate packages" />
+        </div>
         </div>
       )}
     </div>
