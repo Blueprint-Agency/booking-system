@@ -214,6 +214,11 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
     assert.equal(await count('locations', studio.tenant.id), 2)
     // Hatha and Vinyasa Flow, plus the Personal Training focus the PT import needs.
     assert.equal(await count('class_types', studio.tenant.id), 3)
+    // All of them in the studio's one Entity, which came across in the archive.
+    const lines = await harness.db.select({ id: schema.entities.id }).from(schema.entities).where(eq(schema.entities.tenantId, studio.tenant.id))
+    assert.equal(lines.length, 1)
+    const placed = await harness.db.select({ entityId: schema.classTypes.entityId }).from(schema.classTypes).where(eq(schema.classTypes.tenantId, studio.tenant.id))
+    assert.deepEqual(placed.map(r => r.entityId), [lines[0]!.id, lines[0]!.id, lines[0]!.id])
     // Every template a provisioned studio gets: exactly the ones the seed builds.
     assert.equal(
       await count('email_templates', studio.tenant.id),

@@ -179,10 +179,17 @@ const classTypesTable = pgTable(
     // Single-level hierarchy. Depth capped at 1 — enforced in service layer:
     // a child (parent_id IS NOT NULL) cannot itself become a parent.
     parentId: uuid('parent_id').references((): AnyPgColumn => classTypesTable.id, { onDelete: 'restrict' }),
+    // The Entity (line of practice) this type belongs to, on EVERY row: a
+    // sub-type stores its parent's, kept equal by the service (a move rewrites
+    // the children in the same transaction). Nullable this deploy
+    // (migrations README rule 0); the service and routes require it, and NOT NULL
+    // is a later deploy. Reads of `classTypes.entityId` are untyped (`any` below).
+    entityId: uuid('entity_id').references(() => entities.id, { onDelete: 'restrict' }),
     archivedAt: timestamp('archived_at', { withTimezone: true }),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   table => ({
+    entityIdFkIdx: index('class_types_entity_id_fk_idx').on(table.entityId),
     parentIdFkIdx: index('class_types_parent_id_fk_idx').on(table.parentId),
     archivedIdx: index('class_types_archived_idx').on(table.tenantId, table.archivedAt),
     deletedIdx: index('class_types_deleted_idx').on(table.tenantId, table.deletedAt),

@@ -1,7 +1,7 @@
-import { and, asc, eq, isNull, max, ne, sql, type SQL } from 'drizzle-orm'
+import { and, asc, count, eq, isNull, max, ne, sql, type SQL } from 'drizzle-orm'
 import { db } from '../../db'
 import { slugForEntityName } from '../../db/seed/entities'
-import { entities } from '../../db/schema/catalog'
+import { classTypes, entities } from '../../db/schema/catalog'
 import { isUniqueViolation } from '../../db/unique-violation'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 import { assertEntityUnused, type EntityUsage } from './entities-usage'
@@ -18,11 +18,57 @@ export type EntityRow = typeof entities.$inferSelect
 export type EntityWithUsage = EntityRow & { inUse: EntityUsage }
 
 /**
- * Today nothing references an Entity, so every count is zero. The package and
- * Class Type changes make these real by counting their own rows here.
+ * What still belongs to an Entity. Class Types count when they are live (not
+ * archived, not deleted), sub-types too: they hold the Entity of their parent.
+ * Packages are zero until they take an Entity; that change counts its own rows
+ * here.
  */
-async function usageOf(_tenantId: string, _entityId: string): Promise<EntityUsage> {
-  return { class_types: 0, class_packages: 0, pt_packages: 0, corporate_packages: 0 }
+async function usageOf(tenantId: string, entityId: string): Promise<EntityUsage> {
+  const [types] = await db
+    .select({ n: count() })
+    .from(classTypes)
+    .where(
+      and(
+        eq(classTypes.tenantId, tenantId),
+        eq(classTypes.entityId, entityId),
+        isNull(classTypes.archivedAt),
+        isNull(classTypes.deletedAt),
+      ),
+    )
+  return { class_types: Number(types?.n ?? 0), class_packages: 0, pt_packages: 0, corporate_packages: 0 }
+}
+
+/**
+ * The Entity a new Class Type or package gets when its caller names none: the
+ * studio's first live one by order. Null only for a studio with no Entity at all
+ * (a fixture, or one an archive is about to be restored into), which the caller
+ * stores as "no Entity" rather than refusing.
+ */
+export async function defaultEntityId(tenantId: string): Promise<string | null> {
+  const [first] = await db
+    .select({ id: entities.id })
+    .from(entities)
+    .where(and(eq(entities.tenantId, tenantId), isNull(entities.archivedAt)))
+    .orderBy(asc(entities.position), asc(entities.createdAt), asc(entities.id))
+    .limit(1)
+  return first?.id ?? null
+}
+
+/**
+ * The id names a live Entity of this studio, or it is refused before anything is
+ * written: `entity_not_found` for an id nobody has and for another studio's alike
+ * (a foreign key check skips Row-Level Security, so without this read a body
+ * naming another studio's Entity would be stored), `entity_archived` for one the
+ * studio has retired.
+ */
+export async function assertEntityUsable(tenantId: string, id: string): Promise<void> {
+  const [row] = await db
+    .select({ archivedAt: entities.archivedAt })
+    .from(entities)
+    .where(and(eq(entities.tenantId, tenantId), eq(entities.id, id)))
+    .limit(1)
+  if (!row) throw new NotFoundError('entity_not_found')
+  if (row.archivedAt) throw new ConflictError('entity_archived')
 }
 
 async function withUsage(tenantId: string, row: EntityRow): Promise<EntityWithUsage> {

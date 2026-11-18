@@ -1009,6 +1009,20 @@
       "when": 1795012073681,
       "tag": "0143_entities_all_classes",
       "breakpoints": true
+    },
+    {
+      "idx": 144,
+      "version": "7",
+      "when": 1795013637960,
+      "tag": "0144_class_types_entity",
+      "breakpoints": true
+    },
+    {
+      "idx": 145,
+      "version": "7",
+      "when": 1795013650000,
+      "tag": "0145_class_types_entity_backfill",
+      "breakpoints": true
     }
   ]
 }

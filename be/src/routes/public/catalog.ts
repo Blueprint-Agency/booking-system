@@ -86,7 +86,7 @@ const app = new Hono()
   // Active class types — used by the fe-client PT request form's class type dropdown.
   .get('/class-types', async c => {
     const rows = await classTypesSvc.listClassTypes(tenantId(c), { includeArchived: false })
-    return c.json({ class_types: rows.map(r => ({ id: r.id, name: r.name })) })
+    return c.json({ class_types: rows.map(r => ({ id: r.id, name: r.name, entity_id: r.entityId ?? null })) })
   })
   .get('/packages', async c => {
     const [classRows, ptRows] = await Promise.all([

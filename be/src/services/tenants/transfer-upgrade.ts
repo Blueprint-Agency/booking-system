@@ -121,5 +121,21 @@ export function upgradeArchiveRows(rows: Readonly<Rows>, archived: { tenantName?
     ]
   }
 
+  // Migration 0145: every Class Type is in an Entity. A row with no `entity_id`
+  // key in the archive predates the column (taken before it, or before the
+  // table, in which case the Entity above is the one made for it) and goes to
+  // the studio's first live Entity, as the migration put the studio's own.
+  // Sub-types included, so one equals its parent. A row that has the key,
+  // null or not, is restored as it is.
+  const classTypes = rows.class_types
+  if (classTypes?.some(r => !('entity_id' in r))) {
+    const first = (out.entities ?? [])
+      .filter(e => e.archived_at == null)
+      .sort((a, b) => Number(a.position) - Number(b.position))[0]
+    if (first) {
+      out.class_types = classTypes.map(row => ('entity_id' in row ? row : { ...row, entity_id: first.id }))
+    }
+  }
+
   return out
 }

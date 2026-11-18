@@ -21,7 +21,7 @@ const app = new Hono()
   .get('/class-types', async c => {
     const rows = await classTypesSvc.listClassTypes(tenantId(c), { includeArchived: false })
     return c.json({
-      class_types: rows.map(r => ({ id: r.id, name: r.name, difficulty: r.difficulty })),
+      class_types: rows.map(r => ({ id: r.id, name: r.name, difficulty: r.difficulty, entity_id: r.entityId ?? null })),
     })
   })
   // What a class's Package rule may name: every class package, archived ones

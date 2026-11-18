@@ -92,7 +92,7 @@ All endpoints are prefixed with `/api/v1/portal/admin`. Verbs and bodies are sum
 | POST | `/locations/:id/unarchive` | — | Clear `archived_at` |
 
 ### `entities.ts`
-The studio's Entities: the lines of practice it sells packages for (`be/CONTEXT.md` § Entity). Admin only, like everything under `/admin`. Nothing is assigned to an Entity yet, so `in_use` is zero everywhere until Class Types and packages carry an `entity_id`.
+The studio's Entities: the lines of practice it sells packages for (`be/CONTEXT.md` § Entity). Admin only, like everything under `/admin`. `in_use.class_types` counts the Entity's live (not archived, not deleted) Class Types, sub-types included; the package counts are zero until packages carry an `entity_id`.
 | Method | Path | Body / params | Effect |
 |---|---|---|---|
 | GET | `/entities` | `?include_archived=true` | `{ entities: [{ id, name, slug, position, archived_at, in_use: { class_types, class_packages, pt_packages, corporate_packages } }] }` in display order; live ones only unless asked |
@@ -118,6 +118,16 @@ Physical spaces, location-scoped. Building block under "Building Blocks" in fe-p
 
 ### `class-types.ts`
 Same CRUD shape as locations. Archive is blocked if any non-archived `instructor_class_types` references the type, or any active future `classes` / `workshops` reference it.
+
+Every Class Type belongs to an Entity (`entity_id`, in every read; stored on sub-types too). Rows from before Entities carry the studio's first one (migration 0145).
+
+| Method | Path | Body / params | Effect |
+|---|---|---|---|
+| POST | `/class-types` | `{ name, description?, difficulty?, parent_id?, entity_id? }` | A top-level type takes `entity_id`, else the studio's first live Entity. A sub-type (`parent_id` set) takes its parent's; any `entity_id` on it is `400 class_type_entity_inherited`. Another studio's or an unknown Entity is `404 entity_not_found`, an archived one `409 entity_archived`. |
+| PATCH | `/class-types/:id` | same, each optional | `entity_id` on a top-level type moves it, and every sub-type (archived ones too) in the same transaction. A reparent takes the new parent's Entity; a sub-type made top-level keeps its own. `entity_id` on a row that is or becomes a sub-type is `400 class_type_entity_inherited`. A move touches no `classes` or `bookings` row and cancels nothing. |
+| GET | `/class-types/:id/entity-preview` | `?entity_id=` (required) | `{ upcoming_classes, bookings }`: the active classes that have not ended (app clock) of the type and its sub-types, and the confirmed class bookings on them; `0`/`0` for the Entity it is already in. Read-only. `400 class_type_entity_inherited` for a sub-type. |
+
+The public (`/public/class-types`), instructor (`/portal/instructor/catalog/class-types`) lists, and a class's `class_type` in the member class card and detail, carry `entity_id` too.
 
 ### `instructors.ts`
 | Method | Path | Effect |

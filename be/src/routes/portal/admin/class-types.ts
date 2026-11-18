@@ -21,11 +21,14 @@ const createSchema = z.object({
     })
     .optional(),
   parent_id: z.string().uuid('That parent class type is not one of the studio’s.').nullable().optional(),
+  // Top-level types only: a sub-type shares its parent's, and the service refuses one named here.
+  entity_id: z.string().uuid('That entity is not one of the studio’s.').optional(),
 })
 const updateSchema = createSchema.partial()
 const explainClassType = explainInvalid('That class type is not valid.')
 const idParam = z.object({ id: z.string().uuid() })
 const listQuery = z.object({ include_archived: z.string().optional() })
+const previewQuery = z.object({ entity_id: z.string().uuid('That entity is not one of the studio’s.') })
 
 function serialize(row: svc.ClassTypeRow) {
   return {
@@ -34,6 +37,7 @@ function serialize(row: svc.ClassTypeRow) {
     description: row.description,
     difficulty: row.difficulty,
     parent_id: row.parentId,
+    entity_id: row.entityId ?? null,
     archived_at: row.archivedAt,
   }
 }
@@ -44,6 +48,12 @@ const app = new Hono()
     const includeArchived = q.include_archived === 'true' || q.include_archived === '1'
     const rows = await svc.listClassTypes(tenantId(c), { includeArchived })
     return c.json({ class_types: rows.map(serialize) })
+  })
+  // A read: what moving this type to another Entity reaches. It changes nothing.
+  .get('/:id/entity-preview', zValidator('param', idParam), zValidator('query', previewQuery, explainClassType), async c => {
+    const { id } = c.req.valid('param')
+    const { entity_id } = c.req.valid('query')
+    return c.json(await svc.previewEntityMove(tenantId(c), id, entity_id))
   })
   .get('/:id', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')

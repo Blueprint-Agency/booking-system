@@ -373,7 +373,8 @@ npm run mindbody -- verify --expected <studio.expected.json> --export-zip <expor
   (0 on an Unlimited Plan, which was never charged). Its code and QR token are keyed by the
   config's `secret`, so a rerun writes the same ones. A roster row under a
   `ptAppointmentNames` name is a PT appointment instead: a scheduled `pt_request` (its focus the
-  `ptClassType` Class Type, made if the config has none by that name), a `pt_session` and a
+  `ptClassType` Class Type, made if the config has none by that name; every Class Type the
+  transform makes is in the archive's one Entity, "All classes", which the archive carries), a `pt_session` and a
   booking per member. Its pay is the trainer's **PT rate from Payroll (Detail)** — the rate header
   (`PT (50%)`, or a flat `PT`) above their most recent appointment line: flat pays the table's Base
   Pay; a percentage pays that share of what one session of each member's running PT package is

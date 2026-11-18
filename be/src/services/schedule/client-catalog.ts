@@ -29,7 +29,7 @@ interface LocationLite {
 
 interface ClassCardPayload {
   id: string
-  class_type: { id: string; name: string; difficulty: ClassLevel }
+  class_type: { id: string; name: string; difficulty: ClassLevel; entity_id: string | null }
   instructor: { id: string; name: string; photo_url: string | null }
   main_instructor_id: string
   supporting_instructor_ids: string[]
@@ -63,7 +63,7 @@ interface ClassCardPayload {
 }
 
 interface ClassDetailPayload extends ClassCardPayload {
-  class_type: { id: string; name: string; difficulty: ClassLevel; description: string | null }
+  class_type: { id: string; name: string; difficulty: ClassLevel; description: string | null; entity_id: string | null }
   location: { id: string; name: string; address: string | null; gmaps_url: string | null } | null
   supporting_instructors: { id: string; name: string; photo_url: string | null }[]
   /** Which packages may pay for the class, each named (be/CONTEXT.md § Package rule). */
@@ -154,6 +154,7 @@ export async function listClassCards(
       classTypeId: classes.classTypeId,
       className: classTypes.name,
       classDifficulty: classTypes.difficulty,
+      classEntityId: classTypes.entityId,
       instructorId: classes.mainInstructorId,
       instructorName: staffUsers.name,
       instructorPhotoKey: staffUsers.photoR2Key,
@@ -207,7 +208,7 @@ export async function listClassCards(
     const supporting = supportingByClass.get(r.id) ?? []
     return {
       id: r.id,
-      class_type: { id: r.classTypeId, name: r.className, difficulty: r.classDifficulty },
+      class_type: { id: r.classTypeId, name: r.className, difficulty: r.classDifficulty, entity_id: r.classEntityId ?? null },
       instructor: {
         id: r.instructorId,
         name: r.instructorName || 'Instructor',
@@ -255,6 +256,7 @@ export async function getClassDetail(
       className: classTypes.name,
       classDifficulty: classTypes.difficulty,
       classDescription: classTypes.description,
+      classEntityId: classTypes.entityId,
       instructorId: classes.mainInstructorId,
       instructorName: staffUsers.name,
       instructorPhotoKey: staffUsers.photoR2Key,
@@ -314,7 +316,13 @@ export async function getClassDetail(
 
   return {
     id: r.id,
-    class_type: { id: r.classTypeId, name: r.className, difficulty: r.classDifficulty, description: r.classDescription },
+    class_type: {
+      id: r.classTypeId,
+      name: r.className,
+      difficulty: r.classDifficulty,
+      description: r.classDescription,
+      entity_id: r.classEntityId ?? null,
+    },
     instructor: {
       id: r.instructorId,
       name: r.instructorName || 'Instructor',

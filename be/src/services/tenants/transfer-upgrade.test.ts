@@ -122,6 +122,39 @@ test('TEN-52 an archive from before migration 0140 restores a request whose sess
   assert.deepEqual(noSessions.pt_requests, [{ id: 'r2', status: 'scheduled', scheduled_pt_session_id: null }])
 })
 
+test('TEN-142 an archive from before migration 0145 restores each Class Type, sub-types too, in the studio’s first live Entity, and one that carries an Entity is left as it is', () => {
+  const upgraded = upgradeArchiveRows({
+    entities: [
+      { id: 'old', name: 'Old', slug: 'old', position: 0, archived_at: '2026-01-01T00:00:00Z' },
+      { id: 'second', name: 'Barre', slug: 'barre', position: 2, archived_at: null },
+      { id: 'first', name: 'Yoga', slug: 'yoga', position: 1, archived_at: null },
+    ],
+    class_types: [
+      { id: 'root', name: 'Yoga', parent_id: null },
+      { id: 'sub', name: 'Hatha', parent_id: 'root' },
+    ],
+  })
+  assert.deepEqual(
+    upgraded.class_types!.map(r => [r.id, r.entity_id]),
+    [['root', 'first'], ['sub', 'first']],
+  )
+
+  // An archive from before the Entities table gets the one every studio starts with, and its Class Types go to it.
+  const older = upgradeArchiveRows({ class_types: [{ id: 'root', name: 'Yoga' }] })
+  assert.equal(older.entities!.length, 1)
+  assert.equal(older.class_types![0]!.entity_id, older.entities![0]!.id)
+
+  // A row that has the column keeps it, null included.
+  const current = upgradeArchiveRows({
+    entities: [{ id: 'first', name: 'Yoga', slug: 'yoga', position: 0, archived_at: null }],
+    class_types: [
+      { id: 'a', entity_id: 'first' },
+      { id: 'b', entity_id: null },
+    ],
+  })
+  assert.deepEqual(current.class_types!.map(r => r.entity_id), ['first', null])
+})
+
 test("the caller's archive is not changed", () => {
   const archive = { leave_pools: [{ instructor_id: ADA }] }
   upgradeArchiveRows(archive)

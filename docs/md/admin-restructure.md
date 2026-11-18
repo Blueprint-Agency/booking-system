@@ -166,6 +166,8 @@ Locations are the workspace boundary — every scoped surface (Schedule, Rooms, 
 - **Blocked** — if any upcoming or ongoing session uses this class type. Parents are also blocked while any child still has linked data.
 - Archived class types appear at bottom of list with Restore option.
 
+**Entity (#557).** Every class type belongs to an Entity (`be/CONTEXT.md` § Entity). The class type dialog has an **Entity** dropdown on a top-level type, defaulting to the studio's first, with "+ New entity". Picking a parent hides the dropdown and shows the parent's Entity read-only: a sub-type shares it. Changing a top-level type's Entity (with its sub-types) first shows "N upcoming classes and M bookings are reached; nothing is cancelled" (`GET /class-types/:id/entity-preview`); the move itself cancels no booking. Each row and parent group shows its Entity as a badge once the studio has two or more.
+
 ---
 
 ## 3. Instructors
