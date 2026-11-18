@@ -121,5 +121,22 @@ export function upgradeArchiveRows(rows: Readonly<Rows>, archived: { tenantName?
     ]
   }
 
+  // Migration 0144: every catalogue package belongs to an Entity. An archive
+  // whose packages have no `entity_id` (taken before it, whether or not it has
+  // Entities) puts them in the studio's first live Entity by display order, as
+  // migration 0145 did for the studios that existed. A package that has the key
+  // is the studio's own choice and is left as it is, null included.
+  const live = (out.entities ?? [])
+    .filter(entity => entity.archived_at == null)
+    .sort((a, b) => Number(a.position) - Number(b.position))
+  const first = live[0]?.id
+  if (first !== undefined) {
+    for (const table of ['class_packages', 'pt_packages', 'corporate_packages']) {
+      const tableRows = rows[table]
+      if (!tableRows?.some(r => !('entity_id' in r))) continue
+      out[table] = tableRows.map(r => ('entity_id' in r ? r : { ...r, entity_id: first }))
+    }
+  }
+
   return out
 }

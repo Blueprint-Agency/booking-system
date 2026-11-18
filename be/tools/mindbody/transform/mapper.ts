@@ -210,6 +210,16 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     return row
   })
 
+  // The studio's one Entity. The archive is built offline and the importer
+  // refuses a studio that already has rows, so the studio arrives with no Entity
+  // of its own: the zip carries it, and every package it brings goes in it, as an
+  // import "into the studio's first Entity" means here. The studio renames it,
+  // or adds a second, from settings afterwards.
+  const entities: Row[] = [
+    { id: id('entity', 'all-classes'), tenant_id: tenantId, name: 'All classes', slug: 'all-classes', position: 0, archived_at: null },
+  ]
+  const entityId = String(entities[0]!.id)
+
   const globalPolicy: Row[] = [
     {
       id: id('policy', 'global'),
@@ -462,6 +472,7 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     balances: reports.balances,
     config,
     tenantId,
+    entityId,
     id,
     ids,
     memberNames,
@@ -629,6 +640,7 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
   // Parents first, as an export writes them — the importer orders by the
   // schema, but a person reading the zip reads it in this order.
   const rows: Record<string, Row[]> = {
+    entities,
     locations,
     rooms,
     class_types: [...classTypes, ...ptClassTypes],

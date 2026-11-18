@@ -255,6 +255,8 @@ Single source of truth for client-initiated class and PT cancellation. Workshops
 
 **Cancellation policy lives in §4 Global Policy — not configured here.**
 
+**Every package belongs to an Entity** (Packages → Classes, Packages → Private Sessions and Packages → Corporate alike; `be/CONTEXT.md` § Entity, `be-portal.md` § Package Entities). Each package form opens with an **Entity** dropdown that starts on the studio's first Entity and offers "+ New entity", which creates one in place (`POST /portal/admin/entities`) and selects it. Each card names its Entity, and the list has an Entity filter that is hidden while the studio has one. Editing a package and choosing a different Entity first asks the move preview how many members hold it and says so ("N members hold this package. It moves with it, and nothing is cancelled."); Save waits for that answer. A package in an Entity that has been archived cannot be unarchived until it is moved to a live one.
+
 `ClassPackageKind = "credit_bundle" | "unlimited" | "trial"`. Page lists Trial Pass first, then credit bundles, then unlimited memberships.
 
 ### 5a. Trial Pass (one-per-client, quota-based)

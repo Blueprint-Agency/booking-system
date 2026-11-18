@@ -525,6 +525,34 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
     assert.deepEqual(body.pt_packages.map(p => `${p.name}:${p.price_sgd}`), ['PT - Bundle of 10:1200.00'])
   })
 
+  test('SUP-41 every imported package, sold or held, is in the studio\'s one Entity, which the zip carries', async () => {
+    const studio = await importedStudio()
+    const owner = await harness.signInAs('staff', 'owner@example.test', studio)
+    const read = async (path: string) => {
+      const res = await get(`/api/v1/portal/admin/${path}`, owner)
+      assert.equal(res.status, 200, await res.clone().text())
+      return (await res.json()) as Record<string, any>
+    }
+
+    const { entities } = await read('entities')
+    assert.equal(entities.length, 1, 'the studio arrives with exactly one Entity')
+    const [all] = entities
+    assert.equal(all.name, 'All classes')
+    assert.equal(all.position, 0)
+
+    // `status` is left out, so the legacy packages that are held and no longer sold are read too.
+    const classPackages = (await read('class-packages')).class_packages as { name: string; entity_id: string; entity: { name: string } }[]
+    const ptPackages = (await read('pt-packages')).pt_packages as { name: string; entity_id: string }[]
+    assert.ok(classPackages.length >= 5 && ptPackages.length >= 1, 'sold and legacy packages alike were imported')
+    for (const p of [...classPackages, ...ptPackages]) assert.equal(p.entity_id, all.id, `${p.name} is in the studio's Entity`)
+    assert.equal(classPackages[0]!.entity.name, 'All classes')
+    // What is on sale is what keeps the Entity from being archived: the sold ones, not the legacy.
+    assert.deepEqual(
+      { class_packages: all.in_use.class_packages, pt_packages: all.in_use.pt_packages },
+      { class_packages: 3, pt_packages: 1 },
+    )
+  })
+
   /* ── The timetable to come ──────────────────────────────────────── */
 
   /** The whole imported timetable, as the portal lists it. */

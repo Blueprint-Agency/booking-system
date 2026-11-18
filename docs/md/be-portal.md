@@ -136,7 +136,7 @@ Same CRUD shape as locations. Archive is blocked if any non-archived `instructor
 ### `class-packages.ts` (admin)
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/class-packages` | List with `?status`, `?kind=credit_bundle\|unlimited\|trial`. Default sort: trial first, then credit_bundle, then unlimited (matches fe-client `/packages` ordering). |
+| GET | `/class-packages` | List with `?status`, `?kind=credit_bundle\|unlimited\|trial`, `?entity=<id>` (see Package Entities below). Default sort: trial first, then credit_bundle, then unlimited (matches fe-client `/packages` ordering). |
 | POST | `/class-packages` | Insert `class_packages` row. CHECK constraint enforces kind-specific column requirements (credits + validity_days for `credit_bundle`; duration_months for `unlimited`; credits + validity_days for `trial`). |
 | PATCH | `/class-packages/:id` | Edit name, description, status. Price changes apply to **future** purchases only — existing `client_packages` rows are immutable. An edit may carry the full `promotions` list; the package's fields and its Promotions save together or not at all (one savepoint, as `POST` does), and a Promotion that ends at or before its start is `400 invalid_request` with a sentence, on `POST` and `PATCH` of both package kinds. |
 | POST | `/class-packages/:id/archive` | Soft delete; existing client_packages remain valid until `expires_at`. |
@@ -145,6 +145,20 @@ Same CRUD shape as locations. Archive is blocked if any non-archived `instructor
 
 ### `pt-packages.ts` (admin)
 Same shape as class-packages, with PT-specific fields. Adds `description` column edits.
+
+### Package Entities (#556, spec #554)
+
+Every catalogue package (Credit Bundle, Unlimited Plan, Trial, PT package, Corporate package) belongs to an Entity (`be/CONTEXT.md` § Entity). The column is `entity_id` on `class_packages`, `pt_packages` and `corporate_packages`; it is nullable in the database for this deploy (`migrations/README.md` rule 0) and required by the API. A package a member holds has no column of its own: it reads its Entity through `source_class_package_id` / `source_pt_package_id`, so a move takes it along.
+
+- **Create** (`POST /class-packages`, `/pt-packages`, `/corporate-packages`): `entity_id` is required. Missing or not an id is `400 invalid_request` with a sentence; an id this studio does not have (another studio's included) is `404 entity_not_found`; an archived Entity is `409 entity_archived`.
+- **Edit** (`PATCH .../:id`): `entity_id` is optional and moves the package; the same refusals apply, but only when it changes the Entity, so a package in an Entity since archived can still be edited. A move cancels no booking and touches no held package. An edit that names only the Entity is a field update on a Corporate package.
+- **Unarchive** (and a status edit back to `active`): `409 entity_archived` when the package's Entity has since been archived; move it to a live Entity first.
+- **List** (`GET /class-packages`, `/pt-packages`, `/corporate-packages`): optional `?entity=<id>`; every row carries `entity_id` and `entity: { id, name, slug }` (null on a row from before Entities that nothing has backfilled).
+- **Move preview** (`GET /class-packages/:id/entity-preview?entity_id=`, same under `/pt-packages` and `/corporate-packages`): `{ members_holding: n }`, the distinct members with a live (`active`) holding of the package. Always `0` for a Corporate package, which no member holds as a package. A read; it refuses the same Entities the move does.
+- **Services** (`createClassPackage`, `createPtPackage`, `createCorporatePackage`) take an optional `entityId` and default to the studio's first live Entity by display order, so callers that never name one (tests, the e2e studio) keep working. The routes never lean on the default.
+- **Member and visitor reads** (`/public/packages`, `/public/corporate-packages`, `/me/class-packages`, `/me/pt-packages`, `/me/corporate-packages`) carry `entity_id` and `entity` on each package.
+- `POST /entities/:id/archive` counts packages on sale (`status = 'active'`, not removed) toward `entity_in_use`; an archived or removed package does not hold its Entity.
+- **Archive and restore**: `entity_id` travels in a studio's export and import; an archive taken before it puts its packages in the first live Entity (`services/tenants/transfer-upgrade.ts`). Migration `0145` backfilled the studios that existed. The Mindbody transform emits one "All classes" Entity and puts every package in it.
 
 ### `promotions.ts` (admin — `admin-restructure.md` §5d, §19, `fe-client-features.md` §6.1)
 

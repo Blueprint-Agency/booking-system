@@ -38,7 +38,7 @@ describe('admin catalogue over HTTP', { skip: integrationTestsEnabled ? false : 
 
   type Headers = Record<string, string>
   type Reply = { status: number; body: any }
-  type Studio = { id: string; slug: string; admin: Headers; adminId: string; locationId: string }
+  type Studio = { id: string; slug: string; admin: Headers; adminId: string; locationId: string; entityId: string }
 
   let one!: Studio
   let two!: Studio
@@ -88,7 +88,15 @@ describe('admin catalogue over HTTP', { skip: integrationTestsEnabled ? false : 
       .where(eq(schema.locations.tenantId, tenant.id))
       .limit(1)
     assert.ok(location, `expected a seeded location for ${tenant.slug}`)
-    return { ...tenant, admin: admin.headers, adminId: admin.id, locationId: location.id }
+    // Every package is sold under an Entity, which the admin routes require: the studio's first.
+    const [entity] = await harness.db
+      .select({ id: schema.entities.id })
+      .from(schema.entities)
+      .where(eq(schema.entities.tenantId, tenant.id))
+      .orderBy(schema.entities.position)
+      .limit(1)
+    assert.ok(entity, `expected a seeded Entity for ${tenant.slug}`)
+    return { ...tenant, admin: admin.headers, adminId: admin.id, locationId: location.id, entityId: entity.id }
   }
 
   const created = (res: Reply) => {
@@ -106,8 +114,10 @@ describe('admin catalogue over HTTP', { skip: integrationTestsEnabled ? false : 
       ...over,
     })
 
+  // Sold under the first studio's Entity unless a test names another's.
   const bundleBody = (name: string, over: Record<string, unknown> = {}) => ({
     name: `${NAME} ${name}`,
+    entity_id: one.entityId,
     kind: 'credit_bundle',
     credits: 5,
     validity_days: 60,
@@ -117,6 +127,7 @@ describe('admin catalogue over HTTP', { skip: integrationTestsEnabled ? false : 
 
   const ptBody = (name: string, over: Record<string, unknown> = {}) => ({
     name: `${NAME} ${name}`,
+    entity_id: one.entityId,
     session_type: '1on1',
     num_sessions: 5,
     validity_days: 90,
@@ -380,7 +391,7 @@ describe('admin catalogue over HTTP', { skip: integrationTestsEnabled ? false : 
 
   test('PRM-11 a code applies to everything or names its products, and never another studio’s', async () => {
     const mine = created(await send('POST', '/class-packages', one.admin, bundleBody('Scoped pass')))
-    const theirs = created(await send('POST', '/class-packages', two.admin, bundleBody('Their pass')))
+    const theirs = created(await send('POST', '/class-packages', two.admin, bundleBody('Their pass', { entity_id: two.entityId })))
     const product = (id: string) => ({ product_type: 'class_package', product_id: id })
 
     const both = await newCode(one, 'BOTH', { applies_to_all: true, products: [product(mine.id)] })
@@ -753,6 +764,7 @@ describe('admin catalogue over HTTP', { skip: integrationTestsEnabled ? false : 
   test('PKG-22 a trial Class Package saved without validity_days is refused', async () => {
     const res = await send('POST', '/class-packages', one.admin, {
       name: `${NAME} Trial`,
+      entity_id: one.entityId,
       kind: 'trial',
       credits: 1,
       price_sgd: '20.00',
@@ -760,6 +772,7 @@ describe('admin catalogue over HTTP', { skip: integrationTestsEnabled ? false : 
     assert.equal(res.status, 400, JSON.stringify(res.body))
     const trial = created(await send('POST', '/class-packages', one.admin, {
       name: `${NAME} Trial`,
+      entity_id: one.entityId,
       kind: 'trial',
       credits: 1,
       validity_days: 14,

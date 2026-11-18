@@ -2,6 +2,11 @@ import { and, eq, isNull, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { classPackages } from '../../db/schema/packages'
 import { BadRequestError, NotFoundError } from '../../shared/errors'
+import {
+  assertEntityAllowsPackage,
+  assertEntityAcceptsPackages,
+  entityForNewPackage,
+} from '../catalog/entities'
 import { replacePromotionsForParent, type PromotionWriteInput } from './promotions'
 
 export type ClassPackageRow = typeof classPackages.$inferSelect
@@ -12,11 +17,13 @@ export async function listClassPackages(
   opts: {
     status?: 'active' | 'archived'
     kind?: ClassPackageKind
+    entityId?: string
   },
 ): Promise<ClassPackageRow[]> {
   const filters = [eq(classPackages.tenantId, tenantId), isNull(classPackages.deletedAt)]
   if (opts.status) filters.push(eq(classPackages.status, opts.status))
   if (opts.kind) filters.push(eq(classPackages.kind, opts.kind))
+  if (opts.entityId) filters.push(eq(classPackages.entityId, opts.entityId))
   return db
     .select()
     .from(classPackages)
@@ -47,6 +54,8 @@ export interface CreateClassPackageInput {
   validityDays?: number | null
   durationMonths?: number | null
   priceSgd: string // numeric, formatted "120.00"
+  /** The Entity it is sold under. Left out, it goes in the studio's first live Entity; the admin routes always send it. */
+  entityId?: string
 }
 
 function validateKindFields(input: CreateClassPackageInput | UpdateClassPackageInput, kind: ClassPackageKind) {
@@ -81,10 +90,12 @@ export async function createClassPackage(
   input: CreateClassPackageInput,
 ): Promise<ClassPackageRow> {
   validateKindFields(input, input.kind)
+  const entityId = await entityForNewPackage(tenantId, input.entityId)
   const [row] = await db
     .insert(classPackages)
     .values({
       tenantId,
+      entityId,
       name: input.name,
       description: input.description ?? null,
       kind: input.kind,
@@ -126,6 +137,13 @@ export interface UpdateClassPackageInput {
   validityDays?: number | null
   durationMonths?: number | null
   status?: 'active' | 'archived'
+  /**
+   * A move to another Entity. Checked only when it is a change: a package in an
+   * Entity since archived can still be edited, and naming the Entity it is
+   * already in changes nothing. A move cancels nothing: the packages members
+   * hold read their Entity through this one.
+   */
+  entityId?: string
 }
 
 export async function updateClassPackage(
@@ -134,6 +152,12 @@ export async function updateClassPackage(
   patch: UpdateClassPackageInput,
 ): Promise<ClassPackageRow> {
   const current = await getClassPackage(tenantId, id)
+  const moveTo = patch.entityId !== undefined && patch.entityId !== current.entityId ? patch.entityId : undefined
+  if (moveTo !== undefined) await assertEntityAcceptsPackages(tenantId, moveTo)
+  else if (patch.status === 'active' && current.status === 'archived') {
+    // Back on sale by a status edit is the same as unarchiving it.
+    await assertEntityAllowsPackage(tenantId, current.entityId)
+  }
   const merged: CreateClassPackageInput = {
     name: patch.name ?? current.name,
     description: patch.description ?? current.description,
@@ -145,17 +169,22 @@ export async function updateClassPackage(
   }
   validateKindFields(merged, current.kind)
 
+  const changes = {
+    ...(patch.name !== undefined ? { name: patch.name } : {}),
+    ...(patch.description !== undefined ? { description: patch.description } : {}),
+    ...(patch.priceSgd !== undefined ? { priceSgd: patch.priceSgd } : {}),
+    ...(patch.credits !== undefined ? { credits: patch.credits } : {}),
+    ...(patch.validityDays !== undefined ? { validityDays: patch.validityDays } : {}),
+    ...(patch.durationMonths !== undefined ? { durationMonths: patch.durationMonths } : {}),
+    ...(patch.status !== undefined ? { status: patch.status } : {}),
+    ...(moveTo !== undefined ? { entityId: moveTo } : {}),
+  }
+  // Nothing to change (an edit naming the Entity the package is already in):
+  // an empty UPDATE is an error, and the package is as it should be.
+  if (Object.keys(changes).length === 0) return current
   const [row] = await db
     .update(classPackages)
-    .set({
-      ...(patch.name !== undefined ? { name: patch.name } : {}),
-      ...(patch.description !== undefined ? { description: patch.description } : {}),
-      ...(patch.priceSgd !== undefined ? { priceSgd: patch.priceSgd } : {}),
-      ...(patch.credits !== undefined ? { credits: patch.credits } : {}),
-      ...(patch.validityDays !== undefined ? { validityDays: patch.validityDays } : {}),
-      ...(patch.durationMonths !== undefined ? { durationMonths: patch.durationMonths } : {}),
-      ...(patch.status !== undefined ? { status: patch.status } : {}),
-    })
+    .set(changes)
     .where(and(eq(classPackages.tenantId, tenantId), eq(classPackages.id, id)))
     .returning()
   return row!
@@ -207,6 +236,7 @@ export async function unarchiveClassPackage(
   if (existing.status !== 'archived') {
     throw new BadRequestError('class_package_not_archived')
   }
+  await assertEntityAllowsPackage(tenantId, existing.entityId)
   const [row] = await db
     .update(classPackages)
     .set({ status: 'active', archivedAt: null })

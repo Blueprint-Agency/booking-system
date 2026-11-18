@@ -144,8 +144,16 @@ describe('corporate packages, requests and sessions over HTTP', { skip: integrat
     return { clientId: client!.id, name, headers }
   }
 
+  /** A package for the first studio, sold under its first Entity, which the route requires. */
   async function createPackage(who: Staff, name: string): Promise<string> {
-    const res = await json(await admin('/corporate-packages', who, 'POST', { name, price_sgd: '1500.00' }))
+    const [entity] = await harness.db
+      .select({ id: schema.entities.id })
+      .from(schema.entities)
+      .where(eq(schema.entities.tenantId, one.id))
+      .orderBy(schema.entities.position)
+      .limit(1)
+    assert.ok(entity, 'the first studio has an Entity')
+    const res = await json(await admin('/corporate-packages', who, 'POST', { name, entity_id: entity.id, price_sgd: '1500.00' }))
     assert.equal(res.status, 201, JSON.stringify(res.body))
     return res.body.corporatePackage.id as string
   }

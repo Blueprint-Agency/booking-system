@@ -124,6 +124,7 @@ export const ERROR_CODES = {
   email_required: 'email_required',
   email_was_archived: 'email_was_archived',
   ends_at_must_be_after_starts_at: 'ends_at_must_be_after_starts_at',
+  entity_archived: 'entity_archived',
   entity_in_use: 'entity_in_use',
   entity_name_taken: 'entity_name_taken',
   entity_not_found: 'entity_not_found',

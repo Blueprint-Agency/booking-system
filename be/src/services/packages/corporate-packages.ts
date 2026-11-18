@@ -2,6 +2,11 @@ import { and, desc, eq, isNull, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { corporatePackages } from '../../db/schema/packages'
 import { BadRequestError } from '../../shared/errors'
+import {
+  assertEntityAllowsPackage,
+  assertEntityAcceptsPackages,
+  entityForNewPackage,
+} from '../catalog/entities'
 
 export type CorporatePackageRow = typeof corporatePackages.$inferSelect
 
@@ -9,10 +14,12 @@ export async function listCorporatePackages(
   tenantId: string,
   opts: {
     status?: 'active' | 'archived'
+    entityId?: string
   } = {},
 ): Promise<CorporatePackageRow[]> {
   const filters = [eq(corporatePackages.tenantId, tenantId), isNull(corporatePackages.deletedAt)]
   if (opts.status) filters.push(eq(corporatePackages.status, opts.status))
+  if (opts.entityId) filters.push(eq(corporatePackages.entityId, opts.entityId))
   return db
     .select()
     .from(corporatePackages)
@@ -43,16 +50,20 @@ interface CreateCorporatePackageInput {
   description?: string | null
   priceSgd: string
   createdByStaffId: string
+  /** The Entity it is sold under. Left out, it goes in the studio's first live Entity; the admin route always sends it. */
+  entityId?: string
 }
 
 export async function createCorporatePackage(
   tenantId: string,
   input: CreateCorporatePackageInput,
 ): Promise<CorporatePackageRow> {
+  const entityId = await entityForNewPackage(tenantId, input.entityId)
   const [row] = await db
     .insert(corporatePackages)
     .values({
       tenantId,
+      entityId,
       name: input.name,
       description: input.description ?? null,
       priceSgd: input.priceSgd,
@@ -67,6 +78,8 @@ interface UpdateCorporatePackageInput {
   name?: string
   description?: string | null
   priceSgd?: string
+  /** A move to another Entity, checked only when it is a change. */
+  entityId?: string
 }
 
 export async function updateCorporatePackage(
@@ -78,6 +91,10 @@ export async function updateCorporatePackage(
   if (!existing) return null
 
   const setValues: Record<string, unknown> = {}
+  if (patch.entityId !== undefined && patch.entityId !== existing.entityId) {
+    await assertEntityAcceptsPackages(tenantId, patch.entityId)
+    setValues.entityId = patch.entityId
+  }
   if (patch.name !== undefined) setValues.name = patch.name
   if (patch.description !== undefined) setValues.description = patch.description
   if (patch.priceSgd !== undefined) setValues.priceSgd = patch.priceSgd
@@ -118,6 +135,7 @@ export async function unarchiveCorporatePackage(
   if (existing.status !== 'archived') {
     throw new BadRequestError('corporate_package_not_archived')
   }
+  await assertEntityAllowsPackage(tenantId, existing.entityId)
   const [row] = await db
     .update(corporatePackages)
     .set({ status: 'active', archivedAt: null })
