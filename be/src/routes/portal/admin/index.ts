@@ -3,6 +3,7 @@ import { requireRole } from '../../../middleware/require-role'
 
 import locations from './locations'
 import rooms from './rooms'
+import entities from './entities'
 import classTypes from './class-types'
 import instructors from './instructors'
 import policy from './policy'
@@ -47,6 +48,8 @@ const app = new Hono()
   .route('/receipts', receipts)
   .route('/locations', locations)
   .route('/rooms', rooms)
+  // The studio's Entities: the lines of practice it sells packages for.
+  .route('/entities', entities)
   .route('/class-types', classTypes)
   .route('/instructors', instructors)
   .route('/policy', policy)

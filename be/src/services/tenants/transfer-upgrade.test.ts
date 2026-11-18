@@ -36,6 +36,8 @@ test('an archive already in the current shape is returned as it was', () => {
     staff_users: [{ id: ANNA, role: 'admin', annual_leave_days: 14, medical_leave_days: 14, study_leave_days: 7 }],
     instructors: [{ staff_user_id: ADA, photo_r2_key: null }],
     leave_requests: [{ id: 'r1', staff_user_id: ANNA }],
+    // Current means it carries Entities, as every archive has since 0142.
+    entities: [{ id: 'e1', name: 'Yoga', slug: 'yoga', position: 0, archived_at: null }],
   }
   assert.deepEqual(upgradeArchiveRows(current), current)
 })

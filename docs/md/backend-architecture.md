@@ -334,6 +334,11 @@ All tables use `id uuid primary key default gen_random_uuid()` unless noted. Tim
 id, name (text, not null), address (text), gmaps_url (text), phone (text), archived_at (nullable).
 **Indexes:** `(archived_at)`.
 
+#### `entities` — lines of practice (Yoga, Pilates)
+
+id, name (text, not null), slug (text, not null), position (integer, not null), archived_at (nullable), created_at, updated_at. Every studio has at least one; each studio created, restored or migrated starts with "All classes" (migration 0143, `provisionTenant`, an archive that predates the table).
+**Indexes:** `(tenant_id, position)`; unique `(tenant_id, lower(name))` and `(tenant_id, lower(slug))`, each **among non-archived rows only**, so an archived line gives its name and slug back. Nothing references it yet; Class Types and the catalogue packages take a nullable `entity_id` in later changes.
+
 #### `rooms` — physical spaces, location-scoped
 
 id, location_id (uuid, FK → locations.id, on delete restrict, not null), name (text, not null), capacity (integer, not null, CHECK `> 0` — reference metadata only; does **not** cap a session's booking capacity), archived_at (nullable).
@@ -1294,7 +1299,7 @@ Run idempotently on fresh deployment:
 - ~~Typed promo codes at checkout.~~ **Superseded — Promo Codes ship.** See `spec-pre-launch-batch.md` §9–§11 and migration `0016`. The model built is **not** the one sketched here: there is no used-count on the code row (a second source of truth that drifts) and no valid-from window (a code does nothing until someone hands it out; `archived` covers "made, not yet running"). Three tables — `promo_codes`, `promo_code_products` (scope, no FK on `product_id`), `promo_code_redemptions` (the ledger, one row per member per code) — with the rules in `services/packages/promo-codes.ts` and admin CRUD in `services/packages/promo-code-admin.ts`. A Promo Code is typed and crosses products; a **Promotion** (§4d) applies itself to one product inside a window. The two are distinct mechanisms and `be/CONTEXT.md` § Discounts is the glossary. Redeeming a code at checkout is wired separately.
 - ~~**Class waitlist.**~~ **Superseded — the class waitlist ships** (see "This phase" above and `spec-waitlist.md`). Promotion books the member directly rather than offering a time-bound claim, so `waitlist_entries` has no offer columns. Workshop and PT waitlists stay out of v1 (`spec-waitlist.md` §12).
 - **WhatsApp / SMS / push notifications.** Email-only in v1.
-- ~~**Multi-tenant SaaS surface.** This backend serves one studio exclusively; no tenant scoping.~~ **Superseded — multi-tenancy shipped.** `tenant_id` on all 65 domain tables, Row-Level Security as the fail-closed backstop, hostname-resolved Tenants, and no studio named anywhere in the repo. See `multi-tenancy-plan.md`, `spec-tenant-resolution.md` and `docs/adr/0002-shared-schema-row-level-security.md`. What is still out of scope is the **plan/billing** layer for studios.
+- ~~**Multi-tenant SaaS surface.** This backend serves one studio exclusively; no tenant scoping.~~ **Superseded — multi-tenancy shipped.** `tenant_id` on all 66 domain tables, Row-Level Security as the fail-closed backstop, hostname-resolved Tenants, and no studio named anywhere in the repo. See `multi-tenancy-plan.md`, `spec-tenant-resolution.md` and `docs/adr/0002-shared-schema-row-level-security.md`. What is still out of scope is the **plan/billing** layer for studios.
 
 ---
 

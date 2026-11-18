@@ -28,7 +28,9 @@
 import { and, isNull, ne, sql } from 'drizzle-orm'
 import { currentTenantId, db, withTenant } from '../../db'
 import { seedEmailTemplates } from '../../db/seed/email-templates'
+import { seedEntities } from '../../db/seed/entities'
 import { seedPolicy } from '../../db/seed/policy'
+import { entities } from '../../db/schema/catalog'
 import { emailTemplates } from '../../db/schema/content'
 import { staffUsers } from '../../db/schema/identity'
 import { tenants, tenantSettings } from '../../db/schema/tenancy'
@@ -237,6 +239,11 @@ export async function provisionTenant(input: ProvisionTenantInput): Promise<Prov
       // `policy_not_seeded`, and an archive brings the studio's own.
       if (adminEmail) await seedPolicy(tx, tenant)
 
+      // Its first Entity, "All classes", held back for the same reason: the
+      // archive brings the studio's own lines, and `importTenant` refuses a
+      // studio that already holds rows in `entities`.
+      if (adminEmail) await seedEntities(tx, tenant)
+
       // Skipped entirely when no first admin was named. An empty
       // `staff_users` is a legitimate end state — it is the only one an
       // archive can be imported into.
@@ -355,6 +362,11 @@ export async function inviteFirstAdmin(
     // brought is the studio's own and stays: the seed writes nothing over a row
     // that is there.
     await seedPolicy(db, tenant)
+    // Its first Entity, likewise — but only when it has none, because a studio
+    // restored from an archive has its own lines, possibly all renamed, and
+    // "All classes" beside them would be an Entity nobody asked for.
+    const [entityCount] = await db.select({ n: sql<number>`count(*)::int` }).from(entities)
+    if ((entityCount?.n ?? 0) === 0) await seedEntities(db, tenant)
 
     try {
       return await writePendingStaff(db, { tenantId, email, name, role: 'admin', invitedByStaffId: null })

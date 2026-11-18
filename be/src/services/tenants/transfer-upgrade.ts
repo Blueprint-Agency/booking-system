@@ -10,6 +10,8 @@
  * archive has and the table lacks for any other reason is still an error.
  */
 
+import { randomUUID } from 'node:crypto'
+
 type Rows = Record<string, Record<string, unknown>[]>
 
 const ASSIGNED_DAYS = ['annual_leave_days', 'medical_leave_days', 'study_leave_days'] as const
@@ -98,6 +100,25 @@ export function upgradeArchiveRows(rows: Readonly<Rows>, archived: { tenantName?
         ? { ...row, scheduled_pt_session_id: null }
         : row,
     )
+  }
+
+  // Migration 0142: a studio always has an Entity. An archive taken before the
+  // table has no `entities` at all, and restoring it would leave a studio with
+  // none, which the admin screens and every later "belongs to an Entity" rule
+  // take as impossible. It is given the one every studio starts with, as
+  // migration 0143 gave one to the studios that existed. Only an archive with
+  // no `entities` key: one that has the key carries the studio's own lines,
+  // renamed or archived as it likes, and is restored as it is.
+  if (rows.entities === undefined) {
+    out.entities = [
+      {
+        id: randomUUID(),
+        name: 'All classes',
+        slug: 'all-classes',
+        position: 0,
+        archived_at: null,
+      },
+    ]
   }
 
   return out

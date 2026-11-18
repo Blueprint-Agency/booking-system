@@ -6,6 +6,7 @@ import { withTenant } from '../db'
 import * as schema from '../db/schema'
 import { env } from '../env'
 import { seedEmailTemplates } from '../db/seed/email-templates'
+import { seedEntities } from '../db/seed/entities'
 import { seedPolicy } from '../db/seed/policy'
 import { tenantOrigin } from '../lib/allowed-origins'
 import { discardedMail, transport } from '../lib/mailer'
@@ -253,6 +254,8 @@ export async function createE2eStudio({
   // until a person writes them, and booking mail and cancelling both need them.
   await seedEmailTemplates(db, seeded)
   await seedPolicy(db, seeded)
+  // Every studio has an Entity, and "All classes" is the one a created studio starts with.
+  await seedEntities(db, seeded)
   if (payments) await configureProviderAccount(tenant.id, payments)
 
   const [location] = await db

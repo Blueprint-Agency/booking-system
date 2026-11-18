@@ -91,6 +91,18 @@ All endpoints are prefixed with `/api/v1/portal/admin`. Verbs and bodies are sum
 | POST | `/locations/:id/archive` | — | Set `archived_at = now()`. **Blocks** if any `classes` / `workshops` / `pt_sessions` reference this location AND have `lifecycle='active'` AND `ends_at > now()`. Returns `409 location_in_use` with the offending session list. |
 | POST | `/locations/:id/unarchive` | — | Clear `archived_at` |
 
+### `entities.ts`
+The studio's Entities: the lines of practice it sells packages for (`be/CONTEXT.md` § Entity). Admin only, like everything under `/admin`. Nothing is assigned to an Entity yet, so `in_use` is zero everywhere until Class Types and packages carry an `entity_id`.
+| Method | Path | Body / params | Effect |
+|---|---|---|---|
+| GET | `/entities` | `?include_archived=true` | `{ entities: [{ id, name, slug, position, archived_at, in_use: { class_types, class_packages, pt_packages, corporate_packages } }] }` in display order; live ones only unless asked |
+| POST | `/entities` | `{ name, slug? }` | Insert, last in order. The slug is the one typed, else made from the name; `400 entity_slug_invalid` when it is not URL-safe or none can be made. |
+| PATCH | `/entities/:id` | `{ name?, slug? }` | Rename and/or edit the slug; a rename leaves the slug alone. |
+| PUT | `/entities/order` | `{ ids }` | Set the display order. `ids` must be every live Entity once, else `400 entity_order_invalid`. Returns the list. |
+| POST | `/entities/:id/archive` | — | Set `archived_at`. `409 cannot_archive_last_entity` for the studio's last live Entity; `409 entity_in_use` with the counts for one that still holds Class Types or packages; `404 entity_not_found` for an unknown or already archived id. |
+
+A name or slug another **live** Entity of the studio has, in any casing, is `409 entity_name_taken` / `entity_slug_taken`; an archived Entity gives both back.
+
 ### `rooms.ts`
 Physical spaces, location-scoped. Building block under "Building Blocks" in fe-portal.
 | Method | Path | Body / params | Effect |
