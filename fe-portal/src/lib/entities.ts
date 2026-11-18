@@ -69,6 +69,47 @@ export function usageSentence(usage: EntityUsage): string {
     .join(", ");
 }
 
+/** What changing a Class Type's Entity reaches: `GET /portal/admin/class-types/:id/entity-preview`. */
+export interface EntityMovePreview {
+  upcoming_classes: number;
+  bookings: number;
+}
+
+/**
+ * The line the Class Type editor shows before a move is saved. Always says
+ * nothing is cancelled: a move changes which packages pay for those classes
+ * from now on, and cancels no booking.
+ */
+export function movePreviewSentence(preview: EntityMovePreview): string {
+  const { upcoming_classes: classes, bookings } = preview;
+  if (classes === 0 && bookings === 0) return "No upcoming classes or bookings are reached.";
+  const c = `${classes} upcoming ${classes === 1 ? "class" : "classes"}`;
+  const b = `${bookings} ${bookings === 1 ? "booking" : "bookings"}`;
+  // A compound subject: "are", whatever the counts.
+  return `${c} and ${b} are reached; nothing is cancelled.`;
+}
+
+/**
+ * The body of a Class Type save. A sub-type shares its parent's Entity, so
+ * `entity_id` is sent only for a top-level type: the server refuses one on a
+ * sub-type, even the parent's own.
+ */
+export function classTypeBody(input: {
+  name: string;
+  description: string;
+  difficulty: string;
+  parentId: string | null;
+  entityId: string | null;
+}): Record<string, unknown> {
+  return {
+    name: input.name,
+    description: input.description.trim() ? input.description.trim() : null,
+    difficulty: input.difficulty,
+    parent_id: input.parentId,
+    ...(input.parentId === null && input.entityId ? { entity_id: input.entityId } : {}),
+  };
+}
+
 /** What a refused Entity save or archive shows: a sentence for each refusal the screen can get. */
 export function entityRefusal(err: unknown, fallback: string): string {
   const body = err instanceof ApiError ? (err.body as ({ error?: string } & Partial<EntityUsage>) | null) : null;
@@ -90,6 +131,12 @@ export function entityRefusal(err: unknown, fallback: string): string {
       });
       return `Still in use by ${used}. Move them to another entity first.`;
     }
+    case "entity_not_found":
+      return "That entity is no longer there. Reload the page and choose another.";
+    case "entity_archived":
+      return "That entity is archived. Choose another.";
+    case "class_type_entity_inherited":
+      return "A sub-type shares its parent's entity. Change the parent's entity instead.";
     case "entity_order_invalid":
       return "The list changed while you were editing. Reload the page and try again.";
     default:

@@ -1,7 +1,15 @@
 import test from "node:test";
 import assert from "node:assert";
 import { ApiError } from "./api";
-import { entityFromApi, entityRefusal, moveInOrder, slugFromName, usageSentence } from "./entities";
+import {
+  classTypeBody,
+  entityFromApi,
+  entityRefusal,
+  movePreviewSentence,
+  moveInOrder,
+  slugFromName,
+  usageSentence,
+} from "./entities";
 
 const ZERO = { class_types: 0, class_packages: 0, pt_packages: 0, corporate_packages: 0 };
 
@@ -63,4 +71,40 @@ test("SCH-64 each refusal the Entities screen can get is said as a sentence the 
   // What the API says in its own words wins for anything else; a non-API failure gets the fallback.
   assert.equal(refused(400, { error: "invalid_request", message: "An entity needs a name." }), "An entity needs a name.");
   assert.equal(entityRefusal(new Error("offline"), "Save failed."), "Save failed.");
+});
+
+test("SCH-77 the Class Type editor says what a move reaches, and always that nothing is cancelled", () => {
+  assert.equal(
+    movePreviewSentence({ upcoming_classes: 12, bookings: 31 }),
+    "12 upcoming classes and 31 bookings are reached; nothing is cancelled.",
+  );
+  assert.equal(
+    movePreviewSentence({ upcoming_classes: 1, bookings: 1 }),
+    "1 upcoming class and 1 booking are reached; nothing is cancelled.",
+  );
+  assert.equal(movePreviewSentence({ upcoming_classes: 0, bookings: 0 }), "No upcoming classes or bookings are reached.");
+});
+
+test("SCH-77 a Class Type save sends its Entity for a top-level type and never for a sub-type", () => {
+  const base = { name: "Yoga", description: "  Calm  ", difficulty: "general" };
+  assert.deepEqual(classTypeBody({ ...base, parentId: null, entityId: "e1" }), {
+    name: "Yoga",
+    description: "Calm",
+    difficulty: "general",
+    parent_id: null,
+    entity_id: "e1",
+  });
+  // The server refuses an Entity on a sub-type, even the parent's own.
+  assert.equal("entity_id" in classTypeBody({ ...base, parentId: "p1", entityId: "e1" }), false);
+  // A blank description is sent as null; no Entity chosen sends none.
+  const blank = classTypeBody({ ...base, description: " ", parentId: null, entityId: null });
+  assert.equal(blank.description, null);
+  assert.equal("entity_id" in blank, false);
+});
+
+test("SCH-77 the refusals a Class Type save can get for its Entity are said as sentences", () => {
+  const refused = (status: number, body: Record<string, unknown>) => entityRefusal(new ApiError(status, body), "Save failed.");
+  assert.match(refused(400, { error: "class_type_entity_inherited" }), /parent's entity/i);
+  assert.match(refused(409, { error: "entity_archived" }), /archived/i);
+  assert.match(refused(404, { error: "entity_not_found" }), /no longer there/i);
 });

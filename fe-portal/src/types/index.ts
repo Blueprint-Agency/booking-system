@@ -24,6 +24,8 @@ export interface ClassType {
   description: string;
   difficulty: ClassTypeDifficulty;
   parentId: string | null;
+  /** The Entity it is in (a sub-type's is its parent's). Null for a row the API sent none for. */
+  entityId: string | null;
   archivedAt: string | null;
 }
 
