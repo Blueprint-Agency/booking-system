@@ -210,6 +210,9 @@ export default function PrivateSessionsPage() {
     if (code === ERROR_CODES.insufficient_pt_credit) {
       return `That package no longer has ${sessionsWord(requestCost)} left. Pick another, or buy a package.`;
     }
+    if (code === ERROR_CODES.class_type_not_in_entity) {
+      return "That package isn't for the class type you picked. Pick another package, or change the class type.";
+    }
     if (code === ERROR_CODES.package_expires_before_session) {
       return serverSentence(err) ?? "That package runs out before one of your times. Pick an earlier time, or another package.";
     }
@@ -272,9 +275,13 @@ export default function PrivateSessionsPage() {
   // Every PT package of this session type, each able to pay or greyed with the
   // reason — the confirm sheet's list. Any number of PT packages may run at
   // once (be/docs/adr/0010), so a Dormant pick simply starts.
+  // The class type is picked before the package, so it narrows the packages: a
+  // private session's class type is in its paying package's Entity. "Any", or a
+  // class type with no Entity, rules none out.
+  const classTypeEntityId = classTypeId ? (classTypes?.find((t) => t.id === classTypeId)?.entity_id ?? null) : null;
   const pickRows = useMemo(
-    () => ptPickRows(ptPackages, computedSessionType, requestCost, tz, latestStart),
-    [ptPackages, computedSessionType, requestCost, tz, latestStart],
+    () => ptPickRows(ptPackages, computedSessionType, requestCost, tz, latestStart, Date.now(), classTypeEntityId),
+    [ptPackages, computedSessionType, requestCost, tz, latestStart, classTypeEntityId],
   );
   const latestEnd = useMemo(
     () => ptLatestEnd(ptPackages.filter((p) => p.sessionType === computedSessionType)),

@@ -189,6 +189,8 @@ export function useLocations(options?: { optional?: boolean }): {
 export interface ApiClassType {
   id: string;
   name: string;
+  /** The Entity it belongs to; null or absent on one with none (or an older backend). */
+  entity_id?: string | null;
 }
 
 /** Active class types for the PT request form's dropdown. Public (no auth). */

@@ -433,6 +433,11 @@ tx start
    one is, 404 class_type_not_found / location_not_found, and so is an existing partner's
    co_client_id that is not a member here, 404 partner_client_not_found. Nothing is written or
    debited. (A foreign key cannot say this: its reference check skips Row-Level Security.)
+   Then the class type must be in the paying package's Entity (be/CONTEXT.md § Entity): 409
+   class_type_not_in_entity when both have one and they differ. A request naming no class type, a
+   package with no Entity and a class type with no Entity are all accepted. The member app picks the
+   class type first and greys PT packages of other Entities in its Pay with list; `/me/packages`
+   carries each package's `entity_id` and `/public/class-types` each type's.
 2. Validate slots[]: 1..N rows; end_time, where sent, > start_time; each proposed_date in
    [today + min_book_in_advance_days, today + book_in_advance_days] (the studio's calendar
    days on its own clock, `pt_booking_config`, read on the app clock). Sooner is refused 400
