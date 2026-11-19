@@ -2,10 +2,15 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   SCHEDULE_ENTITY_KEY,
+  entitySlugInPath,
+  packageEntities,
+  packagesHref,
   pickScheduleEntity,
   readRememberedEntity,
   rememberEntity,
+  resolveEntity,
   showEntityButtons,
+  showEntityDropdown,
   type PublicEntity,
 } from "./entities.ts";
 
@@ -110,4 +115,64 @@ test("CAT-29 unreadable or unwritable storage is no pick, not an error", () => {
   // No window at all (server render).
   assert.equal(readRememberedEntity(), null);
   assert.doesNotThrow(() => rememberEntity("pilates"));
+});
+
+// ── Packages menu (#561) ─────────────────────────────────────────────────────
+
+const stocked = (e: PublicEntity): PublicEntity => ({ ...e, has_live_packages: true });
+const empty = (e: PublicEntity): PublicEntity => ({ ...e, has_live_packages: false });
+
+test("CAT-20 the Packages dropdown shows for two or more Entities with live packages, never for one", () => {
+  assert.equal(showEntityDropdown([]), false);
+  assert.equal(showEntityDropdown([stocked(yoga)]), false);
+  assert.equal(showEntityDropdown([stocked(yoga), stocked(pilates)]), true);
+  assert.equal(showEntityDropdown([stocked(yoga), stocked(pilates), stocked(barre)]), true);
+});
+
+test("CAT-20 an Entity with no live packages is left out, so a second Entity with nothing to buy does not make a dropdown", () => {
+  assert.equal(showEntityDropdown([stocked(yoga), empty(pilates)]), false);
+  assert.deepEqual(
+    packageEntities([stocked(yoga), empty(pilates), stocked(barre)]).map((e) => e.slug),
+    ["yoga", "barre"],
+  );
+});
+
+test("CAT-20 a backend that does not say which Entities have packages counts every one as having some", () => {
+  assert.equal(showEntityDropdown([yoga, pilates]), true);
+  assert.equal(resolveEntity("pilates", [yoga, pilates])?.slug, "pilates");
+});
+
+test("CAT-20 a slug resolves to its Entity in any casing, and an unknown, empty or missing one to the first", () => {
+  const list = [stocked(yoga), stocked(pilates), stocked(barre)];
+  assert.equal(resolveEntity("pilates", list)?.slug, "pilates");
+  assert.equal(resolveEntity("PiLaTeS", list)?.slug, "pilates");
+  assert.equal(resolveEntity(" barre ", list)?.slug, "barre");
+  for (const slug of ["reformer", "", "   ", null, undefined]) {
+    assert.equal(resolveEntity(slug, list)?.slug, "yoga", String(slug));
+  }
+});
+
+test("CAT-20 a slug naming an Entity with nothing on sale, or no Entity at all, falls back to the first with packages", () => {
+  const list = [empty(yoga), stocked(pilates), stocked(barre)];
+  assert.equal(resolveEntity("yoga", list)?.slug, "pilates");
+  assert.equal(resolveEntity("barre", list)?.slug, "barre");
+  assert.equal(resolveEntity("yoga", []), undefined);
+  assert.equal(resolveEntity("yoga", [empty(yoga)]), undefined);
+});
+
+test("CAT-20 an Entity's packages are at /packages/<slug>, with an optional tab hash, and /packages when there is none", () => {
+  assert.equal(packagesHref(), "/packages");
+  assert.equal(packagesHref(null), "/packages");
+  assert.equal(packagesHref(pilates), "/packages/pilates");
+  assert.equal(packagesHref("pilates"), "/packages/pilates");
+  assert.equal(packagesHref(pilates, "trial"), "/packages/pilates#trial");
+  assert.equal(packagesHref(undefined, "private"), "/packages#private");
+});
+
+test("CAT-20 the Entity slug is read back out of a Packages path, and only out of one", () => {
+  assert.equal(entitySlugInPath("/packages/pilates"), "pilates");
+  assert.equal(entitySlugInPath("/packages/pilates/"), "pilates");
+  assert.equal(entitySlugInPath("/packages"), undefined);
+  assert.equal(entitySlugInPath("/account/packages"), undefined);
+  assert.equal(entitySlugInPath("/packages/a/b"), undefined);
 });
