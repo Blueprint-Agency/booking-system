@@ -79,7 +79,9 @@ export function ConfirmPtRequestSheet({
   const blocked = !rows.some((r) => r.eligible)
     ? rows.length === 0
       ? `You don't have a ${type} PT package yet.`
-      : `None of your ${type} packages has ${sessionsWord(cost)} left.`
+      : rows.some((r) => r.entityMismatch)
+        ? `None of your ${type} packages can pay for the class type you picked. Go back and choose another class type, or Any.`
+        : `None of your ${type} packages has ${sessionsWord(cost)} left.`
     : null;
 
   return (

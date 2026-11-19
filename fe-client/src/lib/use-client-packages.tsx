@@ -41,6 +41,11 @@ export interface LivePackage {
   location: UnlimitedLocation | null;
   sessionType: "1on1" | "2on1" | null;
   /**
+   * The Entity the package was sold under; null when it has none. A private
+   * session request's class type must be in it (`ptPickRows`).
+   */
+  entityId: string | null;
+  /**
    * The instructor this PT package's sessions are with; null means open to any
    * of them. Backend-derived — never re-tested here as "PT and bound".
    */
@@ -114,6 +119,8 @@ interface RawClientPackage {
   cross_location_paid_sgd: string | null;
   unlimited_location: UnlimitedLocation | null;
   session_type: "1on1" | "2on1" | null;
+  /** Optional: a backend that predates Entities does not send it. */
+  entity_id?: string | null;
   bound_instructor: { id: string; name: string; photo_url: string | null } | null;
 }
 interface RawPackagesResponse {
@@ -195,6 +202,7 @@ function mapPackagesResponse(raw: RawPackagesResponse): ClientPackagesData {
     crossLocationPaidSgd: p.cross_location_paid_sgd,
     location: p.unlimited_location ?? null,
     sessionType: p.session_type,
+    entityId: p.entity_id ?? null,
     boundInstructor: p.bound_instructor ?? null,
   });
   const packages = pkgs.filter(isActive).map(toPackage);

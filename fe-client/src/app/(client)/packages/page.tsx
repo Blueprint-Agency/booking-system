@@ -49,6 +49,13 @@ import {
 import { useBrandCopy } from "@/components/brand/brand-provider";
 import { packagesHref } from "@/lib/entities";
 import { usePackagesEntity } from "@/lib/public-entities";
+import {
+  trialClosedLabel,
+  trialClosedText,
+  trialRefusalText,
+  trialStandingFor,
+  type TrialStanding,
+} from "@/lib/trial-standing";
 
 // ── Tab definitions ────────────────────────────────────────────────────────────
 
@@ -182,9 +189,14 @@ export default function PackagesPage() {
   const ent = data?.entitlements ?? null;
   const hasUnlimited = ent?.has_active_unlimited ?? false;
   const hasBundle = ent?.has_active_bundle_credits ?? false;
-  const trialUsed = ent?.trial_used ?? false;
-  // Default eligible when signed-out (entitlements null) — auth gate runs on click.
-  const trialEligible = ent?.trial_eligible ?? true;
+  // A trial is for a member new to its Entity, so each one reads its own
+  // Entity's standing. Signed out (entitlements null) every trial reads open —
+  // the auth gate runs on click.
+  const standingOf = (pkg: ApiClassPackage) => trialStandingFor(ent, pkg.entity_id);
+  // The sentence names the Entity only when trials of several are on the page.
+  const namesEntities = new Set(trials.map((p) => p.entity_id ?? null)).size > 1;
+  const entityNameOf = (pkg: ApiClassPackage) =>
+    namesEntities ? (pkg.entity?.name ?? null) : null;
 
   const MAIN_TABS: { key: MainTab; label: string; hidden?: boolean }[] = [
     { key: "group", label: "Group" },
@@ -232,9 +244,9 @@ export default function PackagesPage() {
           : "";
       const text =
         code === ERROR_CODES.trial_already_used
-          ? "You've already used your trial pass."
+          ? trialRefusalText("trial_already_used", entityNameOf(pkg))
           : code === ERROR_CODES.trial_not_eligible
-            ? "The trial pass is for new members only."
+            ? trialRefusalText("trial_not_eligible", entityNameOf(pkg))
             : code === ERROR_CODES.payments_not_configured
               ? NO_ONLINE_PAYMENTS
               : "Couldn't get the trial pass. Try again.";
@@ -293,8 +305,8 @@ export default function PackagesPage() {
                   setSubTab={setClassSubTab}
                   hasUnlimited={hasUnlimited}
                   hasBundle={hasBundle}
-                  trialUsed={trialUsed}
-                  trialEligible={trialEligible}
+                  standingOf={standingOf}
+                  entityNameOf={entityNameOf}
                   claimingTrialId={claimingTrialId}
                   trialBanner={trialMessage}
                   onRequestTrial={requestTrial}
@@ -359,8 +371,8 @@ function ClassCreditsSection({
   setSubTab,
   hasUnlimited,
   hasBundle,
-  trialUsed,
-  trialEligible,
+  standingOf,
+  entityNameOf,
   claimingTrialId,
   trialBanner,
   onRequestTrial,
@@ -372,8 +384,8 @@ function ClassCreditsSection({
   setSubTab: (s: ClassSubTab) => void;
   hasUnlimited: boolean;
   hasBundle: boolean;
-  trialUsed: boolean;
-  trialEligible: boolean;
+  standingOf: (pkg: ApiClassPackage) => TrialStanding;
+  entityNameOf: (pkg: ApiClassPackage) => string | null;
   claimingTrialId: string | null;
   trialBanner: { kind: "ok" | "err"; text: string } | null;
   onRequestTrial: (pkg: ApiClassPackage) => void;
@@ -448,8 +460,8 @@ function ClassCreditsSection({
       {subTab === "trial" && (
         <TrialSection
           trials={trials}
-          trialUsed={trialUsed}
-          trialEligible={trialEligible}
+          standingOf={standingOf}
+          entityNameOf={entityNameOf}
           claimingId={claimingTrialId}
           banner={trialBanner}
           onRequestTrial={onRequestTrial}
@@ -461,15 +473,15 @@ function ClassCreditsSection({
 
 function TrialSection({
   trials,
-  trialUsed,
-  trialEligible,
+  standingOf,
+  entityNameOf,
   claimingId,
   banner,
   onRequestTrial,
 }: {
   trials: ApiClassPackage[];
-  trialUsed: boolean;
-  trialEligible: boolean;
+  standingOf: (pkg: ApiClassPackage) => TrialStanding;
+  entityNameOf: (pkg: ApiClassPackage) => string | null;
   claimingId: string | null;
   banner: { kind: "ok" | "err"; text: string } | null;
   onRequestTrial: (pkg: ApiClassPackage) => void;
@@ -478,11 +490,16 @@ function TrialSection({
   if (trials.length === 0) {
     return <EmptyCatalog kind="trial" />;
   }
-  // Greyed out unless the client owns nothing yet. A member who has had theirs
-  // is told they are not eligible rather than reminded they used it.
-  const disabledReason = trialUsed
-    ? "Not eligible"
-    : "New members only";
+  // Each trial is greyed out unless the member is new to its Entity. One who
+  // has had theirs is told they are not eligible rather than reminded they used it.
+  // One note per Entity that is closed (one at a studio with a single Entity).
+  const closedNotes = new Map<string, string>();
+  for (const p of trials) {
+    const standing = standingOf(p);
+    if (standing.eligible) continue;
+    const name = entityNameOf(p);
+    closedNotes.set(name ?? "", trialClosedText(standing.used, name));
+  }
   return (
     <div className="space-y-4">
       <p className="text-center text-sm text-muted">For first-timers. One per member.</p>
@@ -508,24 +525,26 @@ function TrialSection({
           {banner.text}
         </div>
       )}
-      {!trialEligible && !banner && (
-        <p className={NOTE}>
-          {trialUsed
-            ? "You've used your trial pass. See credit bundles or Unlimited to keep booking."
-            : "The trial pass is for new members only. See credit bundles or Unlimited instead."}
-        </p>
-      )}
-      <div className={PACKAGE_GRID}>
-        {trials.map((p) => (
-          <TrialCard
-            key={p.id}
-            pkg={p}
-            disabled={!trialEligible}
-            disabledReason={disabledReason}
-            isClaiming={claimingId === p.id}
-            onRequestPurchase={() => onRequestTrial(p)}
-          />
+      {!banner &&
+        [...closedNotes.values()].map((text) => (
+          <p key={text} className={NOTE}>
+            {text}
+          </p>
         ))}
+      <div className={PACKAGE_GRID}>
+        {trials.map((p) => {
+          const standing = standingOf(p);
+          return (
+            <TrialCard
+              key={p.id}
+              pkg={p}
+              disabled={!standing.eligible}
+              disabledReason={trialClosedLabel(standing)}
+              isClaiming={claimingId === p.id}
+              onRequestPurchase={() => onRequestTrial(p)}
+            />
+          );
+        })}
       </div>
     </div>
   );

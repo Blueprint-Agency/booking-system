@@ -77,6 +77,9 @@ function serializeClientPackage(r: Awaited<ReturnType<typeof listClientPackages>
     // re-derives coverage.
     cross_location_paid_sgd: r.crossLocationPaidSgd,
     session_type: r.sessionType,
+    // The Entity the package was sold under: the private-session request narrows
+    // its Class Types to it. Null on a package with none.
+    entity_id: r.entityId,
     // Who this PT package's sessions are with. Null means open to any
     // instructor — the member surface reads the null and never re-derives it.
     bound_instructor: r.boundInstructor,

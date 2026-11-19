@@ -17,6 +17,7 @@ import { useState } from "react";
 import { AlertCircle, ArrowDownRight, ArrowUpRight, Minus } from "lucide-react";
 import { formatSgd } from "@/lib/formatters";
 import {
+  NO_ENTITY_LABEL,
   SALE_CATEGORY_LABEL,
   type ClassPopularity,
   type FinanceOverview,
@@ -45,10 +46,13 @@ const CATEGORY_COLOR: Record<SaleCategory, string> = {
 export function OverviewPanel({
   data,
   unpricedCount,
+  entityName,
 }: {
   data: FinanceOverview;
   /** Sessions with no pay set — Net excludes them, so Net must say so. */
   unpricedCount: number;
+  /** The Entity the figures are narrowed to ("No entity" included); null/absent for the whole studio. */
+  entityName?: string | null;
 }) {
   const { members } = data;
   return (
@@ -69,12 +73,16 @@ export function OverviewPanel({
               // move with the period — it is a stock read today, not a flow
               // measured over the window. A reader scanning a row of period
               // figures will otherwise take it for one.
-              hint="Holding a live package today — not period-scoped"
+              hint={
+                entityName
+                  ? `Holding a live ${entityName === NO_ENTITY_LABEL ? "package with no entity" : `${entityName} package`} today — not period-scoped`
+                  : "Holding a live package today — not period-scoped"
+              }
             />
             <Tile
               label="Joined"
               value={String(members.joined)}
-              hint="New members in the period"
+              hint={entityName ? "New members in the period — whole studio" : "New members in the period"}
             />
             {/* Money the studio is holding against nothing granted. It is
                 deliberately outside the money chain above: it is not revenue and
@@ -84,7 +92,7 @@ export function OverviewPanel({
               <Tile
                 label="Held on partial payments"
                 value={formatSgd(data.held_on_open_purchases_sgd)}
-                hint="Part payments — not revenue, not in Net, not period-scoped"
+                hint={`Part payments — not revenue, not in Net, not period-scoped${entityName ? ", whole studio" : ""}`}
               />
             )}
           </div>

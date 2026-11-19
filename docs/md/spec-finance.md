@@ -113,6 +113,10 @@ Accrual. A purchase sits on its payment date, a Refund on its refund date, Instr
 
 No cash-basis view and no payout-run record. See the ADR.
 
+### Entity
+
+Every Money Event is filed under an Entity (`be/CONTEXT.md` § Entity) or under none, read **live** from the current catalogue (`services/finance/entity.ts`), so a package moved to another Entity re-files every sale it made. A package sale and its Add-On take the source package's Entity; a Refund takes the Entity of what its Purchase bought (the plan whose own Purchase it is, a corporate request's package, or, for a standalone Cross-Location Add-On, the plan its payment names); a corporate sale takes the corporate package's; Class pay the class's Class Type's; PT session pay its request's Class Type's, else the package that paid (the one the request debited, or a manual session's first attendee's). Workshop tickets, merch, manual entries and workshop pay are filed under none, as is a sale with no source package. There is no corporate-session pay in Finance, so a corporate package's Entity files its sale and the sale's Refund only. "No entity" is a filter value (`none`), like Unattributed. The `entity` filter applies to the list, the overview and the CSV, and is the one filter the overview honours beyond the period: under it Active Members counts members holding a live package of that Entity (a member holding two counts under each and once for the studio) and Class Popularity counts only that Entity's Class Types.
+
 ### Location
 
 Joined for classes, PT sessions and workshops, all three of which carry a NOT NULL Location. (The off-site free-text venue is on *corporate sessions*, which have no pay column and never reach this surface.) Everything else — every non-Unlimited purchase, every Merch Order, every corporate sale, every Manual Entry — is **Unattributed**, which is a first-class filter value and not a null hole. Filtering to a Location excludes Unattributed rows; filtering to Unattributed shows only them.
@@ -135,7 +139,7 @@ Every pay column is nullable, `class_series_supporting_instructors.pay_sgd` incl
 
 ### API
 
-One admin route surface replacing `/portal/admin/payroll`, taking date range, Type, user search and Location as optional filters, and returning rows, tiles, per-instructor pay totals and the Unpriced count. A sibling `/finance/overview` takes a date range and **nothing else**, and returns the period's headline block; its money half regroups the same rows rather than re-querying them, so a category breakdown cannot disagree with the Gross tile above it. Pay edit, Manual Entry create and Manual Entry delete move across unchanged in shape. Both admin and super-admin get full read and write.
+One admin route surface replacing `/portal/admin/payroll`, taking date range, Type, user search and Location as optional filters, and returning rows, tiles, per-instructor pay totals and the Unpriced count. A sibling `/finance/overview` takes a date range and, since Entities, an Entity, and **nothing else**, and returns the period's headline block; its money half regroups the same rows rather than re-querying them, so a category breakdown cannot disagree with the Gross tile above it. Pay edit, Manual Entry create and Manual Entry delete move across unchanged in shape. Both admin and super-admin get full read and write.
 
 CSV is the same endpoint's rows serialized, not a second query — the file and the screen come from one read.
 

@@ -23,6 +23,7 @@ export function classDetailJson(d: ClassDetail, opts: { admin: boolean }) {
     ...(opts.admin
       ? {
           main_instructor_id: d.mainInstructorId,
+          entity_id: d.entityId,
           instructor_pay_sgd: d.instructorPaySgd,
           supporting_instructor_ids: d.supportingInstructorIds,
           supporting_instructors: d.supportingInstructors.map(s => ({

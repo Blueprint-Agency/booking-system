@@ -59,6 +59,9 @@ export interface FinanceLine {
   location_name: string | null
   /** True where the platform records no Location for this row at all. */
   unattributed: boolean
+  /** The Entity the row is filed under; null is "No entity". See ./entity.ts. */
+  entity_id: string | null
+  entity_name: string | null
   list_price_sgd: number | null
   paid_sgd: number | null
   /** List Price minus amount paid. Null on money-out rows and on a comp. */
@@ -140,6 +143,8 @@ function serialize(e: MoneyEvent): FinanceLine {
     location_id: e.locationId,
     location_name: e.locationName,
     unattributed: e.locationId == null,
+    entity_id: e.entityId,
+    entity_name: e.entityName,
     list_price_sgd: list == null ? null : fromCents(list),
     paid_sgd: paid == null ? null : fromCents(paid),
     // Money off a sale. A Complimentary Package has none: nobody was charged,

@@ -20,6 +20,7 @@ export function timetableEntryJson(e: timetable.ScheduleEntryRow, opts: { admin:
     label: e.label,
     subtitle: e.subtitle ?? null,
     class_type_id: e.classTypeId,
+    entity_id: e.entityId,
     main_instructor_id: e.mainInstructorId,
     supporting_instructor_ids: e.supportingInstructorIds,
     instructor_ids: e.instructorIds,
@@ -41,10 +42,16 @@ const windowQuery = z.object({
   from: dateTime('A from time').optional(),
   to: dateTime('A to time').optional(),
   type: z.enum(['class', 'workshop', 'pt', 'corporate']).optional(),
+  // An Entity ID on these staff routes (staff already hold ids from the Entities
+  // list); the member routes take a slug instead. Narrows classes only.
+  entity: z.string().uuid().optional(),
 })
 
 type Window = z.infer<typeof windowQuery>
-type Narrowing = Pick<Parameters<typeof timetable.listSchedule>[1], 'instructorId' | 'classTypeId' | 'locationId'>
+type Narrowing = Pick<
+  Parameters<typeof timetable.listSchedule>[1],
+  'instructorId' | 'classTypeId' | 'locationId' | 'entityId'
+>
 
 /**
  * `GET /` — the timetable, optionally windowed by `from`/`to` and `type`. The
@@ -53,7 +60,8 @@ type Narrowing = Pick<Parameters<typeof timetable.listSchedule>[1], 'instructorI
  *   admin       the studio's, narrowed by the filters the query names.
  *   instructor  the caller's own classes and private sessions (and the
  *               workshops and corporate sessions they are assigned to),
- *               forced to the caller; the Admin's filters are not parsed.
+ *               forced to the caller; the Admin's filters are not parsed,
+ *               except `entity`, which narrows their classes.
  *   studio      an Instructor's Full studio schedule: the studio's, as the
  *               Admin's, less the Class Series id (`studioTimetableRoutes`).
  */
@@ -84,13 +92,15 @@ const studioNarrowing = (q: z.infer<typeof studioQuery>): Narrowing => ({
   instructorId: q.instructor_id,
   classTypeId: q.class_type_id,
   locationId: q.location_id,
+  entityId: q.entity,
 })
 
 const surfaces: Record<Surface, Hono> = {
   admin: timetableFor({ query: studioQuery, narrowing: studioNarrowing, admin: true }),
   instructor: timetableFor({
     query: windowQuery,
-    narrowing: (_q, self) => ({ instructorId: self }),
+    // The Entity is the one filter My schedule honours besides the caller.
+    narrowing: (q, self) => ({ instructorId: self, entityId: q.entity }),
     admin: false,
   }),
 }

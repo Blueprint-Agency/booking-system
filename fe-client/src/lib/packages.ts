@@ -3,6 +3,7 @@
 import { useMemberSession } from "./member-auth";
 import { ApiError, publicApi, useApi } from "./api";
 import { useCachedResource } from "./resource-cache";
+import type { TrialEntitlements } from "./trial-standing";
 
 // ── Wire types (snake_case as returned by BE) ────────────────────────────────
 
@@ -31,7 +32,8 @@ export interface ApiClassPackage {
   effective_price_sgd: string;
   applied_promotion_id: string | null;
   promotions: ApiPromotion[];
-  /** The Entity it is sold under. Optional: a backend not yet redeployed does not send it. */
+  /** The Entity it is sold under. Optional: an older server does not send it. */
+  entity_id?: string | null;
   entity?: ApiPackageEntity | null;
 }
 
@@ -62,10 +64,7 @@ export interface ApiPtPackage {
   entity?: ApiPackageEntity | null;
 }
 
-export interface CatalogEntitlements {
-  trial_used: boolean;
-  /** Trial is for brand-new members only — true iff the client owns no packages yet. */
-  trial_eligible: boolean;
+export interface CatalogEntitlements extends TrialEntitlements {
   has_active_unlimited: boolean;
   has_active_bundle_credits: boolean;
 }

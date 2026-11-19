@@ -100,6 +100,14 @@ export interface MoneyEvent {
   locationId: string | null
   locationName: string | null
 
+  /**
+   * The Entity this row is filed under, read live from the catalogue (see
+   * `./entity.ts` for the rule per Type). Null means **No entity** — a workshop,
+   * a merch order, a manual entry, or a sale whose package names none.
+   */
+  entityId: string | null
+  entityName: string | null
+
   // ---- money in -----------------------------------------------------------
   /** List Price frozen at purchase. Null on every money-out kind. */
   listPriceSgd: string | null

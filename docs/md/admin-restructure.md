@@ -439,6 +439,8 @@ The old Packages → Workshops list and its `/admin/packages/workshops` pages ar
 
 An Instructor's schedule page (`/instructor/schedule`) has a dropdown beside its "+" buttons: **My schedule** (the default: their own classes, private sessions, workshops and corporate sessions) or **Full studio schedule** (titled "Studio schedule"): the whole studio's timetable, read from `GET /portal/instructor/schedule/studio`. That means every instructor's classes with their booked/capacity and waiting counts, private sessions with their members' names, workshops and corporate sessions, so an instructor picks a slot knowing what else is on. It draws in the same day, week, month and List views, and the "+ Class" / "+ PT Session" buttons work on it as on My schedule. Its filters add **Instructor** (active instructors, from `GET /portal/instructor/catalog/instructors`) and, with more than one location, **Location** to Type. Only the instructor's own class or private session opens its page (and offers Cancel); another instructor's entry shows but opens nothing, so other classes' rosters stay unseen. The choice is kept for the tab (session storage), like the position.
 
+**Entity filter** (#563). With two or more Entities, the Admin's Schedule and both Instructor scopes (My schedule and Full studio schedule) add an **Entity** pill to Filters (All, then each Entity in the studio's order; the Instructor's list comes from `GET /portal/instructor/catalog/entities`). It narrows classes by their Class Type's Entity on the server, so it holds in every view (Day, Week, Month, List) and counts in the Filters badge and Clear all. Workshops, private sessions and corporate sessions stay in view under every choice. With one Entity the pill is not shown and the schedule reads as before. The choice is not kept across visits.
+
 ---
 
 ## 8. Instructor Availability — REMOVED
@@ -1033,7 +1035,7 @@ The studio's money in one place, replacing the admin Payroll surface. Full behav
 - **Its own sidebar group, at the top.** Not Packages (it is not a catalogue) and not Settings (it is not config).
 - **Admin.** Admins read the records and edit instructor pay.
 - **Workspace-agnostic.** Most purchases record no Location at all, so filtering the ledger by the switcher would silently drop them; the Location filter on the page carries an explicit **Unattributed** bucket instead.
-- **The overview reads a period and nothing else.** The other filters narrow the table below them and never the figures above — a headline that moved because of a control the reader has scrolled past reads as a fact.
+- **The overview reads a period and an Entity, and nothing else.** The other filters narrow the table below them and never the figures above — a headline that moved because of a control the reader has scrolled past reads as a fact. The **Entity** filter (All entities, each Entity, **No entity**) is the exception and sits beside the period for that reason: it narrows the tiles, Active Members, Class Popularity, the table and the CSV together. It is shown only when the studio has two or more Entities. Every row, and the CSV, carries an **Entity** column (a faint "No entity" for workshops, merch, manual entries and sales whose package names none). With an Entity chosen the Active Members tile says whose members it counts; Joined and Held on partial payments stay studio-wide and say so.
 - The trial funnel is **not** here; it is the Customers page's Trials filter (§15a).
 
 ---

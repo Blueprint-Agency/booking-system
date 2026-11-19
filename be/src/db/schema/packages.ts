@@ -446,12 +446,10 @@ export const clientPackages = pgTable(
     purchaseUnique: uniqueIndex('client_packages_purchase_unique')
       .on(table.tenantId, table.purchaseId)
       .where(sql`${table.purchaseId} IS NOT NULL`),
-    // One-trial-per-client-ever invariant (fe-client-features.md §6.1) — partial unique.
-    // A previously-purchased trial (active OR expired) blocks any further trial purchase;
-    // the purchase service catches the unique-violation and returns `409 trial_already_used`.
-    trialUniquePerClient: uniqueIndex('client_packages_trial_unique_per_client')
-      .on(table.clientId)
-      .where(sql`${table.kind} = 'trial'`),
+    // No "one trial per client" index: a trial is once per Entity, and a held
+    // package carries no Entity of its own (it is its catalogue source's), so no
+    // index can say it. `assertNoTrialInEntity` (services/packages/trial-standing.ts)
+    // decides, under the member's row lock; migration 0148 dropped the index.
     // No "one Activated package per Family" index: any number of packages may
     // run at once in either Family, and the member picks the payer
     // (be/docs/adr/0010; migration 0093 dropped the two partial unique indexes).

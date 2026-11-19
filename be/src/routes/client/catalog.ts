@@ -10,6 +10,7 @@ import {
   serializePromotion,
 } from '../../services/packages/promotions'
 import { getClientEntitlements, serializeUnlimitedPlan } from '../../services/packages/entitlements'
+import { trialStandingsByEntity } from '../../services/packages/trial-standing'
 import { memberPackagesForClass, serializeMemberPackageForClass } from '../../services/bookings/book'
 import { NotFoundError } from '../../shared/errors'
 import { tenantId } from '../../middleware/tenant'
@@ -160,6 +161,7 @@ const app = new Hono()
       rows.map(r => r.id),
     )
     const ent = await getClientEntitlements(tenantId(c), clientId)
+    const trials = await trialStandingsByEntity(tenantId(c), clientId)
     const entities = await entityFieldsFor(tenantId(c), rows)
     return c.json({
       class_packages: rows.map((r, i) => {
@@ -167,8 +169,15 @@ const app = new Hono()
         return serializeClassPackage(r, ps.map(serializePromotion), bestPrice(r.priceSgd, ps), entities[i]!)
       }),
       entitlements: {
+        // Across every Entity: any trial held, no package held. The trial rules
+        // are per Entity, so a page for one Entity reads `trial_by_entity`.
         trial_used: ent.trialUsed,
         trial_eligible: ent.trialEligible,
+        // By Entity id, for each live Entity: whether the member has held a trial
+        // there, and whether they are new to it (a trial is for them).
+        trial_by_entity: Object.fromEntries(
+          Object.entries(trials).map(([id, t]) => [id, { trial_used: t.used, trial_eligible: t.eligible }]),
+        ),
         has_active_unlimited: ent.hasActiveUnlimited,
         unlimited_location: ent.unlimitedLocation,
         // The schedule's blocked-class nudge offers the Add-On on the plan that
