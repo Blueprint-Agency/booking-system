@@ -298,6 +298,8 @@ export async function unarchiveClassType(tenantId: string, id: string): Promise<
   if (existing.archivedAt === null) {
     throw new BadRequestError('class_type_not_archived')
   }
+  // Not back into an Entity the studio has retired: a move to a live one comes first.
+  await assertEntityUsable(tenantId, existing.entityId)
   const [row] = await db
     .update(classTypes)
     .set({ archivedAt: null })

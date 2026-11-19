@@ -439,6 +439,36 @@ describe('class types and Entities over HTTP', { skip: integrationTestsEnabled ?
     assert.equal(instructor.status, 403, JSON.stringify(instructor.body))
   })
 
+  test('SCH-85 an archived Class Type in an archived Entity cannot be unarchived there, and comes back once its Entity is live again', async () => {
+    const studio = await newStudio('sch85')
+    const ids = await entityIds(studio)
+    const spare = await newEntity(studio, 'Barre')
+    const mat = await newType(studio, { name: 'Mat', entity_id: spare })
+    const hatha = await newType(studio, { name: 'Hatha', parent_id: mat.id })
+    for (const id of [hatha.id, mat.id]) {
+      const archived = await types(studio, 'POST', `/${id}/archive`)
+      assert.equal(archived.status, 200, JSON.stringify(archived.body))
+    }
+    const gone = await entities(studio, 'POST', `/${spare}/archive`)
+    assert.equal(gone.status, 200, JSON.stringify(gone.body))
+
+    for (const type of [mat, hatha]) {
+      const refused = await types(studio, 'POST', `/${type.id}/unarchive`)
+      assert.equal(refused.status, 409, JSON.stringify(refused.body))
+      assert.equal(refused.body.error, 'entity_archived')
+      assert.notEqual((await readType(studio, type.id)).archived_at, null, 'nothing was written')
+    }
+
+    // Moved to a live Entity first (a move is allowed while archived), it comes back.
+    const moved = await types(studio, 'PATCH', `/${mat.id}`, { entity_id: ids['All classes'] })
+    assert.equal(moved.status, 200, JSON.stringify(moved.body))
+    for (const type of [mat, hatha]) {
+      const back = await types(studio, 'POST', `/${type.id}/unarchive`)
+      assert.equal(back.status, 200, JSON.stringify(back.body))
+      assert.equal(back.body.archived_at, null)
+    }
+  })
+
   test('SCH-73 moving a Class Type cancels no booking and touches no class, booking or credit; the classes keep their type', async () => {
     const studio = await newStudio('sch73')
     const ids = await entityIds(studio)
