@@ -68,7 +68,7 @@ export interface WaitlistPanelRow {
  */
 export async function waitlistPanel(
   tenantId: string,
-  cls: { id: string; locationId: string; startsAt: Date; creditCost: number; rule: PackageRule },
+  cls: { id: string; locationId: string; startsAt: Date; creditCost: number; entityId: string | null; rule: PackageRule },
   now: Date = clockNow(),
 ): Promise<WaitlistPanelRow[]> {
   const line = await listForClass(tenantId, cls.id, now)
@@ -83,6 +83,7 @@ export async function waitlistPanel(
         classLocationId: cls.locationId,
         classStartsAt: cls.startsAt,
         creditCost: cls.creditCost,
+        classEntityId: cls.entityId,
         rule: cls.rule,
         now,
       })

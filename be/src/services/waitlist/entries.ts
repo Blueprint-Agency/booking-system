@@ -96,6 +96,7 @@ export async function join(
       classLocationId: cls!.locationId,
       classStartsAt: cls!.startsAt,
       creditCost: cls!.creditCost,
+      classEntityId: cls!.entityId,
       rule: await readClassRule(tx, tenantId, cls!),
       now,
     })

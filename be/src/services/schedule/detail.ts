@@ -1,4 +1,4 @@
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray, type SQL } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { db } from '../../db'
 import {
@@ -119,6 +119,7 @@ export async function getClassDetail(tenantId: string, id: string): Promise<Clas
       instructorPaySgd: classes.instructorPaySgd,
       classTypeId: classes.classTypeId,
       classTypeName: classTypes.name,
+      classEntityId: classTypes.entityId as SQL<string | null>,
       difficulty: classTypes.difficulty,
       instructorId: classes.mainInstructorId,
       instructorName: staffUsers.name,
@@ -216,6 +217,7 @@ export async function getClassDetail(tenantId: string, id: string): Promise<Clas
     locationId: row.locationId,
     startsAt: row.startsAt,
     creditCost: row.creditCost,
+    entityId: row.classEntityId,
     rule,
   })
 

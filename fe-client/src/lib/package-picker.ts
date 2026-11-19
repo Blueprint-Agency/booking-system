@@ -113,10 +113,18 @@ export function costLine(pkg: MyClassPackage | null, creditCost: number): string
  * rows the class does not accept, since what is wrong with an accepted one is
  * what the member can fix (`refusalOf` in be/src/services/packages/selection.ts).
  * `not_accepted` only when no row is accepted. Null while at least one row can pay.
+ *
+ * `entityName` is the class's Entity. A package of another Entity is not listed
+ * at all, so a member holding only those sees no rows, and is told which kind
+ * of package they need ("a Pilates package") rather than that they have none.
  */
-export function nothingEligibleCopy(packages: MyClassPackage[]): string | null {
+export function nothingEligibleCopy(packages: MyClassPackage[], entityName?: string | null): string | null {
   if (packages.some((p) => p.eligible)) return null;
-  if (packages.length === 0) return "You don't have a class package that can pay for this class.";
+  if (packages.length === 0) {
+    return entityName
+      ? `You need a ${entityName} package to book this class.`
+      : "You don't have a class package that can pay for this class.";
+  }
   const first = packages.find((p) => p.reason !== "not_accepted");
   if (!first) return notAcceptedCopy();
   switch (first.reason) {

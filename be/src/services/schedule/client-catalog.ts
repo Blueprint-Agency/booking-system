@@ -18,6 +18,7 @@ import { namedClassRule, namedRuleJson } from './package-rules'
 import { classCancelWindow } from '../policy/cancel-window'
 import { localDateOf, zonedInstant } from './series-dates'
 import { loadTenantById } from '../tenants/tenants'
+import { entityRefsFor, type EntityRef } from '../catalog/entities'
 import { dateTime } from '../../shared/date-time'
 
 interface LocationLite {
@@ -31,6 +32,12 @@ interface ClassCardPayload {
   id: string
   class_type: { id: string; name: string; difficulty: ClassLevel; entity_id: string | null }
   instructor: { id: string; name: string; photo_url: string | null }
+  /**
+   * The class's Entity (its Class Type's): the one whose packages can pay for it,
+   * and whose Packages page the Book sheet's "buy a package" link opens. Null for
+   * a Class Type with no Entity.
+   */
+  entity: EntityRef | null
   main_instructor_id: string
   supporting_instructor_ids: string[]
   /** Back-compat — [main, ...supporting]. */
@@ -203,12 +210,14 @@ export async function listClassCards(
   )
 
   const windowHours = await classCancelWindow(tenantId)
+  const entityRefs = await entityRefsFor(tenantId, rows.map(r => r.classEntityId ?? null))
 
   return rows.map(r => {
     const supporting = supportingByClass.get(r.id) ?? []
     return {
       id: r.id,
       class_type: { id: r.classTypeId, name: r.className, difficulty: r.classDifficulty, entity_id: r.classEntityId ?? null },
+      entity: r.classEntityId ? (entityRefs.get(r.classEntityId) ?? null) : null,
       instructor: {
         id: r.instructorId,
         name: r.instructorName || 'Instructor',
@@ -323,6 +332,7 @@ export async function getClassDetail(
       description: r.classDescription,
       entity_id: r.classEntityId ?? null,
     },
+    entity: r.classEntityId ? ((await entityRefsFor(tenantId, [r.classEntityId])).get(r.classEntityId) ?? null) : null,
     instructor: {
       id: r.instructorId,
       name: r.instructorName || 'Instructor',

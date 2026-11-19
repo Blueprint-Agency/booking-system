@@ -8,6 +8,7 @@ import type { ApiClassWaitlist } from "./waitlist";
 import type { ApiClash } from "./clash";
 import type { PickerPayload, UnlimitedPlanCoverage } from "./package-picker";
 import type { ApiPackageRule } from "./package-rule";
+import type { ApiEntityRef } from "./packages-href";
 
 export interface ApiClassLocation {
   id: string;
@@ -54,6 +55,12 @@ export interface ApiClassCard {
    * the flag, for the row's "Some packages" hint; which ones is in the detail.
    */
   restricted: boolean;
+  /**
+   * The class's Entity: whose packages can pay for it, and where "buy a package"
+   * goes. Optional: a backend from before Entities does not send it, and a Class
+   * Type with none sends null.
+   */
+  entity?: ApiEntityRef | null;
 }
 
 /**

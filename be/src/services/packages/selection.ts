@@ -54,6 +54,12 @@ export interface CandidatePackage {
   kind: 'credit_bundle' | 'unlimited' | 'trial' | 'pt'
   /** The catalogue package it was bought as — what a class's Package rule names. */
   sourceClassPackageId: string | null
+  /**
+   * The Entity of that catalogue package, which is the Entity of this one. Null
+   * for a package with no catalogue source (legacy, imported) or a catalogue
+   * package with no Entity: it keeps paying as it did before Entities.
+   */
+  entityId: string | null
   /** Null means Dormant, and nothing else (§3). */
   expiresAt: Date | null
   /** Home Location — set on an Unlimited Plan, null on every other kind (§1). */
@@ -78,6 +84,11 @@ interface ClassifyInput {
   classLocationId: string
   classStartsAt: Date
   creditCost: number
+  /**
+   * The Entity of the class's Class Type. Null for a class type with no Entity
+   * (a legacy row): then no package is dropped for its Entity.
+   */
+  classEntityId: string | null
   /** The class's Package rule — `ACCEPTS_ALL` for a class that has none. */
   rule: PackageRule
   now: Date
@@ -180,15 +191,21 @@ function defaultOrder(a: CandidatePackage, b: CandidatePackage): number {
  * order. What the Book sheet lists, and what `selectPackage` chooses from.
  */
 export function classifyPackages(input: ClassifyInput): ClassifiedPackage[] {
-  const { packages, classLocationId, classStartsAt, creditCost, rule, now } = input
+  const { packages, classLocationId, classStartsAt, creditCost, classEntityId, rule, now } = input
 
   // PT packages pay for private sessions, never classes — a different Family.
   // A package spent to zero has ended as surely as an expired one: the ledger
   // flips `active` off and the caller filters on it, but the rule must not
   // depend on that.
+  //
+  // A package of another Entity is not a candidate at all, the way another
+  // studio's package is not: dropped here, before any reason is worked out, so
+  // it is never offered, never the Default payer, and never a reason for a
+  // refusal. A member holding nothing else is `insufficient_credits`.
   const live = packages.filter(
     p =>
       p.kind !== 'pt' &&
+      (p.entityId === null || classEntityId === null || p.entityId === classEntityId) &&
       (isDormant(p) || isActivated(p, now)) &&
       (!isCreditKind(p) || (p.creditsOrSessionsRemaining ?? 0) > 0),
   )
