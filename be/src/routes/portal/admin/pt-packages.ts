@@ -42,7 +42,7 @@ const explainPackage = explainInvalid('That PT package is not valid.')
 // the domain, so a blank field cannot be how an admin creates an eternal PT package.
 const createSchema = z.object({
   name: nameField,
-  entity_id: entityIdField,
+  entity_id: entityIdField.optional(),
   session_type: sessionTypeEnum,
   num_sessions: numSessionsField,
   validity_days: validityDaysField,

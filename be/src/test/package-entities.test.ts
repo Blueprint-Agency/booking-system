@@ -194,17 +194,14 @@ describe('every package belongs to an Entity', { skip: integrationTestsEnabled ?
 
   /* ── create and edit ────────────────────────────────────────────────── */
 
-  test('PKG-59 an admin creates each of the five kinds in an Entity: the Entity is required, and the package answers with it', async () => {
+  test('PKG-59 an admin creates each of the five kinds in an Entity: an Entity that is not an id is refused, and the package answers with its Entity', async () => {
     for (const name of KIND_NAMES) {
       const kind = KINDS[name]
 
-      const missing = await create(studio, name, undefined)
-      assert.equal(missing.status, 400, `${name}: ${JSON.stringify(missing.body)}`)
-      assert.equal(missing.body.error, 'invalid_request')
-      assert.match(missing.body.message, /entity/i, `${name}: the sentence names what is missing`)
-
       const notAnId = await create(studio, name, 'yoga')
       assert.equal(notAnId.status, 400, `${name}: ${JSON.stringify(notAnId.body)}`)
+      assert.equal(notAnId.body.error, 'invalid_request')
+      assert.match(notAnId.body.message, /entity/i, `${name}: the sentence names what is wrong`)
 
       const ok = await create(studio, name, studio.entities.pilates)
       assert.equal(ok.status, 201, `${name}: ${JSON.stringify(ok.body)}`)
@@ -589,5 +586,20 @@ describe('every package belongs to an Entity', { skip: integrationTestsEnabled ?
     const d = await classPackages.createClassPackage(studio.id, { name: `service 2 ${run}`, kind: 'credit_bundle', credits: 1, validityDays: 30, priceSgd: '10.00' })
     assert.equal(d.entityId, studio.entities.pilates)
     await admin(studio, 'entities/order', 'PUT', { ids: [studio.entities.all, studio.entities.pilates] })
+  })
+
+  test('PKG-80 an admin creating a package with no Entity named gets the studio\'s first live Entity, never none, and a named Entity is still checked', async () => {
+    for (const name of KIND_NAMES) {
+      const kind = KINDS[name]
+      const left = await create(studio, name, undefined)
+      assert.equal(left.status, 201, `${name}: ${JSON.stringify(left.body)}`)
+      const pkg = unwrap(kind, left.body)
+      assert.equal(pkg.entity_id, studio.entities.all, `${name}: the first live Entity, not none`)
+      assert.equal(await entityOf(studio, name, pkg.id), studio.entities.all, `${name}: and it is stored`)
+
+      // Naming an archived Entity is still refused rather than defaulted.
+      const gone = await create(studio, name, studio.entities.barre)
+      assert.equal(gone.status, 409, `${name}: ${JSON.stringify(gone.body)}`)
+    }
   })
 })

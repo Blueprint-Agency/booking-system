@@ -28,8 +28,9 @@ export const nameField = z
   .min(1, 'A package needs a name.')
   .max(160, 'A name can be at most 160 characters.')
 
-// The Entity a package is sold under: required on create, and refused by the
-// service when it is another studio's or archived. Here it only has to be an id.
+// The Entity a package is sold under: optional on create (the service gives the
+// studio's first live Entity when none is named), and refused by the service
+// when it is another studio's or archived. Here it only has to be an id.
 const ENTITY_MESSAGE = 'Pick the entity this package is sold under.'
 export const entityIdField = z.string({ message: ENTITY_MESSAGE }).uuid(ENTITY_MESSAGE)
 
