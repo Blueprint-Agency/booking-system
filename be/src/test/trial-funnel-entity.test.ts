@@ -292,7 +292,7 @@ describe('trial funnel by entity', { skip: integrationTestsEnabled ? false : SKI
     assert.equal(small.body.funnel?.trials, 4, 'the funnel counts every matching member, not the page')
   })
 
-  test('CUS-32 the funnel tiles equal the rows under the same filter', async () => {
+  test('CUS-31 the funnel tiles equal the rows under the same filter', async () => {
     for (const entity of [undefined, entityA, entityB]) {
       const { body } = await trials(entity)
       assert.ok(body.funnel)
