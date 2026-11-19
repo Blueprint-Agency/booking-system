@@ -45,7 +45,7 @@ const explainPackage = explainInvalid('That class package is not valid.')
 
 const createSchema = z.object({
   name: nameField,
-  entity_id: entityIdField,
+  entity_id: entityIdField.optional(),
   description: descriptionField.nullish(),
   kind: kindEnum,
   credits: creditsField.nullish(),

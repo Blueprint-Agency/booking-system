@@ -26,7 +26,7 @@ const listQuery = z.object({
 
 const createSchema = z.object({
   name: z.string().min(1).max(160),
-  entity_id: entityIdField,
+  entity_id: entityIdField.optional(),
   description: z.string().max(2000).nullish(),
   price_sgd: priceField,
 })

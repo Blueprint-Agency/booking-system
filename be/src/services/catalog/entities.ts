@@ -104,8 +104,8 @@ export async function entityRefsFor(
  * The Entity a new Class Type or package gets when its caller names none: the
  * studio's first live one by display order. Null only for a studio with no
  * Entity at all (a fixture, or one an archive is about to be restored into),
- * which the caller stores as "no Entity" rather than refusing. The admin routes
- * for packages never lean on this: they require the Entity to be named.
+ * which the caller stores as "no Entity" rather than refusing. The admin create
+ * routes for Class Types and packages lean on it when no Entity is named.
  */
 export async function defaultEntityId(tenantId: string): Promise<string | null> {
   const [first] = await db
