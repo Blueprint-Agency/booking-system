@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { entityFilterOptions, entityFilterQuery, scheduleEntities, showEntityFilter } from "./schedule-entity-filter";
+import { liveEntities, showEntityFilter } from "./entities";
+import { entityFilterOptions, entityFilterQuery } from "./schedule-entity-filter";
 import { scheduleEntryFromApi, type ApiScheduleEntry } from "./schedule-entry";
 
 const YOGA = { id: "e1", name: "Yoga" };
@@ -36,7 +37,7 @@ test("SCH-84 the schedule's Entity filter is offered only when the studio has tw
 
 test("SCH-84 the filter's choices are All, then each Entity by name in the order the studio set", () => {
   assert.deepEqual(entityFilterOptions([YOGA, PILATES]), [
-    { val: "all", label: "All" },
+    { val: "", label: "All" },
     { val: "e1", label: "Yoga" },
     { val: "e2", label: "Pilates" },
   ]);
@@ -44,7 +45,7 @@ test("SCH-84 the filter's choices are All, then each Entity by name in the order
 
 test("SCH-84 a pick narrows the read only while it names one of two or more Entities; All, a vanished Entity and a one-Entity studio send no filter", () => {
   assert.equal(entityFilterQuery("e2", [YOGA, PILATES]), "e2");
-  assert.equal(entityFilterQuery("all", [YOGA, PILATES]), undefined);
+  assert.equal(entityFilterQuery("", [YOGA, PILATES]), undefined);
   // An Entity archived since the pick: the read is not narrowed to an id the pill no longer offers.
   assert.equal(entityFilterQuery("gone", [YOGA, PILATES]), undefined);
   // One Entity: the filter is hidden, so it can never narrow the read.
@@ -53,20 +54,31 @@ test("SCH-84 a pick narrows the read only while it names one of two or more Enti
 
 test("SCH-84 the Entities the schedule offers are read from the admin's list or the instructor catalog, id and name each, and a backend with none reads as no Entities", () => {
   assert.deepEqual(
-    scheduleEntities({ entities: [{ id: "e1", name: "Yoga", slug: "yoga", position: 0, archived_at: null, in_use: {} }] }),
+    liveEntities({
+      entities: [
+        {
+          id: "e1",
+          name: "Yoga",
+          slug: "yoga",
+          position: 0,
+          archived_at: null,
+          in_use: { class_types: 0, class_packages: 0, pt_packages: 0, corporate_packages: 0 },
+        },
+      ],
+    }).map(({ id, name }) => ({ id, name })),
     [YOGA],
   );
   // An archived one is not offered (the instructor catalog never sends one).
   assert.deepEqual(
-    scheduleEntities({
+    liveEntities({
       entities: [
         { id: "e1", name: "Yoga", slug: "yoga", position: 0 },
         { id: "e9", name: "Old", slug: "old", position: 1, archived_at: "2026-01-01T00:00:00.000Z" },
       ],
-    }),
+    }).map(({ id, name }) => ({ id, name })),
     [YOGA],
   );
-  assert.deepEqual(scheduleEntities(null), []);
+  assert.deepEqual(liveEntities(null), []);
 });
 
 test("SCH-84 a class entry keeps its Entity when read from the API, and every other kind has none; a backend from before Entities reads as none", () => {

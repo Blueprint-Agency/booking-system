@@ -48,7 +48,7 @@ const app = new Hono()
   .route('/receipts', receipts)
   .route('/locations', locations)
   .route('/rooms', rooms)
-  // The studio's Entities: the lines of practice it sells packages for.
+  // The studio's Entities: what it sells packages under.
   .route('/entities', entities)
   .route('/class-types', classTypes)
   .route('/instructors', instructors)

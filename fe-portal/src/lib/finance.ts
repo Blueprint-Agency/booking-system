@@ -15,6 +15,7 @@
 import type { Api } from "@/lib/api";
 import { rangeToParams, type DateRange } from "@/lib/date-range";
 import { atLocalTime } from "@/lib/local-day";
+import { ALL_ENTITIES } from "@/lib/entities";
 
 export {
   payrollErrorMessage as financeErrorMessage,
@@ -133,7 +134,7 @@ export function entityFilterOptions(entities: readonly { id: string; name: strin
  * opened from a link) still reads as an entity rather than as the whole studio.
  */
 export function entityScopeName(value: string, entities: readonly { id: string; name: string }[]): string | null {
-  if (value === "") return null;
+  if (value === ALL_ENTITIES) return null;
   if (value === NO_ENTITY) return NO_ENTITY_LABEL;
   return entities.find((e) => e.id === value)?.name ?? "this entity";
 }
@@ -341,7 +342,7 @@ export interface FinanceOverview {
  * ledger's type/user/location filters. A "total sales" figure narrowed to one
  * instructor is not an overview, and a reader who scrolled past the filters
  * would have no way to tell that the number above them had moved. The Entity is
- * the exception: it names the line of practice the whole page is about, so the
+ * the exception: it names the Entity the whole page is about, so the
  * summary follows it exactly as the table does.
  */
 export function fetchFinanceOverview(

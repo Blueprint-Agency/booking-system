@@ -1,15 +1,15 @@
 import { and, asc, count, eq, inArray, isNull, max, ne, sql, type SQL } from 'drizzle-orm'
 import { db } from '../../db'
-import { slugForEntityName } from '../../db/seed/entities'
 import { classTypes, entities } from '../../db/schema/catalog'
 import { classPackages, corporatePackages, ptPackages } from '../../db/schema/packages'
 import { isUniqueViolation } from '../../db/unique-violation'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 import { assertEntityUnused, type EntityUsage } from './entities-usage'
+import { ENTITY_SLUG_MAX, slugForEntityName } from './entity-rules'
 
 /**
- * Entities: the lines of practice a studio sells packages for (be/CONTEXT.md
- * § Entity). This is the studio-owned list an admin manages from settings.
+ * Entities (be/CONTEXT.md § Entity): what a studio files its Class Types and
+ * packages under. This is the studio-owned list an admin manages from settings.
  * Class Types and catalogue packages carry an `entity_id`; both count toward an
  * Entity's "still in use".
  */
@@ -19,11 +19,44 @@ export type EntityRow = typeof entities.$inferSelect
 export type EntityWithUsage = EntityRow & { inUse: EntityUsage }
 
 /**
+ * The Entity of a package a member holds: its catalogue source's, class package
+ * else PT package (a plan is bought from one of the two, never both). For a
+ * query that left-joins `classPackages` and `ptPackages` to `clientPackages`;
+ * null for a plan with no source, or a source with no Entity.
+ */
+export const heldPackageEntityId = sql<string | null>`coalesce(${classPackages.entityId}, ${ptPackages.entityId})`
+
+/**
+ * `heldPackageEntityId` for raw SQL: the same read as a correlated subquery for
+ * the `client_packages` row aliased `cp` (the alias is the name written in the
+ * query, never user input). Scoped to the row's own studio on both reads.
+ */
+export const heldPackageEntityIdSql = (cp: string) => {
+  const alias = sql.raw(cp)
+  return sql`coalesce(
+    (select src.entity_id from ${classPackages} src
+      where src.id = ${alias}.source_class_package_id and src.tenant_id = ${alias}.tenant_id),
+    (select src.entity_id from ${ptPackages} src
+      where src.id = ${alias}.source_pt_package_id and src.tenant_id = ${alias}.tenant_id)
+  )`
+}
+
+type CataloguePackageTable = typeof classPackages | typeof ptPackages | typeof corporatePackages
+
+/**
+ * A catalogue package is on sale: active and not removed. An archived or
+ * removed one has left the catalogue, so it holds no Entity open (an archived
+ * one cannot be put back while its Entity is archived: `entityMoveOf`) and does
+ * not make its Entity count as having something to buy.
+ */
+export function packageOnSale(table: CataloguePackageTable, tenantId: string): SQL {
+  return and(eq(table.tenantId, tenantId), eq(table.status, 'active'), isNull(table.deletedAt))!
+}
+
+/**
  * What still belongs to an Entity. Class Types count when they are live (not
  * archived, not deleted), sub-types too: they hold the Entity of their parent.
- * A package counts while it is on sale: an archived or removed one has left the
- * catalogue, so it does not hold its Entity open (and an archived one cannot be
- * put back while the Entity is archived: `assertEntityAllowsPackage`).
+ * A package counts while it is on sale (`packageOnSale`).
  */
 async function usageOf(tenantId: string, entityId: string): Promise<EntityUsage> {
   const [[typeRow], [classRow], [ptRow], [corporateRow]] = await Promise.all([
@@ -41,36 +74,15 @@ async function usageOf(tenantId: string, entityId: string): Promise<EntityUsage>
     db
       .select({ n: count() })
       .from(classPackages)
-      .where(
-        and(
-          eq(classPackages.tenantId, tenantId),
-          eq(classPackages.entityId, entityId),
-          eq(classPackages.status, 'active'),
-          isNull(classPackages.deletedAt),
-        ),
-      ),
+      .where(and(packageOnSale(classPackages, tenantId), eq(classPackages.entityId, entityId))),
     db
       .select({ n: count() })
       .from(ptPackages)
-      .where(
-        and(
-          eq(ptPackages.tenantId, tenantId),
-          eq(ptPackages.entityId, entityId),
-          eq(ptPackages.status, 'active'),
-          isNull(ptPackages.deletedAt),
-        ),
-      ),
+      .where(and(packageOnSale(ptPackages, tenantId), eq(ptPackages.entityId, entityId))),
     db
       .select({ n: count() })
       .from(corporatePackages)
-      .where(
-        and(
-          eq(corporatePackages.tenantId, tenantId),
-          eq(corporatePackages.entityId, entityId),
-          eq(corporatePackages.status, 'active'),
-          isNull(corporatePackages.deletedAt),
-        ),
-      ),
+      .where(and(packageOnSale(corporatePackages, tenantId), eq(corporatePackages.entityId, entityId))),
   ])
   return {
     class_types: Number(typeRow?.n ?? 0),
@@ -83,23 +95,57 @@ async function usageOf(tenantId: string, entityId: string): Promise<EntityUsage>
 export type EntityRef = { id: string; name: string; slug: string }
 
 /**
- * The live Entity of this studio a slug names, in any casing, or null when it
- * names none: an unknown slug, an archived Entity's (a slug is handed back when
- * an Entity is archived, so a live one may reuse it) or another studio's.
+ * A live Entity, whose slug is `slug` in any casing: the condition every read
+ * that takes an `?entity=<slug>` applies to `entities`. An archived Entity's
+ * slug is handed back when it is archived, so a live one may reuse it and an
+ * archived one never answers to it.
+ */
+export const liveEntityWithSlug = (slug: string): SQL =>
+  and(isNull(entities.archivedAt), sql`lower(${entities.slug}) = lower(${slug})`)!
+
+/**
+ * The live Entity of this studio a slug names, or null when it names none: an
+ * unknown slug, an archived Entity's or another studio's.
  */
 export async function liveEntityIdBySlug(tenantId: string, slug: string): Promise<string | null> {
   const [row] = await db
     .select({ id: entities.id })
     .from(entities)
-    .where(
-      and(
-        eq(entities.tenantId, tenantId),
-        isNull(entities.archivedAt),
-        sql`lower(${entities.slug}) = lower(${slug})`,
-      ),
-    )
+    .where(and(eq(entities.tenantId, tenantId), liveEntityWithSlug(slug)))
     .limit(1)
   return row?.id ?? null
+}
+
+/**
+ * The filter a read applies for its `?entity=<slug>`: `{}` when none is given
+ * (every Entity's rows), `{ entityId }` for a live Entity of the studio, and
+ * null when the slug names no such Entity (unknown, archived, or another
+ * studio's), which every read answers with an empty list. The "land on the first
+ * Entity" fallback is the member app's rule, not the API's.
+ */
+export async function entityScopeForSlug(
+  tenantId: string,
+  slug: string | undefined,
+): Promise<{ entityId?: string } | null> {
+  if (!slug) return {}
+  const entityId = await liveEntityIdBySlug(tenantId, slug)
+  return entityId ? { entityId } : null
+}
+
+/**
+ * How a row that belongs to an Entity says so: its id, and the Entity's name
+ * and slug so a screen can draw it without a second read. Both null on a row
+ * with no Entity (one made before Entities and not yet backfilled).
+ */
+export type EntityFields = { entity_id: string | null; entity: EntityRef | null }
+
+/** The Entity fields for each of `rows`, read in one query, in the order given. */
+export async function entityFieldsFor(
+  tenantId: string,
+  rows: ReadonlyArray<{ entityId: string | null }>,
+): Promise<EntityFields[]> {
+  const refs = await entityRefsFor(tenantId, rows.map(r => r.entityId))
+  return rows.map(r => ({ entity_id: r.entityId, entity: r.entityId ? (refs.get(r.entityId) ?? null) : null }))
 }
 
 /**
@@ -144,7 +190,9 @@ export async function defaultEntityId(tenantId: string): Promise<string | null> 
  * naming another studio's Entity would be stored), `entity_archived` for one the
  * studio has retired.
  */
-export async function assertEntityUsable(tenantId: string, id: string): Promise<void> {
+export async function assertEntityUsable(tenantId: string, id: string | null): Promise<void> {
+  // A row with no Entity (made before Entities) has none to refuse.
+  if (id === null) return
   const [row] = await db
     .select({ archivedAt: entities.archivedAt })
     .from(entities)
@@ -165,18 +213,24 @@ export async function entityForNewPackage(tenantId: string, named: string | unde
 }
 
 /**
- * A package that is archived and sits in an archived Entity cannot be put back
- * on sale there: the Entity's archive only looked at packages on sale. An admin
- * moves it to a live Entity first.
+ * The Entity a package edit moves it to, checked, or undefined when the edit is
+ * not a move. A move is checked only when it is a change: a package in an Entity
+ * since archived can still be edited, and naming the Entity it is already in
+ * changes nothing. With no move, putting an archived package back on sale (a
+ * `status: 'active'` edit, the same as unarchiving) is refused while it sits in
+ * an archived Entity: the Entity's archive only looked at packages on sale, so
+ * an admin moves it to a live Entity first. A move cancels nothing: the
+ * packages members hold read their Entity through the catalogue package.
  */
-export async function assertEntityAllowsPackage(tenantId: string, entityId: string | null): Promise<void> {
-  if (entityId === null) return
-  const [row] = await db
-    .select({ archivedAt: entities.archivedAt })
-    .from(entities)
-    .where(and(eq(entities.tenantId, tenantId), eq(entities.id, entityId)))
-    .limit(1)
-  if (row?.archivedAt) throw new ConflictError('entity_archived', { entity_id: entityId })
+export async function entityMoveOf(
+  tenantId: string,
+  current: { entityId: string | null; status: string },
+  patch: { entityId?: string; status?: string },
+): Promise<string | undefined> {
+  const moveTo = patch.entityId !== undefined && patch.entityId !== current.entityId ? patch.entityId : undefined
+  if (moveTo !== undefined) await assertEntityUsable(tenantId, moveTo)
+  else if (patch.status === 'active' && current.status === 'archived') await assertEntityUsable(tenantId, current.entityId)
+  return moveTo
 }
 
 async function withUsage(tenantId: string, row: EntityRow): Promise<EntityWithUsage> {
@@ -184,12 +238,11 @@ async function withUsage(tenantId: string, row: EntityRow): Promise<EntityWithUs
 }
 
 const SLUG_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/
-const SLUG_MAX = 60
 
 /** A typed slug, folded to lower case; refused unless it is URL-safe words joined by single hyphens. */
 function cleanSlug(raw: string): string {
   const slug = raw.trim().toLowerCase()
-  if (!slug || slug.length > SLUG_MAX || !SLUG_PATTERN.test(slug)) {
+  if (!slug || slug.length > ENTITY_SLUG_MAX || !SLUG_PATTERN.test(slug)) {
     throw new BadRequestError('entity_slug_invalid', { slug: raw })
   }
   return slug

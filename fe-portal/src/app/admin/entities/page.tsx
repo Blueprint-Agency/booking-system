@@ -5,11 +5,12 @@ import { toast } from "sonner";
 import { Button, PageHeader, EmptyState, Dialog, DialogFooter, Input, Label } from "@/components/ui";
 import { LoadFailure } from "@/components/ui/load-failure";
 import { useWorkspace } from "@/lib/workspace-context";
-import { useRead } from "@/lib/use-read";
+import { useEntities } from "@/lib/use-entities";
 import {
   entityFromApi,
   entityRefusal,
   moveInOrder,
+  postEntity,
   slugFromName,
   usageSentence,
   type ApiEntity,
@@ -21,20 +22,15 @@ type DialogState = { kind: "create" } | { kind: "edit"; entity: Entity } | null;
 export default function EntitiesPage() {
   const { api } = useWorkspace();
   // A failed read is said to have failed: never an empty list, which would read as "no entities".
-  const { read, retry } = useRead<Entity[]>(
-    "entities",
-    async (client) =>
-      (await client.get<{ entities: ApiEntity[] }>("/portal/admin/entities")).entities.map(entityFromApi),
-    { scope: "entities" },
-  );
+  const { entities: read, status, reload: retry } = useEntities();
   // The list a reorder answered with, shown until the next read replaces it.
   const [reordered, setReordered] = useState<Entity[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [dialog, setDialog] = useState<DialogState>(null);
 
-  const loading = read.status === "loading";
-  const failed = read.status === "failed";
-  const entities: Entity[] = reordered ?? (read.status === "loaded" ? read.data : []);
+  const loading = status === "loading";
+  const failed = status === "failed";
+  const entities: Entity[] = reordered ?? read;
 
   function reload() {
     setReordered(null);
@@ -51,10 +47,7 @@ export default function EntitiesPage() {
           ...(input.slug !== was?.slug ? { slug: input.slug } : {}),
         });
       } else {
-        await api.post("/portal/admin/entities", {
-          name: input.name,
-          ...(input.slug ? { slug: input.slug } : {}),
-        });
+        await postEntity(api, { name: input.name, ...(input.slug ? { slug: input.slug } : {}) });
       }
       setDialog(null);
       reload();
@@ -104,7 +97,7 @@ export default function EntitiesPage() {
     <div className="mx-auto max-w-3xl">
       <PageHeader
         title="Entities"
-        description="The lines of practice your studio sells packages for, such as Yoga or Pilates. Members see them in this order. A studio with one entity looks no different to its members."
+        description="What your studio sells packages under, such as Yoga or Pilates. Members see them in this order. A studio with one entity looks no different to its members."
         actions={
           <Button onClick={() => setDialog({ kind: "create" })} disabled={loading || failed}>
             <Plus className="h-4 w-4" /> Add entity

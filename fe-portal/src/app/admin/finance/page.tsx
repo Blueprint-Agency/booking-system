@@ -54,7 +54,7 @@ import {
   type FinanceResponse,
   type FinanceRow,
 } from "@/lib/finance";
-import { showEntityFilter } from "@/lib/entities";
+import { ALL_ENTITIES, showEntityFilter } from "@/lib/entities";
 import { useEntities } from "@/lib/use-entities";
 import { OverviewPanel } from "./overview";
 
@@ -117,9 +117,9 @@ function FinanceScreen() {
   const [location, setLocation] = useState("");
   const [needsPay, setNeedsPay] = useState(initial.needsPay);
   const [method, setMethod] = useState("");
-  // The one narrowing control that also narrows the figures: an Entity is the
-  // line of practice the whole page is about, so it rides with the period.
-  const [entity, setEntity] = useState("");
+  // The one narrowing control that also narrows the figures: an Entity is what
+  // the whole page can be about, so it rides with the period.
+  const [entity, setEntity] = useState(ALL_ENTITIES);
   const { entities, status: entitiesStatus, reload: reloadEntities } = useEntities();
 
   // Needs pay and the period live in the address bar, so a bell link opens on
@@ -384,7 +384,7 @@ function FinanceScreen() {
           rather than inside either. */}
       <div className="mb-4 flex flex-col gap-3 rounded-xl border border-border bg-card p-3 shadow-soft sm:flex-row sm:flex-wrap sm:items-end">
         <DateRangeFilter value={range} onChange={setRange} />
-        {/* Only a studio with two or more Entities has a line to choose: with
+        {/* Only a studio with two or more Entities has one to choose: with
             one it would narrow nothing. Beside the period because it narrows
             the figures below as well as the table. */}
         {showEntityFilter(entities) && (
@@ -734,7 +734,7 @@ function LocationName({ row }: { row: FinanceRow }) {
   );
 }
 
-/** The line of practice the row is filed under, or a faint "No entity" (as Unattributed is). */
+/** The Entity the row is filed under, or a faint "No entity" (as Unattributed is). */
 function EntityName({ row }: { row: FinanceRow }) {
   return row.entity_name ? <>{row.entity_name}</> : <span className="text-muted/60">{NO_ENTITY_LABEL}</span>;
 }

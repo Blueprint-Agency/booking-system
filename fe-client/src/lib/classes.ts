@@ -8,6 +8,7 @@ import type { ApiClassWaitlist } from "./waitlist";
 import type { ApiClash } from "./clash";
 import type { PickerPayload, UnlimitedPlanCoverage } from "./package-picker";
 import type { ApiPackageRule } from "./package-rule";
+import type { PublicEntity } from "./entities";
 
 export interface ApiClassLocation {
   id: string;
@@ -28,7 +29,7 @@ export interface ApiClassCard {
   id: string;
   class_type: { id: string; name: string };
   /** The Entity the class is under, through its Class Type. Optional: a backend from before Entities omits it. */
-  entity?: { id: string; name: string; slug: string } | null;
+  entity?: PublicEntity | null;
   /** Main instructor — kept for back-compat alongside `main_instructor_id`. */
   instructor: ApiInstructorRef;
   main_instructor_id: string;

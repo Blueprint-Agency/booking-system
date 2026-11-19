@@ -3,9 +3,10 @@ import { db } from '../../db'
 import { classPackages } from '../../db/schema/packages'
 import { BadRequestError, NotFoundError } from '../../shared/errors'
 import {
-  assertEntityAllowsPackage,
   assertEntityUsable,
   entityForNewPackage,
+  entityMoveOf,
+  entityScopeForSlug,
 } from '../catalog/entities'
 import { replacePromotionsForParent, type PromotionWriteInput } from './promotions'
 
@@ -18,12 +19,17 @@ export async function listClassPackages(
     status?: 'active' | 'archived'
     kind?: ClassPackageKind
     entityId?: string
+    /** `?entity=<slug>`: a slug naming no live Entity of the studio lists nothing. */
+    entitySlug?: string
   },
 ): Promise<ClassPackageRow[]> {
+  const scope = await entityScopeForSlug(tenantId, opts.entitySlug)
+  if (scope === null) return []
   const filters = [eq(classPackages.tenantId, tenantId), isNull(classPackages.deletedAt)]
   if (opts.status) filters.push(eq(classPackages.status, opts.status))
   if (opts.kind) filters.push(eq(classPackages.kind, opts.kind))
   if (opts.entityId) filters.push(eq(classPackages.entityId, opts.entityId))
+  if (scope.entityId) filters.push(eq(classPackages.entityId, scope.entityId))
   return db
     .select()
     .from(classPackages)
@@ -152,12 +158,7 @@ export async function updateClassPackage(
   patch: UpdateClassPackageInput,
 ): Promise<ClassPackageRow> {
   const current = await getClassPackage(tenantId, id)
-  const moveTo = patch.entityId !== undefined && patch.entityId !== current.entityId ? patch.entityId : undefined
-  if (moveTo !== undefined) await assertEntityUsable(tenantId, moveTo)
-  else if (patch.status === 'active' && current.status === 'archived') {
-    // Back on sale by a status edit is the same as unarchiving it.
-    await assertEntityAllowsPackage(tenantId, current.entityId)
-  }
+  const moveTo = await entityMoveOf(tenantId, current, patch)
   const merged: CreateClassPackageInput = {
     name: patch.name ?? current.name,
     description: patch.description ?? current.description,
@@ -236,7 +237,7 @@ export async function unarchiveClassPackage(
   if (existing.status !== 'archived') {
     throw new BadRequestError('class_package_not_archived')
   }
-  await assertEntityAllowsPackage(tenantId, existing.entityId)
+  await assertEntityUsable(tenantId, existing.entityId)
   const [row] = await db
     .update(classPackages)
     .set({ status: 'active', archivedAt: null })

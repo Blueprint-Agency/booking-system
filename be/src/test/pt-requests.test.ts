@@ -5166,7 +5166,7 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
   /**
    * Two Entities at studio one, a PT package and a Class Type in each, and a
    * member holding the Yoga 1on1 package. `pilatesPackage` is the other
-   * Entity's, for a held package of a different line.
+   * Entity's, for a held package of a different Entity.
    */
   async function entityFixture(scenario: string) {
     // Names are unique per studio and the test database outlives a run.

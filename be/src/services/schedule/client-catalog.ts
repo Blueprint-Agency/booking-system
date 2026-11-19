@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { and, eq, gte, inArray, isNull, lt, sql } from 'drizzle-orm'
+import { and, eq, gte, inArray, isNull, lt } from 'drizzle-orm'
 import { db } from '../../db'
 import { now as clockNow } from '../../lib/clock'
 import { publicObjectUrl } from '../../lib/r2'
@@ -9,6 +9,8 @@ import { classTypes, entities, instructors, locations, rooms } from '../../db/sc
 import { staffUsers } from '../../db/schema/identity'
 import { classDifficultyEnum } from '../../db/enums'
 import { NotFoundError } from '../../shared/errors'
+import { liveEntityWithSlug, type EntityRef } from '../catalog/entities'
+import { ENTITY_SLUG_MAX } from '../catalog/entity-rules'
 import { readRosters, type Tx } from './roster'
 import { countSeats, countSeatsByClass, seatsOf, spotsLeft, type SeatCounts } from '../bookings/seats'
 import { lineupsOf } from './lineup'
@@ -25,13 +27,6 @@ interface LocationLite {
   name: string
   address: string | null
   gmaps_url: string | null
-}
-
-/** The Entity a class is under, read through its Class Type. */
-interface EntityRef {
-  id: string
-  name: string
-  slug: string
 }
 
 interface ClassCardPayload {
@@ -97,7 +92,7 @@ const classFiltersSchema = z.object({
   instructor_id: z.string().uuid().optional(),
   class_type_id: z.string().uuid().optional(),
   level: z.enum(classDifficultyEnum.enumValues).optional(),
-  entity: z.string().min(1).max(60).optional(),
+  entity: z.string().min(1).max(ENTITY_SLUG_MAX).optional(),
   from: dateTime('A from time').optional(),
   to: dateTime('A to time').optional(),
 })
@@ -172,7 +167,7 @@ export async function listClassCards(
   if (filters.level) conds.push(eq(classTypes.difficulty, filters.level))
   // An archived Entity is not one a member can choose, so its slug selects nothing.
   if (filters.entitySlug) {
-    conds.push(isNull(entities.archivedAt), sql`lower(${entities.slug}) = lower(${filters.entitySlug})`)
+    conds.push(liveEntityWithSlug(filters.entitySlug))
   }
 
   const rows = await db

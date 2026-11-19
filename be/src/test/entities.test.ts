@@ -9,7 +9,7 @@ const DOMAIN = `${run}.entities.test`
 const OPERATOR = `operator@${DOMAIN}`
 
 /**
- * Entities over HTTP (#555, spec #554): the studio-owned line of practice an
+ * Entities over HTTP (#555, spec #554): the studio-owned Entities an
  * admin manages from settings. Nothing is assigned to one yet, so these tests
  * are about the Entity itself: that every studio has one, what an admin may do
  * to the list, who may not, and that no studio can see another's.

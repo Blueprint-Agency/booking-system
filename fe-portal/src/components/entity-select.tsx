@@ -6,7 +6,7 @@ import type { Entity } from "@/lib/entities";
 const NEW_ENTITY = "__new__";
 
 /**
- * An Entity dropdown with "+ New entity", so an admin can start a line such as
+ * An Entity dropdown with "+ New entity", so an admin can start an Entity such as
  * Pilates from the form that needs it without leaving. `onCreate` makes the
  * Entity (and says why if it cannot, by throwing a sentence); the new one is
  * chosen as soon as it exists. Shared by the Class Type editor and the package

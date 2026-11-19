@@ -35,13 +35,13 @@ export const locations = pgTable(
 )
 
 // ============================================================================
-// entities — a line of practice a studio sells packages for (be/CONTEXT.md
+// entities — what a studio sells packages under (be/CONTEXT.md
 // § Entity). Named by the studio: Yoga, Pilates. A studio always has at least
 // one; every studio created or migrated starts with "All classes". Nothing
 // references one yet — Class Types and catalogue packages take an `entity_id`
 // in later changes, so an archive's "still in use" counts are zero until then.
 // Name and slug are unique per Tenant, case-insensitively, among the live
-// (non-archived) rows: an archived line gives its name back.
+// (non-archived) rows: an archived Entity gives its name back.
 // ============================================================================
 
 export const entities = pgTable(
@@ -179,7 +179,7 @@ const classTypesTable = pgTable(
     // Single-level hierarchy. Depth capped at 1 — enforced in service layer:
     // a child (parent_id IS NOT NULL) cannot itself become a parent.
     parentId: uuid('parent_id').references((): AnyPgColumn => classTypesTable.id, { onDelete: 'restrict' }),
-    // The Entity (line of practice) this type belongs to, on EVERY row: a
+    // The Entity this type belongs to, on EVERY row: a
     // sub-type stores its parent's, kept equal by the service (a move rewrites
     // the children in the same transaction). Nullable this deploy
     // (migrations README rule 0); the service and routes require it, and NOT NULL

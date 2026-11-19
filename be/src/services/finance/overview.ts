@@ -23,6 +23,7 @@ import { classTypes } from '../../db/schema/catalog'
 import { heldOnOpenPurchases } from '../billing/open-purchases'
 import { isMoneyIn } from './events'
 import { getFinance, type FinanceFilter } from './list'
+import { heldPackageEntityId } from '../catalog/entities'
 import { NO_ENTITY } from './entity'
 import { toCents } from './totals'
 import type { FinanceInstructorTotal, FinanceLine, FinanceTotals } from './totals'
@@ -247,14 +248,15 @@ async function memberCounts(tenantId: string, filter: FinanceFilter): Promise<Me
         .select({ n: countDistinct(clientPackages.clientId) })
         .from(clientPackages)
         .innerJoin(clients, eq(clients.id, clientPackages.clientId))
-        .leftJoin(classPackages, eq(classPackages.id, clientPackages.sourceClassPackageId))
-        .leftJoin(ptPackages, eq(ptPackages.id, clientPackages.sourcePtPackageId))
+        .leftJoin(
+          classPackages,
+          and(eq(classPackages.id, clientPackages.sourceClassPackageId), eq(classPackages.tenantId, tenantId)),
+        )
+        .leftJoin(ptPackages, and(eq(ptPackages.id, clientPackages.sourcePtPackageId), eq(ptPackages.tenantId, tenantId)))
         .where(
           and(
             ...live,
-            filter.entity === NO_ENTITY
-              ? and(isNull(classPackages.entityId), isNull(ptPackages.entityId))
-              : or(eq(classPackages.entityId, filter.entity), eq(ptPackages.entityId, filter.entity)),
+            filter.entity === NO_ENTITY ? isNull(heldPackageEntityId) : eq(heldPackageEntityId, filter.entity),
           ),
         )
     : await db
@@ -275,7 +277,7 @@ async function memberCounts(tenantId: string, filter: FinanceFilter): Promise<Me
  * The overview for a period. Takes the same filter the ledger does so the two
  * can be driven by one set of controls, but reads only its date bounds and its
  * Entity — a breakdown narrowed to one instructor is not an overview of
- * anything, but the Entity is the one filter that says which line of practice
+ * anything, but the Entity is the one filter that says which Entity
  * the whole page is about, so the summary follows it exactly as the table does.
  * The two stocks that are not about a period at all — what is held on open
  * Purchases, and Members joined — stay studio-wide: neither has an Entity.

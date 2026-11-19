@@ -15,7 +15,8 @@ import { listCorporatePackages } from '../../services/packages/corporate-package
 import { readCancellationPolicy } from '../../services/policy/evaluate-cancellation'
 import { readPtBookingWindow } from '../../services/pt-sessions/request'
 import { tenantId } from '../../middleware/tenant'
-import { entityFieldsFor, entityFilter, entityQuery, explainEntityQuery, type EntityFields } from '../entity-fields'
+import { entityQuery, explainEntityQuery } from '../entity-fields'
+import { entityFieldsFor, type EntityFields } from '../../services/catalog/entities'
 import { takesOnlinePayments } from '../../lib/stripe'
 
 function serializeClassPackage(
@@ -103,11 +104,10 @@ const app = new Hono()
   // `?entity=<slug>` narrows to one Entity; a slug naming no live Entity of the
   // studio answers with empty lists.
   .get('/packages', zValidator('query', entityQuery, explainEntityQuery), async c => {
-    const scope = await entityFilter(tenantId(c), c.req.valid('query').entity)
-    if (!scope) return c.json({ class_packages: [], pt_packages: [] })
+    const entitySlug = c.req.valid('query').entity
     const [classRows, ptRows] = await Promise.all([
-      classSvc.listClassPackages(tenantId(c), { status: 'active', ...scope }),
-      ptSvc.listPtPackages(tenantId(c), { status: 'active', ...scope }),
+      classSvc.listClassPackages(tenantId(c), { status: 'active', entitySlug }),
+      ptSvc.listPtPackages(tenantId(c), { status: 'active', entitySlug }),
     ])
 
     const [classPromos, ptPromos] = await Promise.all([
@@ -173,9 +173,7 @@ const app = new Hono()
   })
   // Corporate catalogue for signed-out browsing (no promotions, no entitlements).
   .get('/corporate-packages', zValidator('query', entityQuery, explainEntityQuery), async c => {
-    const scope = await entityFilter(tenantId(c), c.req.valid('query').entity)
-    if (!scope) return c.json({ corporate_packages: [] })
-    const rows = await listCorporatePackages(tenantId(c), { status: 'active', ...scope })
+    const rows = await listCorporatePackages(tenantId(c), { status: 'active', entitySlug: c.req.valid('query').entity })
     const entities = await entityFieldsFor(tenantId(c), rows)
     return c.json({
       corporate_packages: rows.map((r, i) => ({

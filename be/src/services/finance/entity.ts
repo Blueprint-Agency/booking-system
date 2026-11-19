@@ -4,7 +4,7 @@
  * Read LIVE from the current catalogue: a row carries no frozen copy, so a
  * package moved to another Entity re-files every sale it ever made. "No entity"
  * (null) is a bucket of its own, not a hole: a workshop, a merch order and a
- * manual entry are in no line of practice, and neither is a sale whose package
+ * manual entry are in no Entity, and neither is a sale whose package
  * names none or whose package is gone.
  *
  * Per Type:
@@ -28,6 +28,7 @@ import { entities } from '../../db/schema/catalog'
 import { clientPackages, classPackages, corporatePackages, ptPackages } from '../../db/schema/packages'
 import { corporateRequests } from '../../db/schema/schedule'
 import { purchases } from '../../db/schema/ledger'
+import { heldPackageEntityId } from '../catalog/entities'
 import type { MoneyEvent } from './events'
 
 /**
@@ -83,12 +84,14 @@ export async function purchaseEntities(
       .select({
         id: clientPackages.id,
         purchaseId: clientPackages.purchaseId,
-        classEntityId: classPackages.entityId,
-        ptEntityId: ptPackages.entityId,
+        entityId: heldPackageEntityId,
       })
       .from(clientPackages)
-      .leftJoin(classPackages, eq(classPackages.id, clientPackages.sourceClassPackageId))
-      .leftJoin(ptPackages, eq(ptPackages.id, clientPackages.sourcePtPackageId))
+      .leftJoin(
+        classPackages,
+        and(eq(classPackages.id, clientPackages.sourceClassPackageId), eq(classPackages.tenantId, tenantId)),
+      )
+      .leftJoin(ptPackages, and(eq(ptPackages.id, clientPackages.sourcePtPackageId), eq(ptPackages.tenantId, tenantId)))
       .where(
         and(
           eq(clientPackages.tenantId, tenantId),
@@ -100,7 +103,7 @@ export async function purchaseEntities(
         ),
       )
     for (const p of plans) {
-      const entityId = p.classEntityId ?? p.ptEntityId
+      const entityId = p.entityId
       if (entityId == null) continue
       byPlan.set(p.id, entityId)
       if (p.purchaseId != null && !byPurchase.has(p.purchaseId)) byPurchase.set(p.purchaseId, entityId)
@@ -112,7 +115,10 @@ export async function purchaseEntities(
     const requests = await db
       .select({ purchaseId: corporateRequests.purchaseId, entityId: corporatePackages.entityId })
       .from(corporateRequests)
-      .innerJoin(corporatePackages, eq(corporatePackages.id, corporateRequests.corporatePackageId))
+      .innerJoin(
+        corporatePackages,
+        and(eq(corporatePackages.id, corporateRequests.corporatePackageId), eq(corporatePackages.tenantId, tenantId)),
+      )
       .where(and(eq(corporateRequests.tenantId, tenantId), inArray(corporateRequests.purchaseId, wantedPurchases)))
     for (const r of requests) {
       if (r.purchaseId != null && r.entityId != null && !byPurchase.has(r.purchaseId)) byPurchase.set(r.purchaseId, r.entityId)
@@ -123,7 +129,13 @@ export async function purchaseEntities(
     const legacy = await db
       .select({ purchaseId: purchases.id, entityId: corporatePackages.entityId })
       .from(purchases)
-      .innerJoin(corporatePackages, sql`${corporatePackages.id}::text = ${purchases.metadata}->>'package_id'`)
+      .innerJoin(
+        corporatePackages,
+        and(
+          sql`${corporatePackages.id}::text = ${purchases.metadata}->>'package_id'`,
+          eq(corporatePackages.tenantId, tenantId),
+        ),
+      )
       .where(
         and(
           eq(purchases.tenantId, tenantId),

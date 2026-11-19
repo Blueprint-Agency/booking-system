@@ -2,6 +2,7 @@ import { and, asc, eq, isNull } from 'drizzle-orm'
 import { db } from '../../db'
 import { classPackages, corporatePackages, ptPackages } from '../../db/schema/packages'
 import { entities } from '../../db/schema/catalog'
+import { packageOnSale } from './entities'
 
 /**
  * What a visitor is told of an Entity: enough to name it, link to it and filter
@@ -19,7 +20,7 @@ export interface PublicEntity {
  * The studio's live Entities in the order it set, for the member app: the
  * schedule's buttons and the Packages menu. Archived Entities are left out, as
  * they are from every member surface. "Has live packages" is a class, PT or
- * corporate package that is active and not removed, read for all three tables
+ * corporate package that is on sale (`packageOnSale`), read for all three tables
  * in one query rather than once per Entity. Read by anyone naming the studio.
  */
 export async function listPublicEntities(tenantId: string): Promise<PublicEntity[]> {
@@ -32,26 +33,15 @@ export async function listPublicEntities(tenantId: string): Promise<PublicEntity
     db
       .select({ entityId: classPackages.entityId })
       .from(classPackages)
-      .where(
-        and(eq(classPackages.tenantId, tenantId), eq(classPackages.status, 'active'), isNull(classPackages.deletedAt)),
-      )
+      .where(packageOnSale(classPackages, tenantId))
       .union(
-        db
-          .select({ entityId: ptPackages.entityId })
-          .from(ptPackages)
-          .where(and(eq(ptPackages.tenantId, tenantId), eq(ptPackages.status, 'active'), isNull(ptPackages.deletedAt))),
+        db.select({ entityId: ptPackages.entityId }).from(ptPackages).where(packageOnSale(ptPackages, tenantId)),
       )
       .union(
         db
           .select({ entityId: corporatePackages.entityId })
           .from(corporatePackages)
-          .where(
-            and(
-              eq(corporatePackages.tenantId, tenantId),
-              eq(corporatePackages.status, 'active'),
-              isNull(corporatePackages.deletedAt),
-            ),
-          ),
+          .where(packageOnSale(corporatePackages, tenantId)),
       ),
   ])
   const withPackages = new Set(onSale.map(r => r.entityId))

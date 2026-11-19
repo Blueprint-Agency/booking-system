@@ -589,7 +589,7 @@ describe('Finance by Entity over HTTP', { skip: integrationTestsEnabled ? false 
     await attend(one, ids.looseClass, sol)
 
     // -- studio two: one Entity of its own and a sale in the same window ---------
-    twoEntityName = `Only line ${run}`
+    twoEntityName = `Only Entity ${run}`
     twoEntityId = await makeEntity(two.id, twoEntityName, 100)
     const theirs = await classPackage(two.id, 'Their bundle', twoEntityId)
     twoSale = await plan(two.id, kai, at(2), '999.00', { classPackageId: theirs })

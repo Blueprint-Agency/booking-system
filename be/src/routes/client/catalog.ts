@@ -14,7 +14,8 @@ import { trialStandingsByEntity } from '../../services/packages/trial-standing'
 import { memberPackagesForClass, serializeMemberPackageForClass } from '../../services/bookings/book'
 import { NotFoundError } from '../../shared/errors'
 import { tenantId } from '../../middleware/tenant'
-import { entityFieldsFor, entityFilter, entityQuery, explainEntityQuery, type EntityFields } from '../entity-fields'
+import { entityQuery, explainEntityQuery } from '../entity-fields'
+import { entityFieldsFor, type EntityFields } from '../../services/catalog/entities'
 import * as workshopsSvc from '../../services/workshops/catalog'
 import { listMyWorkshopBookings } from '../../services/workshops/my-bookings'
 import { listCorporatePackages } from '../../services/packages/corporate-packages'
@@ -153,8 +154,7 @@ const app = new Hono()
   // below are the member's own, not the Entity's, so they are still returned).
   .get('/class-packages', zValidator('query', entityQuery, explainEntityQuery), async c => {
     const clientId = c.get('clientId')
-    const scope = await entityFilter(tenantId(c), c.req.valid('query').entity)
-    const rows = scope ? await classSvc.listClassPackages(tenantId(c), { status: 'active', ...scope }) : []
+    const rows = await classSvc.listClassPackages(tenantId(c), { status: 'active', entitySlug: c.req.valid('query').entity })
     const promos = await listActivePromotionsFor(
       tenantId(c),
       'class_package',
@@ -194,8 +194,7 @@ const app = new Hono()
     })
   })
   .get('/pt-packages', zValidator('query', entityQuery, explainEntityQuery), async c => {
-    const scope = await entityFilter(tenantId(c), c.req.valid('query').entity)
-    const rows = scope ? await ptSvc.listPtPackages(tenantId(c), { status: 'active', ...scope }) : []
+    const rows = await ptSvc.listPtPackages(tenantId(c), { status: 'active', entitySlug: c.req.valid('query').entity })
     const promos = await listActivePromotionsFor(
       tenantId(c),
       'pt_package',
@@ -211,8 +210,7 @@ const app = new Hono()
   })
   // Corporate catalogue — surfaced to signed-in members (no promotions).
   .get('/corporate-packages', zValidator('query', entityQuery, explainEntityQuery), async c => {
-    const scope = await entityFilter(tenantId(c), c.req.valid('query').entity)
-    const rows = scope ? await listCorporatePackages(tenantId(c), { status: 'active', ...scope }) : []
+    const rows = await listCorporatePackages(tenantId(c), { status: 'active', entitySlug: c.req.valid('query').entity })
     const entities = await entityFieldsFor(tenantId(c), rows)
     return c.json({
       corporate_packages: rows.map((r, i) => ({

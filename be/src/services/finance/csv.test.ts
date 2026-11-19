@@ -60,7 +60,7 @@ const lines = (csv: string) => csv.split('\r\n')
   assert.ok(row?.endsWith('300,Unattributed,No entity,30,,270,,,,'), row)
 }
 
-// -- the Entity column names the line of practice, or says "No entity" -------
+// -- the Entity column names the Entity, or says "No entity" -------
 {
   const body = lines(
     financeCsv(

@@ -4,10 +4,11 @@ import { z } from 'zod'
 import * as svc from '../../../services/packages/corporate-packages'
 import { tenantId } from '../../../middleware/tenant'
 import { ERROR_CODES } from '../../../shared/error-codes'
-import { previewMove } from '../../../services/packages/entity-move'
 import { explainInvalid } from '../../explain-invalid'
-import { entityFieldsFor, type EntityFields } from '../../entity-fields'
-import { entityFilterField, entityIdField, movePreviewQuery } from './package-fields'
+import { entityIdField } from '../../entity-fields'
+import { entityFieldsFor, type EntityFields } from '../../../services/catalog/entities'
+import { packageEntityPreview } from './package-entity-preview'
+import { entityFilterField } from './package-fields'
 
 const explainCorporate = explainInvalid('That corporate package is not valid.')
 
@@ -65,14 +66,7 @@ const app = new Hono()
     const entities = await entityFieldsFor(tenantId(c), rows)
     return c.json({ corporatePackages: rows.map((r, i) => serialize(r, entities[i]!)) })
   })
-  // How many members hold this package, before it is moved to another Entity.
-  // Always none: a company buys a corporate package and no member holds one, so
-  // a move strands nobody. Kept beside the other kinds so the form asks one way.
-  .get('/:id/entity-preview', zValidator('param', idParam), zValidator('query', movePreviewQuery, explainCorporate), async c => {
-    const { id } = c.req.valid('param')
-    const { entity_id } = c.req.valid('query')
-    return c.json(await previewMove(tenantId(c), 'corporate', id, entity_id))
-  })
+  .route('/', packageEntityPreview('corporate', explainCorporate))
   .get('/:id', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     const row = await svc.getCorporatePackage(tenantId(c), id)

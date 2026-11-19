@@ -269,7 +269,7 @@ export async function createE2eStudio({
   await seedPolicy(db, seeded)
   // Every studio has an Entity, and "All classes" is the one a created studio starts with.
   await seedEntities(db, seeded)
-  // Two lines of practice, so the member schedule shows its Entity buttons and
+  // Two Entities, so the member schedule shows its Entity buttons and
   // both can be verified: the starting Entity is named for what the studio's
   // classes are, and a second one is added. Every class type but one is in the first.
   const entityIds = await withTenant(tenant.id, async () => {

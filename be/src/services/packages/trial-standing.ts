@@ -4,6 +4,8 @@ import { entities } from '../../db/schema/catalog'
 import { clients } from '../../db/schema/identity'
 import { classPackages, clientPackages, ptPackages } from '../../db/schema/packages'
 import { ConflictError } from '../../shared/errors'
+import { heldPackageEntityId } from '../catalog/entities'
+import { entitiesMatch } from '../catalog/entity-rules'
 
 /**
  * Who may buy a trial, read per Entity (be/CONTEXT.md § Entity, § Trial).
@@ -43,8 +45,7 @@ export interface TrialStanding {
  * only ever in a test) is read the same way on either side.
  */
 function countsAgainst(held: HeldForTrial, entityId: string | null): boolean {
-  if (!held.hasSource || held.entityId === null || entityId === null) return true
-  return held.entityId === entityId
+  return !held.hasSource || entitiesMatch(held.entityId, entityId)
 }
 
 /** The two trial facts for one Entity, from what the member holds. */
@@ -60,16 +61,18 @@ export async function heldForTrial(tenantId: string, clientId: string): Promise<
       kind: clientPackages.kind,
       sourceClass: clientPackages.sourceClassPackageId,
       sourcePt: clientPackages.sourcePtPackageId,
-      classEntity: classPackages.entityId,
-      ptEntity: ptPackages.entityId,
+      entityId: heldPackageEntityId,
     })
     .from(clientPackages)
-    .leftJoin(classPackages, eq(classPackages.id, clientPackages.sourceClassPackageId))
-    .leftJoin(ptPackages, eq(ptPackages.id, clientPackages.sourcePtPackageId))
+    .leftJoin(
+      classPackages,
+      and(eq(classPackages.id, clientPackages.sourceClassPackageId), eq(classPackages.tenantId, tenantId)),
+    )
+    .leftJoin(ptPackages, and(eq(ptPackages.id, clientPackages.sourcePtPackageId), eq(ptPackages.tenantId, tenantId)))
     .where(and(eq(clientPackages.tenantId, tenantId), eq(clientPackages.clientId, clientId)))
   return rows.map(r => ({
     kind: r.kind,
-    entityId: r.classEntity ?? r.ptEntity ?? null,
+    entityId: r.entityId ?? null,
     hasSource: r.sourceClass !== null || r.sourcePt !== null,
   }))
 }

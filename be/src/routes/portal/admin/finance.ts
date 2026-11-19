@@ -65,7 +65,7 @@ const listQuery = z.object({
 })
 
 // The summary follows the period and the Entity alone: every other table filter
-// is a question about rows, not about the line of practice (FIN-37, FIN-65).
+// is a question about rows, not about the Entity (FIN-37, FIN-65).
 const overviewQuery = z.object({
   from: dateTime('A from time').optional(),
   to: dateTime('A to time').optional(),

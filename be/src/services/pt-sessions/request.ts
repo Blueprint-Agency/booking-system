@@ -25,6 +25,7 @@ import { daysBetween, instantAt, localDate, plusCalendarDays } from '../../lib/s
 import { now as clockNow } from '../../lib/clock'
 import { sendPtRequestSubmittedEmail } from '../notifications/send-pt-request-email'
 import { tenantTimezone } from '../tenants/tenants'
+import { entitiesMatch } from '../catalog/entity-rules'
 
 /** The days after today, on the studio's clock, a member may propose a private session on. */
 export interface PtBookingWindow {
@@ -153,12 +154,12 @@ export async function submitPtRequest(
     if (pkg.kind !== 'pt') throw new BadRequestError('not_a_pt_package')
     if (pkg.sessionType !== input.sessionType) throw new BadRequestError('session_type_mismatch')
 
-    const classTypeEntityId = await assertOwnReferences(tx, tenantId, input)
+    const classTypeEntityId = await assertOwnReferencesAndReadClassTypeEntity(tx, tenantId, input)
     // The Class Type is in the paying package's Entity (be/CONTEXT.md § Entity).
     // A package or Class Type with no Entity restricts nothing, as before
     // Entities, and a request naming no Class Type has nothing to check. Before
     // anything is debited or written.
-    if (pkg.entityId && classTypeEntityId && pkg.entityId !== classTypeEntityId) {
+    if (!entitiesMatch(pkg.entityId, classTypeEntityId)) {
       throw new ConflictError('class_type_not_in_entity', {
         class_type_id: input.classTypeId,
         client_package_id: pkg.id,
@@ -242,8 +243,16 @@ export async function submitPtRequest(
  * And each is still in use (be-client.md §4d step 1): an archived or deleted
  * Location or class type is refused as a missing one is, and the partner must
  * pass `assertPartnerEligible`, the rule linking a partner later applies.
+ *
+ * Returns the Entity of the class type it has just read, so the caller checks it
+ * against the paying package's without a second read: null when no class type is
+ * named or the one named has no Entity.
  */
-async function assertOwnReferences(tx: Tx, tenantId: string, input: PtRequestInput): Promise<string | null> {
+async function assertOwnReferencesAndReadClassTypeEntity(
+  tx: Tx,
+  tenantId: string,
+  input: PtRequestInput,
+): Promise<string | null> {
   const [location] = await tx
     .select({ id: locations.id })
     .from(locations)

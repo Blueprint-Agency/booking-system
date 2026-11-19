@@ -213,7 +213,7 @@ describe('class types and Entities over HTTP', { skip: integrationTestsEnabled ?
     assert.equal(reformer.parent_id, null)
     assert.equal((await readType(studio, reformer.id)).entity_id, pilates)
 
-    // Left out, it is the first Entity by order: a studio with one line never has to think about it.
+    // Left out, it is the first Entity by order: a studio with one Entity never has to think about it.
     const hatha = await newType(studio, { name: 'Hatha' })
     assert.equal(hatha.entity_id, ids['All classes'])
 

@@ -1,6 +1,6 @@
 /**
- * Entities, as the member app reads them: the lines of practice a studio sells
- * for (Yoga, Pilates), from `GET /public/entities` in the studio's order.
+ * Entities, as the member app reads them: what a studio sells packages under
+ * (Yoga, Pilates), from `GET /public/entities` in the studio's order.
  *
  * Pure rules and the remembered pick live here, with no `@/` imports so
  * `node --test` can load them; the read itself is `public-entities.ts`.
@@ -13,7 +13,12 @@
  * is no longer in it falls back to the first.
  */
 
-/** A live Entity, as the public read lists it. */
+/**
+ * A live Entity, as the public read lists it, and as a class names its own
+ * (`entity` on a class card and detail, which carries no `has_live_packages`).
+ * Absent from a backend that predates Entities, and null on a class whose Class
+ * Type has none, so every reader treats a class's as optional.
+ */
 export interface PublicEntity {
   id: string;
   name: string;

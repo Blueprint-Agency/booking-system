@@ -11,6 +11,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import { DEFAULT_ENTITY_NAME, slugForEntityName } from '../catalog/entity-rules'
 
 type Rows = Record<string, Record<string, unknown>[]>
 
@@ -107,14 +108,14 @@ export function upgradeArchiveRows(rows: Readonly<Rows>, archived: { tenantName?
   // none, which the admin screens and every later "belongs to an Entity" rule
   // take as impossible. It is given the one every studio starts with, as
   // migration 0143 gave one to the studios that existed. Only an archive with
-  // no `entities` key: one that has the key carries the studio's own lines,
+  // no `entities` key: one that has the key carries the studio's own Entities,
   // renamed or archived as it likes, and is restored as it is.
   if (rows.entities === undefined) {
     out.entities = [
       {
         id: randomUUID(),
-        name: 'All classes',
-        slug: 'all-classes',
+        name: DEFAULT_ENTITY_NAME,
+        slug: slugForEntityName(DEFAULT_ENTITY_NAME),
         position: 0,
         archived_at: null,
       },

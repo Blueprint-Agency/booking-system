@@ -107,7 +107,7 @@ export const NAV_ITEMS: NavItem[] = [
   { group: "Settings", label: "Business details", href: "/admin/business-details", icon: ReceiptText, scope: "global" },
   // Which of the studio's emails go out: a switch each, locked ones shown.
   { group: "Settings", label: "Emails", href: "/admin/emails", icon: Send, scope: "global" },
-  // The lines of practice the studio sells packages for (Yoga, Pilates).
+  // What the studio sells packages under (Yoga, Pilates).
   { group: "Settings", label: "Entities", href: "/admin/entities", icon: Shapes, scope: "global" },
   { group: "Settings", label: "Features", href: "/admin/feature-flags", icon: ToggleRight, scope: "global" },
   // The studio's ClassPass address and the import of its ClassPass bookings.

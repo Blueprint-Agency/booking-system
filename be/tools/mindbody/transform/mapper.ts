@@ -204,7 +204,7 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     return row
   })
 
-  // The studio's one Entity. A Mindbody studio is one line of practice as far as
+  // The studio's one Entity. A Mindbody studio is one Entity as far as
   // this export can tell, so everything it creates (Class Types, and the packages
   // that name this id too) lands in the studio's first Entity: "All classes", the
   // generic default every studio starts with, which the studio renames and splits

@@ -24,10 +24,10 @@ import { ApiError } from "@/lib/api";
 import { ERROR_CODES } from "@/lib/error-codes";
 import {
   classTypeBody,
-  entityFromApi,
   entityRefusal,
   movePreviewSentence,
-  type ApiEntity,
+  postEntity,
+  readEntities,
   type Entity,
   type EntityMovePreview,
 } from "@/lib/entities";
@@ -89,13 +89,13 @@ export default function ClassTypesPage() {
     if (!api) return;
     setError(null);
     try {
-      const [data, lines] = await Promise.all([
+      const [data, live] = await Promise.all([
         api.get<{ class_types: ApiClassType[] }>("/portal/admin/class-types", { include_archived: "true" }),
         // A backend from before Entities has no such route: the page then simply has no Entity to show.
-        api.get<{ entities: ApiEntity[] }>("/portal/admin/entities").catch(() => ({ entities: [] as ApiEntity[] })),
+        readEntities(api).catch(() => [] as Entity[]),
       ]);
       setClassTypes(data.class_types.map(fromApi));
-      setEntities(lines.entities.map(entityFromApi));
+      setEntities(live);
     } catch (err) {
       setError(err instanceof ApiError ? `HTTP ${err.status}` : "Network error");
     } finally {
@@ -161,7 +161,7 @@ export default function ClassTypesPage() {
   async function createEntity(name: string): Promise<Entity> {
     if (!api) throw new Error("Not signed in.");
     try {
-      const made = entityFromApi(await api.post<ApiEntity>("/portal/admin/entities", { name }));
+      const made = await postEntity(api, { name });
       setEntities((prev) => [...prev, made]);
       return made;
     } catch (err) {
@@ -588,7 +588,7 @@ function ClassTypeDialog({
           </p>
         </div>
 
-        {/* Only a studio with Entities has anything to choose; one with a single line sees it read-only. */}
+        {/* Only a studio with Entities has anything to choose; one with a single Entity sees it read-only. */}
         {choices.length > 0 && (
           <div className="space-y-1.5">
             <Label htmlFor="ct-entity">Entity</Label>
@@ -622,7 +622,7 @@ function ClassTypeDialog({
                   </p>
                 )}
                 <p className="text-xs text-muted">
-                  The line of practice this class type belongs to. Its sub-types move with it, and a move cancels no booking.
+                  The entity this class type belongs to. Its sub-types move with it, and a move cancels no booking.
                 </p>
               </>
             )}

@@ -1,22 +1,7 @@
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 import * as schema from '../schema'
+import { DEFAULT_ENTITY_NAME, slugForEntityName } from '../../services/catalog/entity-rules'
 import { provisioningFor } from './provisioning'
-
-/**
- * The Entity every studio starts with. A generic default, never a studio's own
- * words: the studio renames it from settings when it adds a second line.
- */
-export const DEFAULT_ENTITY_NAME = 'All classes'
-
-/** The URL-safe form of an Entity's name: lowercase letters and digits, joined by single hyphens. */
-export function slugForEntityName(name: string): string {
-  return name
-    .normalize('NFKD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-}
 
 /** A database or an open transaction — provisioning writes these inside its own. */
 type EntityWriter = Pick<PostgresJsDatabase<typeof schema>, 'insert'>

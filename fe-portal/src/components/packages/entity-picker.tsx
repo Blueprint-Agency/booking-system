@@ -4,14 +4,7 @@ import { Label } from "@/components/ui";
 import { EntitySelect } from "@/components/entity-select";
 import { useWorkspace } from "@/lib/workspace-context";
 import { useEntities } from "@/lib/use-entities";
-import {
-  defaultEntityId,
-  entityFromApi,
-  entityRefusal,
-  moveNotice,
-  type ApiEntity,
-  type Entity,
-} from "@/lib/entities";
+import { defaultEntityId, entityRefusal, moveNotice, postEntity, type Entity } from "@/lib/entities";
 
 type Preview = { for: string; state: "loaded"; members: number } | { for: string; state: "failed" };
 
@@ -89,7 +82,7 @@ export function EntityPicker({
   async function createEntity(name: string): Promise<Entity> {
     if (!api) throw new Error("Not signed in.");
     try {
-      const row = entityFromApi(await api.post<ApiEntity>("/portal/admin/entities", { name }));
+      const row = await postEntity(api, { name });
       setMade((prev) => [...prev, row]);
       // Other lists of Entities (the packages page's filter) read again.
       reload();

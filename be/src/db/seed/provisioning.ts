@@ -53,7 +53,7 @@ type TenantProvisioning = {
    */
   copy?: Record<string, string>
   /**
-   * The studio's Entities (lines of practice), in display order. Omitted means
+   * The studio's Entities, in display order. Omitted means
    * the one every studio starts with, "All classes".
    */
   entities?: string[]
@@ -90,7 +90,7 @@ const FIRST_FIXTURE: TenantProvisioning = {
     // allocated), so a fixture cannot message a real person.
     'contact.whatsapp': '6580000000',
   },
-  // Two lines, so a missing `tenant_id` on `entities` returns a count the other
+  // Two Entities, so a missing `tenant_id` on `entities` returns a count the other
   // fixture's single Entity visibly does not have. The first is the default
   // every studio starts with, so what other fixtures put in "the first Entity"
   // lands in the same place as in any studio.

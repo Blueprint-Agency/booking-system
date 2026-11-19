@@ -334,10 +334,10 @@ All tables use `id uuid primary key default gen_random_uuid()` unless noted. Tim
 id, name (text, not null), address (text), gmaps_url (text), phone (text), archived_at (nullable).
 **Indexes:** `(archived_at)`.
 
-#### `entities` — lines of practice (Yoga, Pilates)
+#### `entities` — what a studio sells packages under (Yoga, Pilates)
 
 id, name (text, not null), slug (text, not null), position (integer, not null), archived_at (nullable), created_at, updated_at. Every studio has at least one; each studio created, restored or migrated starts with "All classes" (migration 0143, `provisionTenant`, an archive that predates the table).
-**Indexes:** `(tenant_id, position)`; unique `(tenant_id, lower(name))` and `(tenant_id, lower(slug))`, each **among non-archived rows only**, so an archived line gives its name and slug back. Nothing references it yet; Class Types and the catalogue packages take a nullable `entity_id` in later changes.
+**Indexes:** `(tenant_id, position)`; unique `(tenant_id, lower(name))` and `(tenant_id, lower(slug))`, each **among non-archived rows only**, so an archived Entity gives its name and slug back. Nothing references it yet; Class Types and the catalogue packages take a nullable `entity_id` in later changes.
 
 #### `rooms` — physical spaces, location-scoped
 

@@ -3,9 +3,10 @@ import { db } from '../../db'
 import { corporatePackages } from '../../db/schema/packages'
 import { BadRequestError } from '../../shared/errors'
 import {
-  assertEntityAllowsPackage,
   assertEntityUsable,
   entityForNewPackage,
+  entityMoveOf,
+  entityScopeForSlug,
 } from '../catalog/entities'
 
 export type CorporatePackageRow = typeof corporatePackages.$inferSelect
@@ -15,11 +16,16 @@ export async function listCorporatePackages(
   opts: {
     status?: 'active' | 'archived'
     entityId?: string
+    /** `?entity=<slug>`: a slug naming no live Entity of the studio lists nothing. */
+    entitySlug?: string
   } = {},
 ): Promise<CorporatePackageRow[]> {
+  const scope = await entityScopeForSlug(tenantId, opts.entitySlug)
+  if (scope === null) return []
   const filters = [eq(corporatePackages.tenantId, tenantId), isNull(corporatePackages.deletedAt)]
   if (opts.status) filters.push(eq(corporatePackages.status, opts.status))
   if (opts.entityId) filters.push(eq(corporatePackages.entityId, opts.entityId))
+  if (scope.entityId) filters.push(eq(corporatePackages.entityId, scope.entityId))
   return db
     .select()
     .from(corporatePackages)
@@ -91,10 +97,8 @@ export async function updateCorporatePackage(
   if (!existing) return null
 
   const setValues: Record<string, unknown> = {}
-  if (patch.entityId !== undefined && patch.entityId !== existing.entityId) {
-    await assertEntityUsable(tenantId, patch.entityId)
-    setValues.entityId = patch.entityId
-  }
+  const moveTo = await entityMoveOf(tenantId, existing, patch)
+  if (moveTo !== undefined) setValues.entityId = moveTo
   if (patch.name !== undefined) setValues.name = patch.name
   if (patch.description !== undefined) setValues.description = patch.description
   if (patch.priceSgd !== undefined) setValues.priceSgd = patch.priceSgd
@@ -135,7 +139,7 @@ export async function unarchiveCorporatePackage(
   if (existing.status !== 'archived') {
     throw new BadRequestError('corporate_package_not_archived')
   }
-  await assertEntityAllowsPackage(tenantId, existing.entityId)
+  await assertEntityUsable(tenantId, existing.entityId)
   const [row] = await db
     .update(corporatePackages)
     .set({ status: 'active', archivedAt: null })

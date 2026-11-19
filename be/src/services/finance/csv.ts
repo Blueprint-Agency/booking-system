@@ -28,7 +28,7 @@ export function financeCsv(summary: FinanceSummary, timezone: string): string {
     'variant',
     'price_sgd',
     'location',
-    // Which line of practice the row is filed under; "No entity" where none.
+    // Which Entity the row is filed under; "No entity" where none.
     'entity',
     'discount_sgd',
     'promo_code',

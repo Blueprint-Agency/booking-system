@@ -24,6 +24,7 @@
  * translates the refusal into a typed error; nothing here touches the database.
  */
 import type { PackageRuleMode } from '../../db/enums'
+import { entitiesMatch } from '../catalog/entity-rules'
 import { activationExpiry, effectiveExpiry, isActivated, isDormant } from './validity'
 
 /**
@@ -205,7 +206,7 @@ export function classifyPackages(input: ClassifyInput): ClassifiedPackage[] {
   const live = packages.filter(
     p =>
       p.kind !== 'pt' &&
-      (p.entityId === null || classEntityId === null || p.entityId === classEntityId) &&
+      entitiesMatch(p.entityId, classEntityId) &&
       (isDormant(p) || isActivated(p, now)) &&
       (!isCreditKind(p) || (p.creditsOrSessionsRemaining ?? 0) > 0),
   )

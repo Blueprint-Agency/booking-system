@@ -48,19 +48,19 @@ describe('migration 0147: every package is in its studio\'s first Entity', { ski
   })
 
   /** A studio with the Entities given, in order, `null` marking none archived, and one package of each kind with no Entity. */
-  async function studio(label: string, lines: Array<{ name: string; archived?: boolean }>) {
+  async function studio(label: string, entityList: Array<{ name: string; archived?: boolean }>) {
     const { provisionTenant } = await import('../services/tenants/provision')
     const tenant = (await provisionTenant({ slug: `pkgm-${label}-${run}`, name: `Package migration ${label}` })).tenant
     studios.push({ id: tenant.id, slug: tenant.slug })
     const made = await harness.db
       .insert(schema.entities)
       .values(
-        lines.map((line, position) => ({
+        entityList.map((entity, position) => ({
           tenantId: tenant.id,
-          name: line.name,
-          slug: line.name.toLowerCase(),
+          name: entity.name,
+          slug: entity.name.toLowerCase(),
           position,
-          archivedAt: line.archived ? new Date() : null,
+          archivedAt: entity.archived ? new Date() : null,
         })),
       )
       .returning()

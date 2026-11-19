@@ -38,6 +38,7 @@ import {
   manualPayrollEntries,
 } from '../../db/schema/schedule'
 import { classTypes, locations } from '../../db/schema/catalog'
+import { heldPackageEntityIdSql } from '../catalog/entities'
 import { staffUsers } from '../../db/schema/identity'
 import { ensureInstructors, readRoster, readRosters, setInstructorPay, type RosterEventKind } from '../schedule/roster'
 import { summarizePayroll, type PayrollSummary } from './totals'
@@ -133,18 +134,16 @@ const ptLabel = sql<string>`coalesce(${classTypes.name}, 'Private session')`
 const ptEntityId = (tenantId: string) =>
   sql<string | null>`coalesce(
     ${classTypes.entityId},
-    (select pp.entity_id
+    (select ${heldPackageEntityIdSql('cp')}
        from client_packages cp
-       join pt_packages pp on pp.id = cp.source_pt_package_id
       where cp.id = ${ptRequests.debitedClientPackageId}
         and cp.tenant_id = ${tenantId}),
-    (select pp.entity_id
+    (select ${heldPackageEntityIdSql('cp')}
        from bookings b
-       join client_packages cp on cp.id = b.client_package_id
-       join pt_packages pp on pp.id = cp.source_pt_package_id
+       join client_packages cp on cp.id = b.client_package_id and cp.tenant_id = ${tenantId}
       where b.pt_session_id = ${ptSessions.id}
         and b.tenant_id = ${tenantId}
-        and pp.entity_id is not null
+        and ${heldPackageEntityIdSql('cp')} is not null
       order by b.booked_at, b.id
       limit 1)
   )`.as('entity_id')

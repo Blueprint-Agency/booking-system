@@ -115,7 +115,7 @@ export async function createClassType(
 ): Promise<ClassTypeRow> {
   const parent = await assertValidParent(tenantId, input.parent_id)
   // A sub-type takes its parent's Entity; a top-level type the one named, or
-  // the studio's first when none is (a studio with one line never has to think
+  // the studio's first when none is (a studio with one Entity never has to think
   // about it, and no route writes a type with no Entity).
   let entityId: string | null
   if (parent) {

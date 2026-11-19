@@ -1,6 +1,7 @@
 import { and, eq } from 'drizzle-orm'
 import { db } from '../../db'
 import { clientPackages, classPackages, promoCodes, ptPackages } from '../../db/schema/packages'
+import { heldPackageEntityId } from '../catalog/entities'
 import { locations } from '../../db/schema/catalog'
 import { staffUsers } from '../../db/schema/identity'
 import { purchases } from '../../db/schema/ledger'
@@ -317,8 +318,7 @@ export async function listClientPackages(
       ptPackageSessions: ptPackages.numSessions,
       active: clientPackages.active,
       ptSessionType: ptPackages.sessionType,
-      classPackageEntityId: classPackages.entityId,
-      ptPackageEntityId: ptPackages.entityId,
+      entityId: heldPackageEntityId,
       promoCode: promoCodes.code,
       complimentary: clientPackages.complimentary,
       purchaseId: clientPackages.purchaseId,
@@ -353,7 +353,7 @@ export async function listClientPackages(
     validityDays: r.validityDays,
     crossLocationPaidSgd: r.crossLocationPaidSgd,
     sessionType: (r.ptSessionType ?? null) as '1on1' | '2on1' | null,
-    entityId: r.classPackageEntityId ?? r.ptPackageEntityId ?? null,
+    entityId: r.entityId ?? null,
     boundInstructor: r.boundInstructorId
       ? {
           id: r.boundInstructorId,

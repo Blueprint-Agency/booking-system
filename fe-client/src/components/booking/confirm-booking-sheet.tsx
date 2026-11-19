@@ -31,7 +31,7 @@ import {
   type MyClassPackage,
 } from "@/lib/package-picker";
 import { ruleSentence, type ApiPackageRule } from "@/lib/package-rule";
-import { packagesHref } from "@/lib/packages-href";
+import { packagesHref } from "@/lib/entities";
 import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useCancellationPolicy } from "@/lib/cancellation-policy";

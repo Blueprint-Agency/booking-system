@@ -29,6 +29,7 @@ import { workshops } from '../../db/schema/schedule'
 import { clients } from '../../db/schema/identity'
 import { listPayroll, type PayrollRow } from '../payroll/list'
 import { summarizeFinance, type FinanceSummary } from './totals'
+import { heldPackageEntityId } from '../catalog/entities'
 import { NO_ENTITY, nameEntities, purchaseEntities } from './entity'
 import type { MoneyEvent, MoneyEventType } from './events'
 import { offlineMethod, providerMethod, type MethodCategory, type PaymentMethod } from './methods'
@@ -165,8 +166,7 @@ async function listMoneyIn(tenantId: string, filter: FinanceFilter): Promise<Mon
       complimentary: clientPackages.complimentary,
       // A plan names no Entity of its own: it reads its source package's, so
       // moving the package moves what was sold from it.
-      classPackageEntityId: classPackages.entityId,
-      ptPackageEntityId: ptPackages.entityId,
+      entityId: heldPackageEntityId,
     })
     .from(clientPackages)
     .innerJoin(clients, eq(clients.id, clientPackages.clientId))
@@ -377,7 +377,7 @@ async function listMoneyIn(tenantId: string, filter: FinanceFilter): Promise<Mon
   const events: MoneyEvent[] = []
 
   for (const r of packageRows) {
-    const entityId = r.classPackageEntityId ?? r.ptPackageEntityId ?? null
+    const entityId = r.entityId ?? null
     events.push({
       ...base,
       kind: 'purchase',

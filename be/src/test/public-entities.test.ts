@@ -14,7 +14,7 @@ const run = Date.now().toString(36)
 const DOMAIN = `${run}.public-entities.test`
 // Every name this file writes carries `run`, so a list is read for this file's
 // rows only: other files add packages and Entities to the same two studios.
-const TAG = `Lines ${run}`
+const TAG = `Entities ${run}`
 
 type Ref = { id: string; name: string; slug: string }
 type PublicEntity = Ref & { has_live_packages: boolean }

@@ -3,9 +3,10 @@ import { db } from '../../db'
 import { ptPackages } from '../../db/schema/packages'
 import { BadRequestError, NotFoundError } from '../../shared/errors'
 import {
-  assertEntityAllowsPackage,
   assertEntityUsable,
   entityForNewPackage,
+  entityMoveOf,
+  entityScopeForSlug,
 } from '../catalog/entities'
 import { replacePromotionsForParent, type PromotionWriteInput } from './promotions'
 
@@ -18,12 +19,17 @@ export async function listPtPackages(
     status?: 'active' | 'archived'
     sessionType?: PtSessionType
     entityId?: string
+    /** `?entity=<slug>`: a slug naming no live Entity of the studio lists nothing. */
+    entitySlug?: string
   },
 ): Promise<PtPackageRow[]> {
+  const scope = await entityScopeForSlug(tenantId, opts.entitySlug)
+  if (scope === null) return []
   const filters = [eq(ptPackages.tenantId, tenantId), isNull(ptPackages.deletedAt)]
   if (opts.status) filters.push(eq(ptPackages.status, opts.status))
   if (opts.sessionType) filters.push(eq(ptPackages.sessionType, opts.sessionType))
   if (opts.entityId) filters.push(eq(ptPackages.entityId, opts.entityId))
+  if (scope.entityId) filters.push(eq(ptPackages.entityId, scope.entityId))
   return db
     .select()
     .from(ptPackages)
@@ -131,12 +137,7 @@ export async function updatePtPackage(
   patch: UpdatePtPackageInput,
 ): Promise<PtPackageRow> {
   const current = await getPtPackage(tenantId, id)
-  const moveTo = patch.entityId !== undefined && patch.entityId !== current.entityId ? patch.entityId : undefined
-  if (moveTo !== undefined) await assertEntityUsable(tenantId, moveTo)
-  else if (patch.status === 'active' && current.status === 'archived') {
-    // Back on sale by a status edit is the same as unarchiving it.
-    await assertEntityAllowsPackage(tenantId, current.entityId)
-  }
+  const moveTo = await entityMoveOf(tenantId, current, patch)
   const changes = {
     ...(moveTo !== undefined ? { entityId: moveTo } : {}),
     ...(patch.name !== undefined ? { name: patch.name } : {}),
@@ -197,7 +198,7 @@ export async function unarchivePtPackage(tenantId: string, id: string): Promise<
   if (existing.status !== 'archived') {
     throw new BadRequestError('pt_package_not_archived')
   }
-  await assertEntityAllowsPackage(tenantId, existing.entityId)
+  await assertEntityUsable(tenantId, existing.entityId)
   const [row] = await db
     .update(ptPackages)
     .set({ status: 'active', archivedAt: null })

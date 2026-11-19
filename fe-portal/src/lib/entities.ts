@@ -1,11 +1,11 @@
-import { ApiError } from "./api";
+import { ApiError, type Api } from "./api";
 import { refusalMessage } from "./refusal-message";
 
 /**
- * Entities: the lines of practice a studio sells packages for (Yoga, Pilates).
- * The settings screen lists them, makes, renames, reorders and archives them
- * (be-portal.md § entities.ts). Every package belongs to one, and the package
- * forms pick it (`components/packages/entity-picker.tsx`).
+ * Entities: what a studio files its Class Types and packages under (Yoga,
+ * Pilates). The settings screen lists them, makes, renames, reorders and
+ * archives them (be-portal.md § entities.ts). Every package belongs to one, and
+ * the package forms pick it (`components/packages/entity-picker.tsx`).
  */
 
 export interface EntityUsage {
@@ -24,17 +24,56 @@ export interface ApiEntity {
   in_use: EntityUsage;
 }
 
+/**
+ * An Entity as either portal reads it: the Admin's list carries everything
+ * above; the Instructor catalog's (live Entities only) carries id, name, slug
+ * and position, and no usage, which an Instructor has no use for.
+ */
+export type ApiEntityRead = Pick<ApiEntity, "id" | "name" | "slug"> & Partial<ApiEntity>;
+
 export interface Entity {
   id: string;
   name: string;
   slug: string;
   archivedAt: string | null;
+  /** All zero where the read carries none (the Instructor catalog's). */
   inUse: EntityUsage;
 }
 
-export function entityFromApi(e: ApiEntity): Entity {
-  return { id: e.id, name: e.name, slug: e.slug, archivedAt: e.archived_at, inUse: e.in_use };
+const NO_USAGE: EntityUsage = { class_types: 0, class_packages: 0, pt_packages: 0, corporate_packages: 0 };
+
+export function entityFromApi(e: ApiEntityRead): Entity {
+  return { id: e.id, name: e.name, slug: e.slug, archivedAt: e.archived_at ?? null, inUse: e.in_use ?? NO_USAGE };
 }
+
+/** Where each portal reads the studio's Entities: an Instructor never calls an admin route. */
+export const ENTITIES_PATH = {
+  admin: "/portal/admin/entities",
+  instructor: "/portal/instructor/catalog/entities",
+} as const;
+export type EntitiesSource = keyof typeof ENTITIES_PATH;
+
+/** The studio's live Entities, in order; none when the read gave none. */
+export function liveEntities(res: { entities: ApiEntityRead[] } | null): Entity[] {
+  return (res?.entities ?? []).filter((e) => !e.archived_at).map(entityFromApi);
+}
+
+/** Reads the studio's live Entities, in display order, from the Admin's list or the Instructor's. */
+export async function readEntities(api: Api, source: EntitiesSource = "admin"): Promise<Entity[]> {
+  return liveEntities(await api.get<{ entities: ApiEntityRead[] }>(ENTITIES_PATH[source]));
+}
+
+/** Makes an Entity (the slug is made from the name when none is given) and answers with it. Throws the API's refusal. */
+export async function postEntity(api: Api, input: { name: string; slug?: string }): Promise<Entity> {
+  return entityFromApi(await api.post<ApiEntity>(ENTITIES_PATH.admin, input));
+}
+
+/**
+ * The Entity filter value that means every Entity: no narrowing. The same on
+ * the schedules, the finance page and the packages lists, so a filter that
+ * hands its pick to a read treats the pick one way.
+ */
+export const ALL_ENTITIES = "";
 
 /**
  * What a package row says about the Entity it belongs to. Both optional, as
@@ -50,14 +89,14 @@ export function packageEntityFromApi(r: PackageEntityFields): { entityId: string
   return { entityId: r.entity_id ?? null, entityName: r.entity?.name ?? null };
 }
 
-/** The Entity filter on a packages list is for a studio with more than one line; with one it would filter nothing. */
+/** An Entity filter (packages lists, schedules, Finance) is for a studio with two or more Entities; with one it would filter nothing. */
 export function showEntityFilter(entities: readonly unknown[]): boolean {
   return entities.length >= 2;
 }
 
-/** The items in `entityId`, or all of them for "" (no filter). */
+/** The items in `entityId`, or all of them for ALL_ENTITIES (no filter). */
 export function filterByEntity<T extends { entityId?: string | null }>(items: readonly T[], entityId: string): T[] {
-  return entityId === "" ? [...items] : items.filter((item) => item.entityId === entityId);
+  return entityId === ALL_ENTITIES ? [...items] : items.filter((item) => item.entityId === entityId);
 }
 
 /** The Entity a new package starts in: the studio's first, in its display order. "" when the list has none yet. */

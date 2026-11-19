@@ -92,7 +92,7 @@ All endpoints are prefixed with `/api/v1/portal/admin`. Verbs and bodies are sum
 | POST | `/locations/:id/unarchive` | — | Clear `archived_at` |
 
 ### `entities.ts`
-The studio's Entities: the lines of practice it sells packages for (`be/CONTEXT.md` § Entity). Admin only, like everything under `/admin`. `in_use.class_types` counts the Entity's live (not archived, not deleted) Class Types, sub-types included; the package counts are zero until packages carry an `entity_id`.
+The studio's Entities: what it sells packages under (`be/CONTEXT.md` § Entity). Admin only, like everything under `/admin`. `in_use.class_types` counts the Entity's live (not archived, not deleted) Class Types, sub-types included; the package counts are zero until packages carry an `entity_id`.
 | Method | Path | Body / params | Effect |
 |---|---|---|---|
 | GET | `/entities` | `?include_archived=true` | `{ entities: [{ id, name, slug, position, archived_at, in_use: { class_types, class_packages, pt_packages, corporate_packages } }] }` in display order; live ones only unless asked |

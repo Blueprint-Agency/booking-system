@@ -2,7 +2,8 @@ import { and, asc, desc, eq, ilike, inArray, isNotNull, isNull, or, sql, type SQ
 import { db } from '../../db'
 import type { clientGenderEnum } from '../../db/enums'
 import { clients } from '../../db/schema/identity'
-import { classPackages, clientPackages, ptPackages } from '../../db/schema/packages'
+import { clientPackages } from '../../db/schema/packages'
+import { heldPackageEntityIdSql } from '../catalog/entities'
 import { bookings } from '../../db/schema/bookings'
 import { manualAdjustments } from '../../db/schema/ledger'
 import { endClientSessionsAt, ensureAuthUser } from '../auth/auth-users'
@@ -116,34 +117,14 @@ export interface ClientDirectoryPage {
 
 /** `cp` is a trial: any, or, under an Entity, one whose catalogue package is in it. */
 const isTrial = (entity?: string) =>
-  entity
-    ? sql`cp.kind = 'trial' and exists (
-        select 1 from ${classPackages} trial_src
-        where trial_src.id = cp.source_class_package_id
-          and trial_src.tenant_id = cp.tenant_id
-          and trial_src.entity_id = ${entity}::uuid
-      )`
-    : sql`cp.kind = 'trial'`
+  entity ? sql`cp.kind = 'trial' and ${isOfEntity(entity)}` : sql`cp.kind = 'trial'`
 
 /**
  * `cp` is a package of the Entity: a class package or a private package whose
- * catalogue row is in it. A package held with no catalogue row has no Entity.
- * (A Corporate package is never held by a member.)
+ * catalogue row is in it (`heldPackageEntityIdSql`). A package held with no
+ * catalogue row has no Entity. (A Corporate package is never held by a member.)
  */
-const isOfEntity = (entity: string) => sql`(
-  exists (
-    select 1 from ${classPackages} pkg_src
-    where pkg_src.id = cp.source_class_package_id
-      and pkg_src.tenant_id = cp.tenant_id
-      and pkg_src.entity_id = ${entity}::uuid
-  )
-  or exists (
-    select 1 from ${ptPackages} pt_src
-    where pt_src.id = cp.source_pt_package_id
-      and pt_src.tenant_id = cp.tenant_id
-      and pt_src.entity_id = ${entity}::uuid
-  )
-)`
+const isOfEntity = (entity: string) => sql`${heldPackageEntityIdSql('cp')} = ${entity}::uuid`
 
 const hasTrial = (clientId: SQL, entity?: string) => sql`exists (
   select 1 from ${clientPackages} cp

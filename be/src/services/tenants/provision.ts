@@ -240,7 +240,7 @@ export async function provisionTenant(input: ProvisionTenantInput): Promise<Prov
       if (adminEmail) await seedPolicy(tx, tenant)
 
       // Its first Entity, "All classes", held back for the same reason: the
-      // archive brings the studio's own lines, and `importTenant` refuses a
+      // archive brings the studio's own Entities, and `importTenant` refuses a
       // studio that already holds rows in `entities`.
       if (adminEmail) await seedEntities(tx, tenant)
 
@@ -363,7 +363,7 @@ export async function inviteFirstAdmin(
     // that is there.
     await seedPolicy(db, tenant)
     // Its first Entity, likewise — but only when it has none, because a studio
-    // restored from an archive has its own lines, possibly all renamed, and
+    // restored from an archive has its own Entities, possibly all renamed, and
     // "All classes" beside them would be an Entity nobody asked for.
     const [entityCount] = await db.select({ n: sql<number>`count(*)::int` }).from(entities)
     if ((entityCount?.n ?? 0) === 0) await seedEntities(db, tenant)

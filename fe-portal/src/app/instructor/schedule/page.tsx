@@ -41,8 +41,9 @@ import {
 } from "@/components/schedule/schedule-toolbar";
 import { slotHref, type Slot } from "@/lib/schedule";
 import { useSchedule, type ScheduleEntry } from "@/lib/use-schedule";
-import { useScheduleEntities } from "@/lib/use-schedule-entities";
-import { entityFilterOptions, entityFilterQuery, showEntityFilter } from "@/lib/schedule-entity-filter";
+import { useEntities } from "@/lib/use-entities";
+import { ALL_ENTITIES, showEntityFilter } from "@/lib/entities";
+import { entityFilterOptions, entityFilterQuery } from "@/lib/schedule-entity-filter";
 import { useSchedulePosition } from "@/lib/use-schedule-position";
 import { myCalendarHref, myScheduleRow } from "@/lib/my-schedule";
 
@@ -111,8 +112,8 @@ export default function InstructorSchedulePage() {
   const [type, setType] = useState<FilterType>("all");
   const [instructorId, setInstructorId] = useState("all");
   const [locationId, setLocationId] = useState("all");
-  // An Entity id, or "all"; on both My schedule and the Full studio schedule.
-  const [entityPick, setEntityPick] = useState("all");
+  // An Entity id, or ALL_ENTITIES; on both My schedule and the Full studio schedule.
+  const [entityPick, setEntityPick] = useState(ALL_ENTITIES);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [addMode, setAddMode] = useState<AddKind | null>(null);
   const [pickedSlot, setPickedSlot] = useState<Slot | null>(null);
@@ -123,7 +124,7 @@ export default function InstructorSchedulePage() {
     () => ({ ...gridDays(view, cursor), ...gridWindow(timezone, view, cursor) }),
     [view, cursor, timezone],
   );
-  const entityChoices = useScheduleEntities("instructor");
+  const { entities: entityChoices } = useEntities("instructor");
   const entityId = entityFilterQuery(entityPick, entityChoices);
   const { entries, loading, error, reload } = useSchedule(
     // The Entity narrows classes on the server, in both scopes; workshops stay in view.
@@ -200,7 +201,7 @@ export default function InstructorSchedulePage() {
     setType("all");
     setInstructorId("all");
     setLocationId("all");
-    setEntityPick("all");
+    setEntityPick(ALL_ENTITIES);
   };
   const viewer = { staffId, canScheduleClasses: canSchedule };
 
@@ -311,7 +312,7 @@ export default function InstructorSchedulePage() {
             {showEntityFilter(entityChoices) && (
               <FilterPill
                 label="Entity"
-                value={entityId ?? "all"}
+                value={entityId ?? ALL_ENTITIES}
                 options={entityFilterOptions(entityChoices)}
                 onChange={setEntityPick}
               />

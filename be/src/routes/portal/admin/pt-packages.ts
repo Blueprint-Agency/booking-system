@@ -9,12 +9,11 @@ import {
 } from '../../../services/packages/promotions'
 import { tenantId } from '../../../middleware/tenant'
 import { explainInvalid } from '../../explain-invalid'
-import { entityFieldsFor, type EntityFields } from '../../entity-fields'
-import { previewMove } from '../../../services/packages/entity-move'
+import { entityIdField } from '../../entity-fields'
+import { entityFieldsFor, type EntityFields } from '../../../services/catalog/entities'
+import { packageEntityPreview } from './package-entity-preview'
 import {
   entityFilterField,
-  entityIdField,
-  movePreviewQuery,
   nameField,
   priceField,
   promotionsField,
@@ -118,13 +117,7 @@ const app = new Hono()
       }),
     })
   })
-  // How many members hold this package, before it is moved to another Entity.
-  // A read: the move itself is the PATCH, and cancels nothing.
-  .get('/:id/entity-preview', zValidator('param', idParam), zValidator('query', movePreviewQuery, explainPackage), async c => {
-    const { id } = c.req.valid('param')
-    const { entity_id } = c.req.valid('query')
-    return c.json(await previewMove(tenantId(c), 'pt', id, entity_id))
-  })
+  .route('/', packageEntityPreview('pt', explainPackage))
   .get('/:id', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     return c.json(await serializeWithPromos(tenantId(c), await svc.getPtPackage(tenantId(c), id)))

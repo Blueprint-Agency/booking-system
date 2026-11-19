@@ -45,7 +45,7 @@ import type { ClassAction, WaitlistPlace } from "@/lib/waitlist";
 import { clashNote, type ApiClash } from "@/lib/clash";
 import { formatClassTime, formatDate } from "@/lib/studio-time";
 import { useStudioZone } from "@/components/brand/brand-provider";
-import { packagesHref, type ApiEntityRef } from "@/lib/packages-href";
+import { packagesHref, type PublicEntity } from "@/lib/entities";
 
 type Load =
   | { state: "loading" }
@@ -416,7 +416,7 @@ function PrimaryAction({
 }: {
   action: ClassAction;
   /** The class's Entity: where "See packages" goes. */
-  entity: ApiEntityRef | null | undefined;
+  entity: PublicEntity | null | undefined;
   joining: boolean;
   onBook: () => void;
   onJoinWaitlist: () => void;

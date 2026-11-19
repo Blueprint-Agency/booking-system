@@ -40,7 +40,7 @@ import {
 import { toast } from "sonner";
 import { LeaveWaitlistDialog } from "@/components/booking/leave-waitlist-dialog";
 import { ConfirmBookingSheet } from "@/components/booking/confirm-booking-sheet";
-import { packagesHref } from "@/lib/packages-href";
+import { packagesHref } from "@/lib/entities";
 import { ClassDetailOverlay } from "@/components/booking/class-detail-overlay";
 import { BookedCelebration } from "@/components/booking/booked-celebration";
 import { CancelBookingDialog, type CancelOutcome } from "@/components/account/cancel-booking-dialog";
