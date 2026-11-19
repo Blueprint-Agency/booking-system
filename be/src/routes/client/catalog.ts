@@ -13,6 +13,7 @@ import { getClientEntitlements, serializeUnlimitedPlan } from '../../services/pa
 import { memberPackagesForClass, serializeMemberPackageForClass } from '../../services/bookings/book'
 import { NotFoundError } from '../../shared/errors'
 import { tenantId } from '../../middleware/tenant'
+import { entityFieldsFor, type EntityFields } from '../entity-fields'
 import * as workshopsSvc from '../../services/workshops/catalog'
 import { listMyWorkshopBookings } from '../../services/workshops/my-bookings'
 import { listCorporatePackages } from '../../services/packages/corporate-packages'
@@ -51,9 +52,11 @@ function serializeClassPackage(
   r: classSvc.ClassPackageRow,
   promos: ReturnType<typeof serializePromotion>[],
   effective: { effectivePriceSgd: string; appliedPromotionId: string | null },
+  entity: EntityFields,
 ) {
   return {
     id: r.id,
+    ...entity,
     name: r.name,
     description: r.description,
     kind: r.kind,
@@ -71,9 +74,11 @@ function serializePtPackage(
   r: ptSvc.PtPackageRow,
   promos: ReturnType<typeof serializePromotion>[],
   effective: { effectivePriceSgd: string; appliedPromotionId: string | null },
+  entity: EntityFields,
 ) {
   return {
     id: r.id,
+    ...entity,
     name: r.name,
     description: r.description,
     session_type: r.sessionType,
@@ -151,10 +156,11 @@ const app = new Hono()
       rows.map(r => r.id),
     )
     const ent = await getClientEntitlements(tenantId(c), clientId)
+    const entities = await entityFieldsFor(tenantId(c), rows)
     return c.json({
-      class_packages: rows.map(r => {
+      class_packages: rows.map((r, i) => {
         const ps = promos[r.id] ?? []
-        return serializeClassPackage(r, ps.map(serializePromotion), bestPrice(r.priceSgd, ps))
+        return serializeClassPackage(r, ps.map(serializePromotion), bestPrice(r.priceSgd, ps), entities[i]!)
       }),
       entitlements: {
         trial_used: ent.trialUsed,
@@ -181,19 +187,22 @@ const app = new Hono()
       'pt_package',
       rows.map(r => r.id),
     )
+    const entities = await entityFieldsFor(tenantId(c), rows)
     return c.json({
-      pt_packages: rows.map(r => {
+      pt_packages: rows.map((r, i) => {
         const ps = promos[r.id] ?? []
-        return serializePtPackage(r, ps.map(serializePromotion), bestPrice(r.priceSgd, ps))
+        return serializePtPackage(r, ps.map(serializePromotion), bestPrice(r.priceSgd, ps), entities[i]!)
       }),
     })
   })
   // Corporate catalogue — surfaced to signed-in members (no promotions).
   .get('/corporate-packages', async c => {
     const rows = await listCorporatePackages(tenantId(c), { status: 'active' })
+    const entities = await entityFieldsFor(tenantId(c), rows)
     return c.json({
-      corporate_packages: rows.map(r => ({
+      corporate_packages: rows.map((r, i) => ({
         id: r.id,
+        ...entities[i]!,
         name: r.name,
         description: r.description,
         price_sgd: r.priceSgd,

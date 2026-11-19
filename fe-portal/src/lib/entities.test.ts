@@ -3,10 +3,15 @@ import assert from "node:assert";
 import { ApiError } from "./api";
 import {
   classTypeBody,
+  defaultEntityId,
   entityFromApi,
   entityRefusal,
+  filterByEntity,
   movePreviewSentence,
   moveInOrder,
+  moveNotice,
+  packageEntityFromApi,
+  showEntityFilter,
   slugFromName,
   usageSentence,
 } from "./entities";
@@ -107,4 +112,43 @@ test("SCH-77 the refusals a Class Type save can get for its Entity are said as s
   assert.match(refused(400, { error: "class_type_entity_inherited" }), /parent's entity/i);
   assert.match(refused(409, { error: "entity_archived" }), /archived/i);
   assert.match(refused(404, { error: "entity_not_found" }), /no longer there/i);
+});
+
+test("PKG-78 a package form's Entity defaults to the studio's first, and a studio with none yet starts empty", () => {
+  assert.equal(defaultEntityId([{ id: "yoga" }, { id: "pilates" }]), "yoga");
+  assert.equal(defaultEntityId([]), "");
+});
+
+test("PKG-78 the packages list names each package's Entity and filters by it, but only a studio with two or more is offered the filter", () => {
+  assert.equal(showEntityFilter([]), false);
+  assert.equal(showEntityFilter([{ id: "a" }]), false);
+  assert.equal(showEntityFilter([{ id: "a" }, { id: "b" }]), true);
+
+  const rows = [
+    { name: "Ten", entityId: "yoga" },
+    { name: "Reformer", entityId: "pilates" },
+    { name: "Old", entityId: null },
+    { name: "Older" },
+  ];
+  assert.deepEqual(filterByEntity(rows, "pilates").map((r) => r.name), ["Reformer"]);
+  assert.deepEqual(filterByEntity(rows, "").map((r) => r.name), ["Ten", "Reformer", "Old", "Older"]);
+
+  assert.deepEqual(packageEntityFromApi({ entity_id: "e1", entity: { id: "e1", name: "Pilates", slug: "pilates" } }), {
+    entityId: "e1",
+    entityName: "Pilates",
+  });
+  // A row from an API that predates Entities carries neither field.
+  assert.deepEqual(packageEntityFromApi({}), { entityId: null, entityName: null });
+});
+
+test("PKG-79 before a package is moved the admin is told how many members hold it, and that nothing is cancelled", () => {
+  assert.equal(moveNotice(0), "No member holds this package, so nobody is affected by the move.");
+  assert.equal(moveNotice(1), "1 member holds this package. It moves with it, and nothing is cancelled.");
+  assert.equal(moveNotice(12), "12 members hold this package. It moves with it, and nothing is cancelled.");
+});
+
+test("PKG-79 a package save the API refused for its Entity says why in a sentence", () => {
+  const refused = (error: string) => entityRefusal(new ApiError(409, { error }), "Save failed.");
+  assert.match(refused("entity_archived"), /archived/i);
+  assert.match(entityRefusal(new ApiError(404, { error: "entity_not_found" }), "Save failed."), /no longer there/i);
 });

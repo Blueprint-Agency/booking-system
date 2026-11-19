@@ -336,6 +336,8 @@ export function mapPackages(input: {
   balances: AccountBalanceRow[]
   config: StudioConfig
   tenantId: string
+  /** The Entity every package goes in: the studio's one, which the archive carries (`./mapper.ts`). */
+  entityId: string
   id: (kind: string, key: string) => string
   /** Mindbody key → platform id, filled in here for the three package tables. */
   ids: Record<string, Record<string, string>>
@@ -360,7 +362,7 @@ export function mapPackages(input: {
   /** Staff key (`normaliseStaffName`) → staff user id, for everyone coming across: a Bound Instructor must be one of them. */
   staffIds: Map<string, string>
 }): MappedPackages {
-  const { config, tenantId, id, ids, memberNames } = input
+  const { config, tenantId, entityId, id, ids, memberNames } = input
   const tz = config.studio.timezone
   const asOf = new Date(config.asOf)
   const today = localDateOf(asOf, tz)
@@ -384,6 +386,7 @@ export function mapPackages(input: {
     const status = e.migrate === 'sell' ? 'active' : 'archived'
     const common = {
       tenant_id: tenantId,
+      entity_id: entityId,
       name: e.name,
       description: null,
       price_sgd: money(e.priceSgd ?? 0),

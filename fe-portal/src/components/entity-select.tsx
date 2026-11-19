@@ -9,7 +9,9 @@ const NEW_ENTITY = "__new__";
  * An Entity dropdown with "+ New entity", so an admin can start a line such as
  * Pilates from the form that needs it without leaving. `onCreate` makes the
  * Entity (and says why if it cannot, by throwing a sentence); the new one is
- * chosen as soon as it exists.
+ * chosen as soon as it exists. Shared by the Class Type editor and the package
+ * forms (`components/packages/entity-picker.tsx`). `placeholder` is the
+ * disabled first option shown while nothing is chosen.
  */
 export function EntitySelect({
   id,
@@ -18,13 +20,15 @@ export function EntitySelect({
   onChange,
   onCreate,
   disabled,
+  placeholder,
 }: {
   id: string;
-  entities: Entity[];
+  entities: readonly { id: string; name: string }[];
   value: string;
   onChange: (entityId: string) => void;
   onCreate: (name: string) => Promise<Entity>;
   disabled?: boolean;
+  placeholder?: string;
 }) {
   const [naming, setNaming] = useState(false);
   const [name, setName] = useState("");
@@ -62,6 +66,7 @@ export function EntitySelect({
           onChange(e.target.value);
         }}
       >
+        {!value && !naming && <option value="">{placeholder ?? "Choose an entity"}</option>}
         {entities.map((e) => (
           <option key={e.id} value={e.id}>
             {e.name}

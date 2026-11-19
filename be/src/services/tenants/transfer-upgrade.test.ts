@@ -155,6 +155,40 @@ test('TEN-142 an archive from before migration 0145 restores each Class Type, su
   assert.deepEqual(current.class_types!.map(r => r.entity_id), ['first', null])
 })
 
+test('SUP-44 an archive whose packages name no Entity puts them in the first live Entity, and one whose packages already name theirs is left alone', () => {
+  const packages = { class_packages: [{ id: 'c1' }, { id: 'c2' }], pt_packages: [{ id: 'p1' }], corporate_packages: [{ id: 'k1' }] }
+
+  // Before Entities: the one synthesised "All classes" holds every package.
+  const old = upgradeArchiveRows(packages)
+  const [all] = old.entities!
+  assert.equal(all!.name, 'All classes')
+  for (const table of ['class_packages', 'pt_packages', 'corporate_packages']) {
+    for (const row of old[table]!) assert.equal(row.entity_id, all!.id, `${table} lands in it`)
+  }
+
+  // Entities, but taken before packages carried one: the first live Entity by position, archived ones passed over.
+  const between = upgradeArchiveRows({
+    ...packages,
+    entities: [
+      { id: 'barre', position: 0, archived_at: '2026-01-01T00:00:00Z' },
+      { id: 'pilates', position: 2, archived_at: null },
+      { id: 'yoga', position: 1, archived_at: null },
+    ],
+  })
+  assert.deepEqual(between.class_packages, [
+    { id: 'c1', entity_id: 'yoga' },
+    { id: 'c2', entity_id: 'yoga' },
+  ])
+  assert.deepEqual(between.corporate_packages, [{ id: 'k1', entity_id: 'yoga' }])
+
+  // Current: a package's own Entity, even one since archived, or none, is the studio's choice.
+  const current = {
+    entities: [{ id: 'yoga', position: 0, archived_at: null }, { id: 'barre', position: 1, archived_at: '2026-01-01T00:00:00Z' }],
+    class_packages: [{ id: 'c1', entity_id: 'barre' }, { id: 'c2', entity_id: null }],
+  }
+  assert.deepEqual(upgradeArchiveRows(current), current)
+})
+
 test("the caller's archive is not changed", () => {
   const archive = { leave_pools: [{ instructor_id: ADA }] }
   upgradeArchiveRows(archive)
