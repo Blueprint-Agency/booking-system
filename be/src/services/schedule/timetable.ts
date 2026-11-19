@@ -57,6 +57,12 @@ export interface ScheduleEntryRow {
   dayCount: number | null
   /** The Class Series a class was created by; null for anything else. */
   seriesId: string | null
+  /**
+   * A class's Class Type's Entity (null for a class whose type has none yet).
+   * Null for every other kind: a workshop belongs to no Entity, and a private or
+   * corporate session is not filed by one on the schedule.
+   */
+  entityId: string | null
 }
 
 interface ListScheduleOptions {
@@ -66,6 +72,14 @@ interface ListScheduleOptions {
   instructorId?: string
   classTypeId?: string
   locationId?: string
+  /**
+   * An Entity id. Narrows classes only, by their Class Type's Entity: workshops,
+   * private sessions and corporate sessions stay in view under every Entity (so
+   * unlike `classTypeId`, it does not switch workshops or corporate sessions off).
+   * An id that is no Entity of the studio's leaves no classes. An archived
+   * Entity's id is accepted: its past classes are still on the schedule.
+   */
+  entityId?: string
 }
 
 function firstNameOf(full: string): string {
@@ -102,11 +116,13 @@ export async function listSchedule(
     }
     if (opts.classTypeId) conds.push(eq(classes.classTypeId, opts.classTypeId))
     if (opts.locationId) conds.push(eq(classes.locationId, opts.locationId))
+    if (opts.entityId) conds.push(eq(classTypes.entityId, opts.entityId))
 
     const rows = await db
       .select({
         id: classes.id,
         classTypeId: classes.classTypeId,
+        entityId: classTypes.entityId,
         className: classTypes.name,
         instructorId: classes.mainInstructorId,
         locationId: classes.locationId,
@@ -178,6 +194,7 @@ export async function listSchedule(
         dayIndex: null,
         dayCount: null,
         seriesId: r.seriesId,
+        entityId: r.entityId ?? null,
       })
     }
   }
@@ -303,6 +320,7 @@ export async function listSchedule(
         dayIndex: r.ord,
         dayCount: dayCountMap.get(r.workshopId) ?? 1,
         seriesId: null,
+        entityId: null,
       })
     }
   }
@@ -377,6 +395,7 @@ export async function listSchedule(
       const names = namesBySession.get(r.id) ?? []
       out.push({
         kind: 'pt',
+        entityId: null,
         id: r.id,
         workshopId: null,
         label: `Private · ${names.join(' + ') || 'Unknown'}`,
@@ -468,6 +487,7 @@ export async function listSchedule(
       const supporting = supportingBySession.get(r.id) ?? []
       out.push({
         kind: 'corporate',
+        entityId: null,
         id: r.id,
         workshopId: null,
         label: r.packageName,
