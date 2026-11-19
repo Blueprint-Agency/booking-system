@@ -1,11 +1,11 @@
 import { z } from 'zod'
-import { and, eq, gte, inArray, isNull, lt } from 'drizzle-orm'
+import { and, eq, gte, inArray, isNull, lt, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { now as clockNow } from '../../lib/clock'
 import { publicObjectUrl } from '../../lib/r2'
 import { bookings } from '../../db/schema/bookings'
 import { classes, classSupportingInstructors } from '../../db/schema/schedule'
-import { classTypes, instructors, locations, rooms } from '../../db/schema/catalog'
+import { classTypes, entities, instructors, locations, rooms } from '../../db/schema/catalog'
 import { staffUsers } from '../../db/schema/identity'
 import { classDifficultyEnum } from '../../db/enums'
 import { NotFoundError } from '../../shared/errors'
@@ -18,7 +18,6 @@ import { namedClassRule, namedRuleJson } from './package-rules'
 import { classCancelWindow } from '../policy/cancel-window'
 import { localDateOf, zonedInstant } from './series-dates'
 import { loadTenantById } from '../tenants/tenants'
-import { entityRefsFor, type EntityRef } from '../catalog/entities'
 import { dateTime } from '../../shared/date-time'
 
 interface LocationLite {
@@ -28,16 +27,19 @@ interface LocationLite {
   gmaps_url: string | null
 }
 
+/** The Entity a class is under, read through its Class Type. */
+interface EntityRef {
+  id: string
+  name: string
+  slug: string
+}
+
 interface ClassCardPayload {
   id: string
   class_type: { id: string; name: string; difficulty: ClassLevel; entity_id: string | null }
-  instructor: { id: string; name: string; photo_url: string | null }
-  /**
-   * The class's Entity (its Class Type's): the one whose packages can pay for it,
-   * and whose Packages page the Book sheet's "buy a package" link opens. Null for
-   * a Class Type with no Entity.
-   */
+  /** Null only for a Class Type with no Entity (a fixture, or an old archive's). */
   entity: EntityRef | null
+  instructor: { id: string; name: string; photo_url: string | null }
   main_instructor_id: string
   supporting_instructor_ids: string[]
   /** Back-compat — [main, ...supporting]. */
@@ -86,6 +88,8 @@ interface ClassListFilters {
   instructorId?: string
   classTypeId?: string
   level?: ClassLevel
+  /** A live Entity's slug, in any casing. One that names no live Entity of the studio lists nothing. */
+  entitySlug?: string
 }
 
 const classFiltersSchema = z.object({
@@ -93,6 +97,7 @@ const classFiltersSchema = z.object({
   instructor_id: z.string().uuid().optional(),
   class_type_id: z.string().uuid().optional(),
   level: z.enum(classDifficultyEnum.enumValues).optional(),
+  entity: z.string().min(1).max(60).optional(),
   from: dateTime('A from time').optional(),
   to: dateTime('A to time').optional(),
 })
@@ -104,9 +109,20 @@ export function parseClassFilters(raw: Record<string, string>): ClassListFilters
     instructorId: q.instructor_id,
     classTypeId: q.class_type_id,
     level: q.level,
+    entitySlug: q.entity,
     from: q.from ? new Date(q.from) : undefined,
     to: q.to ? new Date(q.to) : undefined,
   }
+}
+
+/** The Entity columns a class read selects, as the payload's `entity`. */
+function entityRef(r: {
+  classEntityId: string | null
+  entityName: string | null
+  entitySlug: string | null
+}): EntityRef | null {
+  if (!r.classEntityId || r.entityName === null || r.entitySlug === null) return null
+  return { id: r.classEntityId, name: r.entityName, slug: r.entitySlug }
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -154,6 +170,10 @@ export async function listClassCards(
   if (filters.instructorId) conds.push(eq(classes.mainInstructorId, filters.instructorId))
   if (filters.classTypeId) conds.push(eq(classes.classTypeId, filters.classTypeId))
   if (filters.level) conds.push(eq(classTypes.difficulty, filters.level))
+  // An archived Entity is not one a member can choose, so its slug selects nothing.
+  if (filters.entitySlug) {
+    conds.push(isNull(entities.archivedAt), sql`lower(${entities.slug}) = lower(${filters.entitySlug})`)
+  }
 
   const rows = await db
     .select({
@@ -162,6 +182,8 @@ export async function listClassCards(
       className: classTypes.name,
       classDifficulty: classTypes.difficulty,
       classEntityId: classTypes.entityId,
+      entityName: entities.name,
+      entitySlug: entities.slug,
       instructorId: classes.mainInstructorId,
       instructorName: staffUsers.name,
       instructorPhotoKey: staffUsers.photoR2Key,
@@ -180,6 +202,7 @@ export async function listClassCards(
     })
     .from(classes)
     .innerJoin(classTypes, eq(classes.classTypeId, classTypes.id))
+    .leftJoin(entities, and(eq(entities.id, classTypes.entityId), eq(entities.tenantId, tenantId)))
     .innerJoin(instructors, eq(classes.mainInstructorId, instructors.staffUserId))
     .innerJoin(staffUsers, eq(instructors.staffUserId, staffUsers.id))
     .innerJoin(locations, eq(classes.locationId, locations.id))
@@ -210,14 +233,13 @@ export async function listClassCards(
   )
 
   const windowHours = await classCancelWindow(tenantId)
-  const entityRefs = await entityRefsFor(tenantId, rows.map(r => r.classEntityId ?? null))
 
   return rows.map(r => {
     const supporting = supportingByClass.get(r.id) ?? []
     return {
       id: r.id,
       class_type: { id: r.classTypeId, name: r.className, difficulty: r.classDifficulty, entity_id: r.classEntityId ?? null },
-      entity: r.classEntityId ? (entityRefs.get(r.classEntityId) ?? null) : null,
+      entity: entityRef(r),
       instructor: {
         id: r.instructorId,
         name: r.instructorName || 'Instructor',
@@ -266,6 +288,8 @@ export async function getClassDetail(
       classDifficulty: classTypes.difficulty,
       classDescription: classTypes.description,
       classEntityId: classTypes.entityId,
+      entityName: entities.name,
+      entitySlug: entities.slug,
       instructorId: classes.mainInstructorId,
       instructorName: staffUsers.name,
       instructorPhotoKey: staffUsers.photoR2Key,
@@ -284,6 +308,7 @@ export async function getClassDetail(
     })
     .from(classes)
     .innerJoin(classTypes, eq(classes.classTypeId, classTypes.id))
+    .leftJoin(entities, and(eq(entities.id, classTypes.entityId), eq(entities.tenantId, tenantId)))
     .innerJoin(instructors, eq(classes.mainInstructorId, instructors.staffUserId))
     .innerJoin(staffUsers, eq(instructors.staffUserId, staffUsers.id))
     .innerJoin(locations, eq(classes.locationId, locations.id))
@@ -332,7 +357,7 @@ export async function getClassDetail(
       description: r.classDescription,
       entity_id: r.classEntityId ?? null,
     },
-    entity: r.classEntityId ? ((await entityRefsFor(tenantId, [r.classEntityId])).get(r.classEntityId) ?? null) : null,
+    entity: entityRef(r),
     instructor: {
       id: r.instructorId,
       name: r.instructorName || 'Instructor',

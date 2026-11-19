@@ -8,7 +8,6 @@ import type { ApiClassWaitlist } from "./waitlist";
 import type { ApiClash } from "./clash";
 import type { PickerPayload, UnlimitedPlanCoverage } from "./package-picker";
 import type { ApiPackageRule } from "./package-rule";
-import type { ApiEntityRef } from "./packages-href";
 
 export interface ApiClassLocation {
   id: string;
@@ -28,6 +27,8 @@ export interface ApiInstructorRef {
 export interface ApiClassCard {
   id: string;
   class_type: { id: string; name: string };
+  /** The Entity the class is under, through its Class Type. Optional: a backend from before Entities omits it. */
+  entity?: { id: string; name: string; slug: string } | null;
   /** Main instructor — kept for back-compat alongside `main_instructor_id`. */
   instructor: ApiInstructorRef;
   main_instructor_id: string;
@@ -55,12 +56,6 @@ export interface ApiClassCard {
    * the flag, for the row's "Some packages" hint; which ones is in the detail.
    */
   restricted: boolean;
-  /**
-   * The class's Entity: whose packages can pay for it, and where "buy a package"
-   * goes. Optional: a backend from before Entities does not send it, and a Class
-   * Type with none sends null.
-   */
-  entity?: ApiEntityRef | null;
 }
 
 /**
@@ -87,6 +82,8 @@ export interface ClassFilters {
   location_id?: string;
   instructor_id?: string;
   class_type_id?: string;
+  /** An Entity's slug. Part of the cache key with the rest, so one Entity's list is never drawn under another. */
+  entity?: string;
   from?: string;
   to?: string;
 }

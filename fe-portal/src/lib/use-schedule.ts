@@ -19,6 +19,12 @@ export interface ScheduleFilters {
   instructorId?: string;
   classTypeId?: string;
   locationId?: string;
+  /**
+   * An Entity id (not a slug: the member app's routes take one). Narrows
+   * classes on every surface, My schedule included; workshops, private and
+   * corporate sessions stay in view.
+   */
+  entityId?: string;
 }
 
 /**
@@ -45,7 +51,7 @@ export function useSchedule(
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const { from, to, type, instructorId, classTypeId, locationId } = filters;
+  const { from, to, type, instructorId, classTypeId, locationId, entityId } = filters;
   const path = TIMETABLE_PATH[opts.surface ?? "admin"];
   const enabled = opts.enabled ?? true;
 
@@ -72,6 +78,7 @@ export function useSchedule(
         instructor_id: instructorId,
         class_type_id: classTypeId,
         location_id: locationId,
+        entity: entityId,
       };
       const res = await api.get<{ entries: ApiScheduleEntry[] }>(path, query);
       if (seq !== latest.current) return;
@@ -88,7 +95,7 @@ export function useSchedule(
     } finally {
       if (seq === latest.current) setLoading(false);
     }
-  }, [api, enabled, path, from, to, type, instructorId, classTypeId, locationId]);
+  }, [api, enabled, path, from, to, type, instructorId, classTypeId, locationId, entityId]);
 
   useEffect(() => {
     void load();

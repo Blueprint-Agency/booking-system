@@ -1,4 +1,4 @@
-import { and, eq, inArray, type SQL } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { db } from '../../db'
 import {
@@ -69,6 +69,8 @@ export interface ClassDetail {
   startsAt: Date
   endsAt: Date
   classType: NamedRef | null
+  /** The Class Type's Entity; null for a type that has none yet. */
+  entityId: string | null
   difficulty: ClassDifficulty
   instructor: NamedRef | null
   mainInstructorId: string
@@ -119,7 +121,7 @@ export async function getClassDetail(tenantId: string, id: string): Promise<Clas
       instructorPaySgd: classes.instructorPaySgd,
       classTypeId: classes.classTypeId,
       classTypeName: classTypes.name,
-      classEntityId: classTypes.entityId as SQL<string | null>,
+      entityId: classTypes.entityId,
       difficulty: classTypes.difficulty,
       instructorId: classes.mainInstructorId,
       instructorName: staffUsers.name,
@@ -217,7 +219,7 @@ export async function getClassDetail(tenantId: string, id: string): Promise<Clas
     locationId: row.locationId,
     startsAt: row.startsAt,
     creditCost: row.creditCost,
-    entityId: row.classEntityId,
+    entityId: row.entityId ?? null,
     rule,
   })
 
@@ -250,6 +252,7 @@ export async function getClassDetail(tenantId: string, id: string): Promise<Clas
     startsAt: row.startsAt,
     endsAt: row.endsAt,
     classType: row.classTypeName ? { id: row.classTypeId, name: row.classTypeName } : null,
+    entityId: row.entityId ?? null,
     difficulty: row.difficulty as ClassDifficulty,
     instructor: row.instructorName ? { id: row.instructorId, name: row.instructorName } : null,
     mainInstructorId: row.instructorId,
