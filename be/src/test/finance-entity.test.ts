@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { after, before, describe, test } from 'node:test'
 import { randomUUID } from 'node:crypto'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
 
 const run = Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36)
@@ -595,7 +595,50 @@ describe('Finance by Entity over HTTP', { skip: integrationTestsEnabled ? false 
     twoSale = await plan(two.id, kai, at(2), '999.00', { classPackageId: theirs })
   })
 
-  after(() => harness.close())
+  /**
+   * Every row this file wrote, gone again. The two fixture studios are shared by
+   * every other file on this database, and isolation.test.ts states studio
+   * two's gross to the cent, so a sale left standing here is somebody else's
+   * failure on the next run. Everything is found by the run's email domain or
+   * the run's suffix on a name.
+   */
+  after(async () => {
+    if (!harness) return
+    harness.clock.reset()
+    const ours = `%@${DOMAIN}`
+    const suffix = `% ${run}`
+    const clients = sql`SELECT id FROM clients WHERE email LIKE ${ours}`
+    const staffIds = sql`SELECT id FROM staff_users WHERE email LIKE ${ours}`
+    const workshopIds = sql`SELECT id FROM workshops WHERE name LIKE ${suffix}`
+    await harness.db.execute(sql`DELETE FROM audit_log WHERE actor_staff_id IN (${staffIds})`)
+    await harness.db.execute(sql`DELETE FROM manual_payroll_entries WHERE instructor_id IN (${staffIds}) OR created_by_staff_id IN (${staffIds})`)
+    await harness.db.execute(sql`DELETE FROM bookings WHERE client_id IN (${clients})`)
+    await harness.db.execute(sql`DELETE FROM workshop_tier_days WHERE workshop_tier_id IN (SELECT id FROM workshop_tiers WHERE workshop_id IN (${workshopIds}))`)
+    await harness.db.execute(sql`DELETE FROM workshop_tiers WHERE workshop_id IN (${workshopIds})`)
+    await harness.db.execute(sql`DELETE FROM workshop_days WHERE workshop_id IN (${workshopIds})`)
+    await harness.db.execute(sql`DELETE FROM workshop_instructors WHERE workshop_id IN (${workshopIds})`)
+    await harness.db.execute(sql`DELETE FROM workshops WHERE name LIKE ${suffix}`)
+    await harness.db.execute(sql`DELETE FROM pt_sessions WHERE scheduled_by_staff_id IN (${staffIds})`)
+    await harness.db.execute(sql`DELETE FROM pt_requests WHERE client_id IN (${clients})`)
+    await harness.db.execute(sql`DELETE FROM class_supporting_instructors WHERE instructor_id IN (${staffIds})`)
+    await harness.db.execute(sql`DELETE FROM classes WHERE created_by_staff_id IN (${staffIds})`)
+    await harness.db.execute(sql`DELETE FROM corporate_requests WHERE client_id IN (${clients})`)
+    await harness.db.execute(sql`DELETE FROM stripe_payments WHERE client_id IN (${clients})`)
+    await harness.db.execute(sql`DELETE FROM client_packages WHERE client_id IN (${clients})`)
+    await harness.db.execute(sql`DELETE FROM receipts WHERE client_id IN (${clients})`)
+    await harness.db.execute(sql`DELETE FROM purchases WHERE client_id IN (${clients})`)
+    await harness.db.execute(sql`DELETE FROM merch_orders WHERE client_id IN (${clients})`)
+    await harness.db.execute(sql`DELETE FROM clients WHERE email LIKE ${ours}`)
+    await harness.db.execute(sql`DELETE FROM corporate_packages WHERE name LIKE ${suffix}`)
+    await harness.db.execute(sql`DELETE FROM class_packages WHERE name LIKE ${suffix}`)
+    await harness.db.execute(sql`DELETE FROM pt_packages WHERE name LIKE ${suffix}`)
+    await harness.db.execute(sql`DELETE FROM class_types WHERE name LIKE ${suffix}`)
+    await harness.db.execute(sql`DELETE FROM entities WHERE name LIKE ${suffix}`)
+    await harness.db.execute(sql`DELETE FROM instructors WHERE staff_user_id IN (${staffIds})`)
+    await harness.db.execute(sql`DELETE FROM staff_users WHERE email LIKE ${ours}`)
+    await harness.db.execute(sql`DELETE FROM staff_auth_users WHERE email LIKE ${ours}`)
+    await harness.close()
+  })
 
   // ── attribution ──────────────────────────────────────────────────────────
 
