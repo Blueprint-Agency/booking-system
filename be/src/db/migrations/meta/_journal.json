@@ -995,6 +995,62 @@
       "when": 1793434006111,
       "tag": "0141_drop_unused_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 142,
+      "version": "7",
+      "when": 1795012052863,
+      "tag": "0142_entities",
+      "breakpoints": true
+    },
+    {
+      "idx": 143,
+      "version": "7",
+      "when": 1795012073681,
+      "tag": "0143_entities_all_classes",
+      "breakpoints": true
+    },
+    {
+      "idx": 144,
+      "version": "7",
+      "when": 1795013637960,
+      "tag": "0144_class_types_entity",
+      "breakpoints": true
+    },
+    {
+      "idx": 145,
+      "version": "7",
+      "when": 1795013650000,
+      "tag": "0145_class_types_entity_backfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 146,
+      "version": "7",
+      "when": 1795048850086,
+      "tag": "0146_package_entity",
+      "breakpoints": true
+    },
+    {
+      "idx": 147,
+      "version": "7",
+      "when": 1795048860000,
+      "tag": "0147_package_entity_backfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 148,
+      "version": "7",
+      "when": 1795049685494,
+      "tag": "0148_trial_once_per_entity",
+      "breakpoints": true
+    },
+    {
+      "idx": 149,
+      "version": "7",
+      "when": 1795099756165,
+      "tag": "0149_client_packages_client_id_index",
+      "breakpoints": true
     }
   ]
 }

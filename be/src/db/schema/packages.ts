@@ -16,7 +16,7 @@ import {
 import { sql } from 'drizzle-orm'
 import { tenantIdColumn } from './tenancy'
 import { clients, staffUsers } from './identity'
-import { locations } from './catalog'
+import { entities, locations } from './catalog'
 // A cycle on purpose: `ledger` already points here, and now a plan points back
 // at the sale that bought it. Every reference across the pair is a lazy
 // callback, so whichever module the loader reaches first finishes without
@@ -43,6 +43,13 @@ export const classPackages = pgTable(
   {
     tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    // The Entity this package is sold under (be/CONTEXT.md § Entity). Nullable
+    // only for this deploy (migrations/README.md rule 0): the services and the
+    // admin routes always fill it, and the backfill put every existing package
+    // in its studio's first Entity. A package a member holds has no column of
+    // its own: it reads this one through `source_*_package_id`, so moving the
+    // package moves what every member holds with it.
+    entityId: uuid('entity_id').references(() => entities.id, { onDelete: 'restrict' }),
     name: text('name').notNull(),
     description: text('description'),
     kind: classPackageKindEnum('kind').notNull(),
@@ -57,6 +64,7 @@ export const classPackages = pgTable(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   table => ({
+    entityIdFkIdx: index('class_packages_entity_id_fk_idx').on(table.entityId),
     statusKindIdx: index('class_packages_status_kind_idx').on(table.tenantId, table.status, table.kind),
     deletedIdx: index('class_packages_deleted_idx').on(table.tenantId, table.deletedAt),
     // Kind-specific column requirements per §4d:
@@ -94,6 +102,8 @@ export const ptPackages = pgTable(
   {
     tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    // The Entity this package is sold under; see `class_packages.entity_id`.
+    entityId: uuid('entity_id').references(() => entities.id, { onDelete: 'restrict' }),
     name: text('name').notNull(),
     description: text('description'),
     sessionType: ptSessionTypeEnum('session_type').notNull(),
@@ -118,6 +128,7 @@ export const ptPackages = pgTable(
   },
   table => ({
     tenantIdFkIdx: index('pt_packages_tenant_id_fk_idx').on(table.tenantId),
+    entityIdFkIdx: index('pt_packages_entity_id_fk_idx').on(table.entityId),
     validityPositive: check(
       'pt_packages_validity_days_positive',
       sql`${table.validityDays} > 0`,
@@ -420,6 +431,9 @@ export const clientPackages = pgTable(
     }),
   },
   table => ({
+    // Migration 0148 dropped the one-trial index, which was the only index
+    // leading with `client_id`; this one keeps a delete of a client off a scan.
+    clientIdFkIdx: index('client_packages_client_id_fk_idx').on(table.clientId),
     appliedPromoCodeIdFkIdx: index('client_packages_applied_promo_code_id_fk_idx').on(table.appliedPromoCodeId),
     appliedPromotionIdFkIdx: index('client_packages_applied_promotion_id_fk_idx').on(table.appliedPromotionId),
     boundInstructorIdFkIdx: index('client_packages_bound_instructor_id_fk_idx').on(table.boundInstructorId),
@@ -435,12 +449,10 @@ export const clientPackages = pgTable(
     purchaseUnique: uniqueIndex('client_packages_purchase_unique')
       .on(table.tenantId, table.purchaseId)
       .where(sql`${table.purchaseId} IS NOT NULL`),
-    // One-trial-per-client-ever invariant (fe-client-features.md §6.1) — partial unique.
-    // A previously-purchased trial (active OR expired) blocks any further trial purchase;
-    // the purchase service catches the unique-violation and returns `409 trial_already_used`.
-    trialUniquePerClient: uniqueIndex('client_packages_trial_unique_per_client')
-      .on(table.clientId)
-      .where(sql`${table.kind} = 'trial'`),
+    // No "one trial per client" index: a trial is once per Entity, and a held
+    // package carries no Entity of its own (it is its catalogue source's), so no
+    // index can say it. `assertNoTrialInEntity` (services/packages/trial-standing.ts)
+    // decides, under the member's row lock; migration 0148 dropped the index.
     // No "one Activated package per Family" index: any number of packages may
     // run at once in either Family, and the member picks the payer
     // (be/docs/adr/0010; migration 0093 dropped the two partial unique indexes).
@@ -490,6 +502,10 @@ export const corporatePackages = pgTable(
   {
     tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    // The Entity this package is sold under; see `class_packages.entity_id`.
+    // No member holds a corporate package as a `client_packages` row, so a move
+    // strands nobody.
+    entityId: uuid('entity_id').references(() => entities.id, { onDelete: 'restrict' }),
     name: text('name').notNull(),
     description: text('description'),
     priceSgd: numeric('price_sgd', { precision: 10, scale: 2 }).notNull(),
@@ -502,6 +518,7 @@ export const corporatePackages = pgTable(
       .references(() => staffUsers.id, { onDelete: 'restrict' }),
   },
   table => ({
+    entityIdFkIdx: index('corporate_packages_entity_id_fk_idx').on(table.entityId),
     createdByStaffIdFkIdx: index('corporate_packages_created_by_staff_id_fk_idx').on(table.createdByStaffId),
     statusIdx: index('corporate_packages_status_idx').on(table.tenantId, table.status),
     deletedIdx: index('corporate_packages_deleted_idx').on(table.tenantId, table.deletedAt),

@@ -324,6 +324,7 @@ describe('impossible dates and times are refused', { skip: integrationTestsEnabl
   }
 
   const DATE_SENTENCE = /date like/i
+  let entityId!: string
 
   // ── setup ────────────────────────────────────────────────────────────────
 
@@ -346,6 +347,14 @@ describe('impossible dates and times are refused', { skip: integrationTestsEnabl
       .where(eq(schema.locations.tenantId, one.id))
       .limit(1)
     locationId = location!.id
+    // Packages are sold under an Entity, which the routes require: the studio's first.
+    const [firstEntity] = await harness.db
+      .select({ id: schema.entities.id })
+      .from(schema.entities)
+      .where(eq(schema.entities.tenantId, one.id))
+      .orderBy(schema.entities.position)
+      .limit(1)
+    entityId = firstEntity!.id
     const [room] = await harness.db
       .insert(schema.rooms)
       .values({ tenantId: one.id, locationId, name: `${TAG} room`, capacity: 20 })
@@ -901,6 +910,7 @@ describe('impossible dates and times are refused', { skip: integrationTestsEnabl
             path: portal('/admin/class-packages'),
             body: {
               name: `${TAG} promoted pass ${made++}`,
+              entity_id: entityId,
               kind: 'credit_bundle',
               credits: 5,
               validity_days: 60,
@@ -918,6 +928,7 @@ describe('impossible dates and times are refused', { skip: integrationTestsEnabl
             path: portal('/admin/pt-packages'),
             body: {
               name: `${TAG} promoted sessions ${made++}`,
+              entity_id: entityId,
               session_type: '1on1',
               num_sessions: 5,
               validity_days: 90,
@@ -952,22 +963,22 @@ describe('impossible dates and times are refused', { skip: integrationTestsEnabl
     for (const [path, body, promotion] of [
       [
         '/admin/class-packages',
-        { name: `${TAG} half-saved pass`, kind: 'credit_bundle', credits: 5, validity_days: 60, price_sgd: '100.00' },
+        { name: `${TAG} half-saved pass`, entity_id: entityId, kind: 'credit_bundle', credits: 5, validity_days: 60, price_sgd: '100.00' },
         endsBeforeStart,
       ],
       [
         '/admin/pt-packages',
-        { name: `${TAG} half-saved sessions`, session_type: '1on1', num_sessions: 5, validity_days: 90, price_sgd: '400.00' },
+        { name: `${TAG} half-saved sessions`, entity_id: entityId, session_type: '1on1', num_sessions: 5, validity_days: 90, price_sgd: '400.00' },
         endsBeforeStart,
       ],
       [
         '/admin/class-packages',
-        { name: `${TAG} half-saved pass`, kind: 'credit_bundle', credits: 5, validity_days: 60, price_sgd: '100.00' },
+        { name: `${TAG} half-saved pass`, entity_id: entityId, kind: 'credit_bundle', credits: 5, validity_days: 60, price_sgd: '100.00' },
         noPercent,
       ],
       [
         '/admin/pt-packages',
-        { name: `${TAG} half-saved sessions`, session_type: '1on1', num_sessions: 5, validity_days: 90, price_sgd: '400.00' },
+        { name: `${TAG} half-saved sessions`, entity_id: entityId, session_type: '1on1', num_sessions: 5, validity_days: 90, price_sgd: '400.00' },
         noPercent,
       ],
     ] as const) {
@@ -1003,12 +1014,12 @@ describe('impossible dates and times are refused', { skip: integrationTestsEnabl
       [
         '/admin/class-packages',
         'class_packages',
-        { name: `${TAG} edited pass`, kind: 'credit_bundle', credits: 5, validity_days: 60, price_sgd: '100.00' },
+        { name: `${TAG} edited pass`, entity_id: entityId, kind: 'credit_bundle', credits: 5, validity_days: 60, price_sgd: '100.00' },
       ],
       [
         '/admin/pt-packages',
         'pt_packages',
-        { name: `${TAG} edited sessions`, session_type: '1on1', num_sessions: 5, validity_days: 90, price_sgd: '400.00' },
+        { name: `${TAG} edited sessions`, entity_id: entityId, session_type: '1on1', num_sessions: 5, validity_days: 90, price_sgd: '400.00' },
       ],
     ] as const) {
       const made = await ok('admin', { method: 'POST', path: portal(path), body: { ...body, promotions: [original] } }, 201)
@@ -1062,7 +1073,7 @@ describe('impossible dates and times are refused', { skip: integrationTestsEnabl
           send: v => ({
             method: 'POST',
             path: portal('/admin/class-packages'),
-            body: { name: `${TAG} ordered pass ${made++}`, kind: 'credit_bundle', credits: 5, validity_days: 60, price_sgd: '100.00', promotions: [promotion(v)] },
+            body: { name: `${TAG} ordered pass ${made++}`, entity_id: entityId, kind: 'credit_bundle', credits: 5, validity_days: 60, price_sgd: '100.00', promotions: [promotion(v)] },
           }),
           valid: after,
           says: /end after it starts/i,
@@ -1080,7 +1091,7 @@ describe('impossible dates and times are refused', { skip: integrationTestsEnabl
           send: v => ({
             method: 'POST',
             path: portal('/admin/pt-packages'),
-            body: { name: `${TAG} ordered sessions ${made++}`, session_type: '1on1', num_sessions: 5, validity_days: 90, price_sgd: '400.00', promotions: [promotion(v)] },
+            body: { name: `${TAG} ordered sessions ${made++}`, entity_id: entityId, session_type: '1on1', num_sessions: 5, validity_days: 90, price_sgd: '400.00', promotions: [promotion(v)] },
           }),
           valid: after,
           says: /end after it starts/i,

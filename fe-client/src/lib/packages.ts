@@ -3,6 +3,7 @@
 import { useMemberSession } from "./member-auth";
 import { ApiError, publicApi, useApi } from "./api";
 import { useCachedResource } from "./resource-cache";
+import type { TrialEntitlements } from "./trial-standing";
 
 // ── Wire types (snake_case as returned by BE) ────────────────────────────────
 
@@ -31,6 +32,16 @@ export interface ApiClassPackage {
   effective_price_sgd: string;
   applied_promotion_id: string | null;
   promotions: ApiPromotion[];
+  /** The Entity it is sold under. Optional: an older server does not send it. */
+  entity_id?: string | null;
+  entity?: ApiPackageEntity | null;
+}
+
+/** The Entity a package belongs to, as every package read names it. */
+export interface ApiPackageEntity {
+  id: string;
+  name: string;
+  slug: string;
 }
 
 export interface ApiPtPackage {
@@ -50,12 +61,10 @@ export interface ApiPtPackage {
   effective_price_sgd: string;
   applied_promotion_id: string | null;
   promotions: ApiPromotion[];
+  entity?: ApiPackageEntity | null;
 }
 
-export interface CatalogEntitlements {
-  trial_used: boolean;
-  /** Trial is for brand-new members only — true iff the client owns no packages yet. */
-  trial_eligible: boolean;
+export interface CatalogEntitlements extends TrialEntitlements {
   has_active_unlimited: boolean;
   has_active_bundle_credits: boolean;
 }
@@ -74,8 +83,13 @@ export interface PackagesCatalog {
  *
  *   - signed in: GET /me/class-packages, GET /me/pt-packages
  *   - signed out: GET /public/packages
+ *
+ * `entity` is the Entity slug whose packages the page shows: a string narrows
+ * every read to it, `null` reads them all (a studio with one Entity), and
+ * `undefined` holds the read while the page still works out which Entity it is
+ * on. It is part of the cache key, or one Entity's list would be drawn under another's.
  */
-export function usePackagesCatalog(): {
+export function usePackagesCatalog(entity: string | null | undefined): {
   data: PackagesCatalog | null;
   loading: boolean;
   error: ApiError | Error | null;
@@ -83,17 +97,18 @@ export function usePackagesCatalog(): {
 } {
   const { isLoaded, session } = useMemberSession();
   const api = useApi();
+  const query = entity ? `?entity=${encodeURIComponent(entity)}` : "";
 
   return useCachedResource<PackagesCatalog>(
-    isLoaded ? `packages:${session?.userId ?? "public"}` : null,
+    isLoaded && entity !== undefined ? `packages:${session?.userId ?? "public"}:${entity ?? ""}` : null,
     async () => {
       if (session) {
         const [cls, pt] = await Promise.all([
           api.get<{
             class_packages: ApiClassPackage[];
             entitlements: CatalogEntitlements;
-          }>("/me/class-packages"),
-          api.get<{ pt_packages: ApiPtPackage[] }>("/me/pt-packages"),
+          }>(`/me/class-packages${query}`),
+          api.get<{ pt_packages: ApiPtPackage[] }>(`/me/pt-packages${query}`),
         ]);
         return {
           classPackages: cls.class_packages,
@@ -104,7 +119,7 @@ export function usePackagesCatalog(): {
       const res = await publicApi.get<{
         class_packages: ApiClassPackage[];
         pt_packages: ApiPtPackage[];
-      }>("/public/packages");
+      }>(`/public/packages${query}`);
       return {
         classPackages: res.class_packages,
         ptPackages: res.pt_packages,

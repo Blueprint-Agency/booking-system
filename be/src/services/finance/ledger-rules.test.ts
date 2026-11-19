@@ -21,6 +21,8 @@ function ev(p: Partial<MoneyEvent> & { kind: MoneyEvent['kind'] }): MoneyEvent {
     party: null,
     locationId: null,
     locationName: null,
+    entityId: null,
+    entityName: null,
     listPriceSgd: null,
     paidSgd: null,
     promoCode: null,

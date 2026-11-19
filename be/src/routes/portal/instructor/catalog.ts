@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import * as classTypesSvc from '../../../services/catalog/class-types'
+import * as entitiesSvc from '../../../services/catalog/entities'
 import * as instructorsSvc from '../../../services/catalog/instructors'
 import * as roomsSvc from '../../../services/catalog/rooms'
 import * as classPackagesSvc from '../../../services/packages/class-packages'
@@ -21,7 +22,16 @@ const app = new Hono()
   .get('/class-types', async c => {
     const rows = await classTypesSvc.listClassTypes(tenantId(c), { includeArchived: false })
     return c.json({
-      class_types: rows.map(r => ({ id: r.id, name: r.name, difficulty: r.difficulty })),
+      class_types: rows.map(r => ({ id: r.id, name: r.name, difficulty: r.difficulty, entity_id: r.entityId ?? null })),
+    })
+  })
+  // The studio's live Entities, in order, for the schedule's Entity filter: id,
+  // name, slug and position only (what each holds is the admin's to read). An
+  // archived Entity is left out; a filter by its id still answers, from history.
+  .get('/entities', async c => {
+    const rows = await entitiesSvc.listEntities(tenantId(c), { includeArchived: false })
+    return c.json({
+      entities: rows.map(r => ({ id: r.id, name: r.name, slug: r.slug, position: r.position })),
     })
   })
   // What a class's Package rule may name: every class package, archived ones

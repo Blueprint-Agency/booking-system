@@ -15,13 +15,13 @@
  * client's package rows are locked too so a double-click can't double-debit —
  * and so a Dormant package has exactly one writer at Activation.
  */
-import { and, eq, inArray, isNull } from 'drizzle-orm'
+import { and, eq, inArray, isNull, type SQL } from 'drizzle-orm'
 import { afterCommit, db } from '../../db'
 import { classes } from '../../db/schema/schedule'
 import { bookings } from '../../db/schema/bookings'
 import { clients } from '../../db/schema/identity'
 import { classPackages, clientPackages } from '../../db/schema/packages'
-import { locations } from '../../db/schema/catalog'
+import { classTypes, locations } from '../../db/schema/catalog'
 import type { BookingSeat } from '../../db/enums'
 import { generateBookingCodes } from './qr'
 import { countSeats, seatFor, type SeatRole } from './seats'
@@ -289,6 +289,8 @@ export interface LockedClass {
   mainInstructorId: string
   /** The class's Package rule mode; its list is read by `readClassRule` when it has one. */
   packageRuleMode: PackageRuleMode
+  /** The Entity of the class's Class Type: which packages can pay for a seat on it. */
+  entityId: string | null
 }
 
 /**
@@ -310,10 +312,14 @@ export async function lockClass(tx: Tx, tenantId: string, classId: string): Prom
       lifecycle: classes.lifecycle,
       mainInstructorId: classes.mainInstructorId,
       packageRuleMode: classes.packageRuleMode,
+      entityId: classTypes.entityId as SQL<string | null>,
     })
     .from(classes)
+    .innerJoin(classTypes, and(eq(classTypes.tenantId, classes.tenantId), eq(classTypes.id, classes.classTypeId)))
     .where(and(eq(classes.tenantId, tenantId), eq(classes.id, classId)))
-    .for('update')
+    // Only the class row: its Class Type is read, not locked, or every booking
+    // of one type would queue behind the one before it.
+    .for('update', { of: classes })
     .limit(1)
   return cls
 }
@@ -366,6 +372,9 @@ export function candidatePackages(reader: Tx | typeof db, tenantId: string, clie
       id: clientPackages.id,
       kind: clientPackages.kind,
       sourceClassPackageId: clientPackages.sourceClassPackageId,
+      // A held package belongs to the Entity of the catalogue package it was
+      // bought as. None where it has no source: it is then in no Entity.
+      entityId: classPackages.entityId,
       creditsOrSessionsRemaining: clientPackages.creditsOrSessionsRemaining,
       expiresAt: clientPackages.expiresAt,
       locationId: clientPackages.locationId,
@@ -490,6 +499,7 @@ export async function payAndBook(
     classLocationId: cls.locationId,
     classStartsAt: cls.startsAt,
     creditCost: cls.creditCost,
+    classEntityId: cls.entityId,
     rule: await readClassRule(tx, tenantId, cls),
     clientPackageId: input.clientPackageId,
     now,
@@ -630,8 +640,10 @@ async function readBookableClass(tenantId: string, classId: string) {
       lifecycle: classes.lifecycle,
       packageRuleMode: classes.packageRuleMode,
       mainInstructorId: classes.mainInstructorId,
+      entityId: classTypes.entityId as SQL<string | null>,
     })
     .from(classes)
+    .innerJoin(classTypes, and(eq(classTypes.tenantId, classes.tenantId), eq(classTypes.id, classes.classTypeId)))
     .where(and(eq(classes.tenantId, tenantId), eq(classes.id, classId)))
     .limit(1)
   return cls && cls.lifecycle === 'active' ? cls : null
@@ -657,6 +669,7 @@ async function classifyForClass(tenantId: string, clientId: string, cls: Bookabl
     classLocationId: cls.locationId,
     classStartsAt: cls.startsAt,
     creditCost: cls.creditCost,
+    classEntityId: cls.entityId,
     rule: await readClassRule(db, tenantId, cls),
     now,
   })

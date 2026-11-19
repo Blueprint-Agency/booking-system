@@ -28,7 +28,15 @@ import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
 import { addCustomerError } from "@/lib/add-customer";
 import { formatDate } from "@/lib/formatters";
-import { CUSTOMER_FILTER_LABEL, parseCustomerFilter, type CustomerFilter } from "@/lib/customer-filter";
+import {
+  CUSTOMER_FILTER_LABEL,
+  customerEntityFor,
+  parseCustomerFilter,
+  showCustomerEntityFilter,
+  trialFunnelCopy,
+  type CustomerFilter,
+} from "@/lib/customer-filter";
+import { useEntities } from "@/lib/use-entities";
 
 type StatusFilter = CustomerFilter;
 type SortKey = "joined" | "name";
@@ -82,6 +90,8 @@ interface ApiClientPage {
 interface ListState {
   q: string;
   status: StatusFilter;
+  /** An Entity id, under Trials only; "" is every Entity. */
+  entity: string;
   sort: SortKey;
   page: number;
   pageSize: number;
@@ -89,13 +99,14 @@ interface ListState {
 
 function readState(search: string): ListState {
   const p = new URLSearchParams(search);
-  const status = p.get("filter");
+  const status = parseCustomerFilter(p.get("filter"));
   const sort = p.get("sort");
   const page = Number(p.get("page"));
   const size = Number(p.get("size"));
   return {
     q: p.get("q") ?? "",
-    status: parseCustomerFilter(status),
+    status,
+    entity: customerEntityFor(status, p.get("entity")),
     sort: sort === "name" ? "name" : "joined",
     page: Number.isInteger(page) && page > 0 ? page : 1,
     pageSize: isPageSize(size) ? size : DEFAULT_PAGE_SIZE,
@@ -106,6 +117,8 @@ function writeState(s: ListState) {
   const p = new URLSearchParams();
   if (s.q) p.set("q", s.q);
   if (s.status !== "all") p.set("filter", s.status);
+  const entity = customerEntityFor(s.status, s.entity);
+  if (entity) p.set("entity", entity);
   if (s.sort !== "joined") p.set("sort", s.sort);
   if (s.page !== 1) p.set("page", String(s.page));
   if (s.pageSize !== DEFAULT_PAGE_SIZE) p.set("size", String(s.pageSize));
@@ -132,6 +145,7 @@ export default function CustomersPage() {
 function CustomersList() {
   const { api, currentStaff } = useWorkspace();
   const timezone = useStudioZone();
+  const { entities } = useEntities();
   const isAdmin = runsStudio(currentStaff?.role);
   const searchParams = useSearchParams();
   // Read once: afterwards the list owns its position and writes it back.
@@ -175,6 +189,7 @@ function CustomersList() {
       const res = await api.get<ApiClientPage>("/portal/admin/clients", {
         q: state.q || undefined,
         filter: state.status === "all" ? undefined : state.status,
+        entity: customerEntityFor(state.status, state.entity) || undefined,
         sort: state.sort,
         page: state.page,
         page_size: state.pageSize,
@@ -261,7 +276,7 @@ function CustomersList() {
               key={s}
               type="button"
               aria-pressed={status === s}
-              onClick={() => update({ status: s })}
+              onClick={() => update({ status: s, entity: customerEntityFor(s, state.entity) })}
               className={`h-9 shrink-0 rounded-full border px-3.5 font-medium capitalize transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:h-8 ${
                 status === s
                   ? "border-accent bg-accent text-white"
@@ -272,6 +287,21 @@ function CustomersList() {
             </button>
           ))}
         </div>
+        {showCustomerEntityFilter(status, entities.length) && (
+          <Select
+            value={entities.some((e) => e.id === state.entity) ? state.entity : ""}
+            onChange={(e) => update({ entity: e.target.value })}
+            className="h-9 w-auto py-1 text-xs sm:h-8"
+            aria-label="Filter trials by entity"
+          >
+            <option value="">All entities</option>
+            {entities.map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.name}
+              </option>
+            ))}
+          </Select>
+        )}
         <div className="flex w-full items-center gap-3 sm:ml-auto sm:w-auto">
           <Select
             value={state.sort}
@@ -288,7 +318,16 @@ function CustomersList() {
         </div>
       </div>
 
-      {showTrials && result?.funnel && !error && <TrialFunnel funnel={result.funnel} />}
+      {showTrials && result?.funnel && !error && (
+        <TrialFunnel
+          funnel={result.funnel}
+          entityName={
+            showCustomerEntityFilter(status, entities.length)
+              ? (entities.find((e) => e.id === state.entity)?.name ?? null)
+              : null
+          }
+        />
+      )}
 
       <div className="rounded-xl border border-border bg-card shadow-soft">
         {loading && !result ? (
@@ -488,14 +527,17 @@ function StatusCell({ client: c, showTrials }: { client: ApiClient; showTrials: 
  * turned up, converted. Counted by the backend across all pages, so a number
  * here never depends on how many rows are on screen.
  */
-function TrialFunnel({ funnel }: { funnel: ApiFunnel }) {
+function TrialFunnel({ funnel, entityName }: { funnel: ApiFunnel; entityName: string | null }) {
+  const copy = trialFunnelCopy(entityName);
   const steps = [
     { label: "Bought a trial", value: funnel.trials },
     { label: "Attended their trial", value: funnel.attended },
-    { label: "Converted", value: funnel.converted, hint: "Went on to pay for a package" },
+    { label: "Converted", value: funnel.converted, hint: copy.convertedHint },
   ];
   return (
-    <div className="mb-4 grid gap-2 sm:grid-cols-3">
+    <div className="mb-4">
+      {copy.heading && <h2 className="mb-2 text-sm font-medium text-ink">{copy.heading}</h2>}
+      <div className="grid gap-2 sm:grid-cols-3">
       {steps.map((s) => (
         <div key={s.label} className="rounded-xl border border-border bg-card p-3 shadow-soft">
           <div className="text-xs text-muted">{s.label}</div>
@@ -515,6 +557,7 @@ function TrialFunnel({ funnel }: { funnel: ApiFunnel }) {
           {s.hint && <div className="mt-0.5 text-[10px] leading-tight text-muted">{s.hint}</div>}
         </div>
       ))}
+      </div>
     </div>
   );
 }

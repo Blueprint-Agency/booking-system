@@ -10,9 +10,12 @@ import {
   serializePromotion,
 } from '../../services/packages/promotions'
 import { getClientEntitlements, serializeUnlimitedPlan } from '../../services/packages/entitlements'
+import { trialStandingsByEntity } from '../../services/packages/trial-standing'
 import { memberPackagesForClass, serializeMemberPackageForClass } from '../../services/bookings/book'
 import { NotFoundError } from '../../shared/errors'
 import { tenantId } from '../../middleware/tenant'
+import { entityQuery, explainEntityQuery } from '../entity-fields'
+import { entityFieldsFor, type EntityFields } from '../../services/catalog/entities'
 import * as workshopsSvc from '../../services/workshops/catalog'
 import { listMyWorkshopBookings } from '../../services/workshops/my-bookings'
 import { listCorporatePackages } from '../../services/packages/corporate-packages'
@@ -51,9 +54,11 @@ function serializeClassPackage(
   r: classSvc.ClassPackageRow,
   promos: ReturnType<typeof serializePromotion>[],
   effective: { effectivePriceSgd: string; appliedPromotionId: string | null },
+  entity: EntityFields,
 ) {
   return {
     id: r.id,
+    ...entity,
     name: r.name,
     description: r.description,
     kind: r.kind,
@@ -71,9 +76,11 @@ function serializePtPackage(
   r: ptSvc.PtPackageRow,
   promos: ReturnType<typeof serializePromotion>[],
   effective: { effectivePriceSgd: string; appliedPromotionId: string | null },
+  entity: EntityFields,
 ) {
   return {
     id: r.id,
+    ...entity,
     name: r.name,
     description: r.description,
     session_type: r.sessionType,
@@ -142,23 +149,35 @@ const app = new Hono()
     const rows = await listMyWorkshopBookings(tenantId(c), clientId)
     return c.json({ workshop_bookings: rows })
   })
-  .get('/class-packages', async c => {
+  // `?entity=<slug>` narrows the three package reads to one Entity; a slug
+  // naming no live Entity of the studio lists no packages (the entitlements
+  // below are the member's own, not the Entity's, so they are still returned).
+  .get('/class-packages', zValidator('query', entityQuery, explainEntityQuery), async c => {
     const clientId = c.get('clientId')
-    const rows = await classSvc.listClassPackages(tenantId(c), { status: 'active' })
+    const rows = await classSvc.listClassPackages(tenantId(c), { status: 'active', entitySlug: c.req.valid('query').entity })
     const promos = await listActivePromotionsFor(
       tenantId(c),
       'class_package',
       rows.map(r => r.id),
     )
     const ent = await getClientEntitlements(tenantId(c), clientId)
+    const trials = await trialStandingsByEntity(tenantId(c), clientId)
+    const entities = await entityFieldsFor(tenantId(c), rows)
     return c.json({
-      class_packages: rows.map(r => {
+      class_packages: rows.map((r, i) => {
         const ps = promos[r.id] ?? []
-        return serializeClassPackage(r, ps.map(serializePromotion), bestPrice(r.priceSgd, ps))
+        return serializeClassPackage(r, ps.map(serializePromotion), bestPrice(r.priceSgd, ps), entities[i]!)
       }),
       entitlements: {
+        // Across every Entity: any trial held, no package held. The trial rules
+        // are per Entity, so a page for one Entity reads `trial_by_entity`.
         trial_used: ent.trialUsed,
         trial_eligible: ent.trialEligible,
+        // By Entity id, for each live Entity: whether the member has held a trial
+        // there, and whether they are new to it (a trial is for them).
+        trial_by_entity: Object.fromEntries(
+          Object.entries(trials).map(([id, t]) => [id, { trial_used: t.used, trial_eligible: t.eligible }]),
+        ),
         has_active_unlimited: ent.hasActiveUnlimited,
         unlimited_location: ent.unlimitedLocation,
         // The schedule's blocked-class nudge offers the Add-On on the plan that
@@ -174,26 +193,29 @@ const app = new Hono()
       },
     })
   })
-  .get('/pt-packages', async c => {
-    const rows = await ptSvc.listPtPackages(tenantId(c), { status: 'active' })
+  .get('/pt-packages', zValidator('query', entityQuery, explainEntityQuery), async c => {
+    const rows = await ptSvc.listPtPackages(tenantId(c), { status: 'active', entitySlug: c.req.valid('query').entity })
     const promos = await listActivePromotionsFor(
       tenantId(c),
       'pt_package',
       rows.map(r => r.id),
     )
+    const entities = await entityFieldsFor(tenantId(c), rows)
     return c.json({
-      pt_packages: rows.map(r => {
+      pt_packages: rows.map((r, i) => {
         const ps = promos[r.id] ?? []
-        return serializePtPackage(r, ps.map(serializePromotion), bestPrice(r.priceSgd, ps))
+        return serializePtPackage(r, ps.map(serializePromotion), bestPrice(r.priceSgd, ps), entities[i]!)
       }),
     })
   })
   // Corporate catalogue — surfaced to signed-in members (no promotions).
-  .get('/corporate-packages', async c => {
-    const rows = await listCorporatePackages(tenantId(c), { status: 'active' })
+  .get('/corporate-packages', zValidator('query', entityQuery, explainEntityQuery), async c => {
+    const rows = await listCorporatePackages(tenantId(c), { status: 'active', entitySlug: c.req.valid('query').entity })
+    const entities = await entityFieldsFor(tenantId(c), rows)
     return c.json({
-      corporate_packages: rows.map(r => ({
+      corporate_packages: rows.map((r, i) => ({
         id: r.id,
+        ...entities[i]!,
         name: r.name,
         description: r.description,
         price_sgd: r.priceSgd,

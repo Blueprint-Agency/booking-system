@@ -10,6 +10,9 @@
  * archive has and the table lacks for any other reason is still an error.
  */
 
+import { randomUUID } from 'node:crypto'
+import { DEFAULT_ENTITY_NAME, slugForEntityName } from '../catalog/entity-rules'
+
 type Rows = Record<string, Record<string, unknown>[]>
 
 const ASSIGNED_DAYS = ['annual_leave_days', 'medical_leave_days', 'study_leave_days'] as const
@@ -98,6 +101,44 @@ export function upgradeArchiveRows(rows: Readonly<Rows>, archived: { tenantName?
         ? { ...row, scheduled_pt_session_id: null }
         : row,
     )
+  }
+
+  // Migration 0142: a studio always has an Entity. An archive taken before the
+  // table has no `entities` at all, and restoring it would leave a studio with
+  // none, which the admin screens and every later "belongs to an Entity" rule
+  // take as impossible. It is given the one every studio starts with, as
+  // migration 0143 gave one to the studios that existed. Only an archive with
+  // no `entities` key: one that has the key carries the studio's own Entities,
+  // renamed or archived as it likes, and is restored as it is.
+  if (rows.entities === undefined) {
+    out.entities = [
+      {
+        id: randomUUID(),
+        name: DEFAULT_ENTITY_NAME,
+        slug: slugForEntityName(DEFAULT_ENTITY_NAME),
+        position: 0,
+        archived_at: null,
+      },
+    ]
+  }
+
+  // Migrations 0144 and 0146: every Class Type and every catalogue package
+  // belongs to an Entity. A row with no `entity_id` key in the archive predates
+  // the column (taken before it, whether or not the archive has Entities; with
+  // none, the Entity above is the one made for it) and goes to the studio's
+  // first live Entity by display order, as migrations 0145 and 0147 put the
+  // studio's own. Sub-types included, so one equals its parent. A row that has
+  // the key is the studio's own choice and is restored as it is, null included.
+  const live = (out.entities ?? [])
+    .filter(entity => entity.archived_at == null)
+    .sort((a, b) => Number(a.position) - Number(b.position))
+  const first = live[0]?.id
+  if (first !== undefined) {
+    for (const table of ['class_types', 'class_packages', 'pt_packages', 'corporate_packages']) {
+      const tableRows = rows[table]
+      if (!tableRows?.some(r => !('entity_id' in r))) continue
+      out[table] = tableRows.map(r => ('entity_id' in r ? r : { ...r, entity_id: first }))
+    }
   }
 
   return out

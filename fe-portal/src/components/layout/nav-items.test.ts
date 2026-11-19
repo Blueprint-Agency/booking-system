@@ -31,6 +31,15 @@ test("NTF-47 the sidebar offers Emails under Settings to an admin, and never to 
   assert.equal(visibleToRole(emails, "instructor"), false);
 });
 
+test("SCH-65 the sidebar offers Entities under Settings to an admin, and never to an instructor", () => {
+  const entities = NAV_ITEMS.find((item) => item.href === "/admin/entities");
+  assert.ok(entities, "Entities is in the nav");
+  assert.equal(entities.label, "Entities");
+  assert.equal(entities.group, "Settings");
+  assert.equal(visibleToRole(entities, "admin"), true);
+  assert.equal(visibleToRole(entities, "instructor"), false);
+});
+
 // The ClassPass page holds the studio's private forwarding address.
 test("CPS-19 the sidebar offers ClassPass under Settings to an admin, and never to an instructor", () => {
   const classpass = NAV_ITEMS.find((item) => item.href === "/admin/classpass");

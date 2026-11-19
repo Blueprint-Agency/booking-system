@@ -35,6 +35,40 @@ export const locations = pgTable(
 )
 
 // ============================================================================
+// entities — what a studio sells packages under (be/CONTEXT.md
+// § Entity). Named by the studio: Yoga, Pilates. A studio always has at least
+// one; every studio created or migrated starts with "All classes". Nothing
+// references one yet — Class Types and catalogue packages take an `entity_id`
+// in later changes, so an archive's "still in use" counts are zero until then.
+// Name and slug are unique per Tenant, case-insensitively, among the live
+// (non-archived) rows: an archived Entity gives its name back.
+// ============================================================================
+
+export const entities = pgTable(
+  'entities',
+  {
+    tenantId: tenantIdColumn(),
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    name: text('name').notNull(),
+    slug: text('slug').notNull(),
+    /** Display order, ascending. Gaps are fine; the order is what counts. */
+    position: integer('position').notNull(),
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  table => ({
+    positionIdx: index('entities_position_idx').on(table.tenantId, table.position),
+    nameLiveUnique: uniqueIndex('entities_name_live_unique')
+      .on(table.tenantId, sql`lower(${table.name})`)
+      .where(sql`${table.archivedAt} IS NULL`),
+    slugLiveUnique: uniqueIndex('entities_slug_live_unique')
+      .on(table.tenantId, sql`lower(${table.slug})`)
+      .where(sql`${table.archivedAt} IS NULL`),
+  }),
+)
+
+// ============================================================================
 // rooms — physical spaces, location-scoped. Required when scheduling a class,
 // workshop day, or PT session. A room hosts one session at a time (clash check
 // lives in services/schedule/room-conflicts.ts).
@@ -145,10 +179,17 @@ const classTypesTable = pgTable(
     // Single-level hierarchy. Depth capped at 1 — enforced in service layer:
     // a child (parent_id IS NOT NULL) cannot itself become a parent.
     parentId: uuid('parent_id').references((): AnyPgColumn => classTypesTable.id, { onDelete: 'restrict' }),
+    // The Entity this type belongs to, on EVERY row: a
+    // sub-type stores its parent's, kept equal by the service (a move rewrites
+    // the children in the same transaction). Nullable this deploy
+    // (migrations README rule 0); the service and routes require it, and NOT NULL
+    // is a later deploy. Reads of `classTypes.entityId` are untyped (`any` below).
+    entityId: uuid('entity_id').references(() => entities.id, { onDelete: 'restrict' }),
     archivedAt: timestamp('archived_at', { withTimezone: true }),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   table => ({
+    entityIdFkIdx: index('class_types_entity_id_fk_idx').on(table.entityId),
     parentIdFkIdx: index('class_types_parent_id_fk_idx').on(table.parentId),
     archivedIdx: index('class_types_archived_idx').on(table.tenantId, table.archivedAt),
     deletedIdx: index('class_types_deleted_idx').on(table.tenantId, table.deletedAt),

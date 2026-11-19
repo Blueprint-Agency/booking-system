@@ -3,6 +3,7 @@ import { db } from '../../db'
 import type { clientGenderEnum } from '../../db/enums'
 import { clients } from '../../db/schema/identity'
 import { clientPackages } from '../../db/schema/packages'
+import { heldPackageEntityIdSql } from '../catalog/entities'
 import { bookings } from '../../db/schema/bookings'
 import { manualAdjustments } from '../../db/schema/ledger'
 import { endClientSessionsAt, ensureAuthUser } from '../auth/auth-users'
@@ -68,6 +69,14 @@ export interface ListClientsPageOptions extends ListClientsOptions {
    */
   filter?: ClientDirectoryFilter
   sort?: ClientDirectorySort
+  /**
+   * An Entity id: reads the Trials filter and the Trial Funnel for that
+   * Entity's trials (see the fragments below). Meaningful only with the
+   * `trials` filter; under any other it is ignored, so a page that leaves
+   * Trials cannot leave a stale Entity narrowing a different list. An id that
+   * is not this studio's matches no trial, so nobody.
+   */
+  entity?: string
   /** 1-based. */
   page: number
   pageSize: number
@@ -98,25 +107,45 @@ export interface ClientDirectoryPage {
 // Each names the Tenant as well as the member, so Postgres can reach for the
 // `(tenant_id, client_id, …)` indexes — a funnel over a studio with years of
 // imported bookings must not scan `bookings` once per trial.
-const hasTrial = (clientId: SQL) => sql`exists (
+//
+// Each also takes the Entity the Trials filter is read for, or none. With one,
+// the Entity narrows which trials are counted (a trial's Entity is its
+// catalogue package's, read live, so a package moved to another Entity re-files
+// its trials at once; a legacy trial with no catalogue package has none and is
+// left out) and what Converted means (a package of that Entity). With none,
+// every trial counts and nothing is narrowed.
+
+/** `cp` is a trial: any, or, under an Entity, one whose catalogue package is in it. */
+const isTrial = (entity?: string) =>
+  entity ? sql`cp.kind = 'trial' and ${isOfEntity(entity)}` : sql`cp.kind = 'trial'`
+
+/**
+ * `cp` is a package of the Entity: a class package or a private package whose
+ * catalogue row is in it (`heldPackageEntityIdSql`). A package held with no
+ * catalogue row has no Entity. (A Corporate package is never held by a member.)
+ */
+const isOfEntity = (entity: string) => sql`${heldPackageEntityIdSql('cp')} = ${entity}::uuid`
+
+const hasTrial = (clientId: SQL, entity?: string) => sql`exists (
   select 1 from ${clientPackages} cp
-  where cp.client_id = ${clientId} and cp.kind = 'trial'
+  where cp.client_id = ${clientId} and ${isTrial(entity)}
 )`
-const trialAttendedCount = (tenantId: string, clientId: SQL) => sql`(
+const trialAttendedCount = (tenantId: string, clientId: SQL, entity?: string) => sql`(
   select count(*) from ${clientPackages} cp
   join ${bookings} b
     on b.tenant_id = ${tenantId}::uuid and b.client_id = cp.client_id and b.client_package_id = cp.id
   where cp.client_id = ${clientId}
-    and cp.kind = 'trial'
+    and ${isTrial(entity)}
     and b.check_in_state = 'attended'
 )`
-const hasConverted = (tenantId: string, clientId: SQL) => sql`exists (
+const hasConverted = (tenantId: string, clientId: SQL, entity?: string) => sql`exists (
   select 1 from ${clientPackages} cp
   where cp.tenant_id = ${tenantId}::uuid
     and cp.client_id = ${clientId}
     and cp.kind <> 'trial'
     and cp.amount_paid_sgd > 0
     and not cp.complimentary
+    ${entity ? sql`and ${isOfEntity(entity)}` : sql``}
 )`
 
 /**
@@ -131,10 +160,11 @@ export async function listClientsPage(
   tenantId: string,
   opts: ListClientsPageOptions,
 ): Promise<ClientDirectoryPage> {
+  const entity = opts.filter === 'trials' ? opts.entity : undefined
   const conds: SQL[] = [eq(clients.tenantId, tenantId)]
   if (opts.filter === 'blocked') conds.push(isNotNull(clients.deletedAt))
   else if (opts.filter === 'active' || !opts.includeDeleted) conds.push(isNull(clients.deletedAt))
-  if (opts.filter === 'trials') conds.push(hasTrial(sql`${clients.id}`))
+  if (opts.filter === 'trials') conds.push(hasTrial(sql`${clients.id}`, entity))
   if (opts.filter === 'no_email') conds.push(memberWithoutEmail(tenantId))
   if (opts.status) conds.push(eq(clients.status, opts.status))
   const term = opts.q?.trim()
@@ -166,12 +196,15 @@ export async function listClientsPage(
     const rows = await db
       .select({
         id: clients.id,
+        // The id goes in as a nested `sql`, as it does for the facts below: a
+        // bare column in a single-table select is written unqualified, and
+        // `"id"` inside this subquery would read the package's own id.
         trialStartedAt: sql<Date | null>`(
           select min(cp.purchased_at) from ${clientPackages} cp
-          where cp.client_id = ${clients.id} and cp.kind = 'trial'
+          where cp.client_id = ${sql`${clients.id}`} and ${isTrial(entity)}
         )`.mapWith(v => (v === null ? null : new Date(v as string))),
-        attended: trialAttendedCount(tenantId, sql`${clients.id}`).mapWith(Number),
-        converted: hasConverted(tenantId, sql`${clients.id}`).mapWith(Boolean),
+        attended: trialAttendedCount(tenantId, sql`${clients.id}`, entity).mapWith(Number),
+        converted: hasConverted(tenantId, sql`${clients.id}`, entity).mapWith(Boolean),
       })
       .from(clients)
       .where(and(eq(clients.tenantId, tenantId), inArray(clients.id, ids)))
@@ -183,8 +216,8 @@ export async function listClientsPage(
     const [f] = await db
       .select({
         trials: sql<number>`count(*)::int`,
-        attended: sql<number>`count(*) filter (where ${trialAttendedCount(tenantId, sql`${clients.id}`)} > 0)::int`,
-        converted: sql<number>`count(*) filter (where ${hasConverted(tenantId, sql`${clients.id}`)})::int`,
+        attended: sql<number>`count(*) filter (where ${trialAttendedCount(tenantId, sql`${clients.id}`, entity)} > 0)::int`,
+        converted: sql<number>`count(*) filter (where ${hasConverted(tenantId, sql`${clients.id}`, entity)})::int`,
       })
       .from(clients)
       .where(where)

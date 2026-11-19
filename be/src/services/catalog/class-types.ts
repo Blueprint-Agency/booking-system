@@ -1,9 +1,12 @@
-import { and, eq, gt, inArray, isNull, sql } from 'drizzle-orm'
+import { and, count, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { classTypes } from '../../db/schema/catalog'
+import { bookings } from '../../db/schema/bookings'
 import { classes } from '../../db/schema/schedule'
 import type { ClassDifficulty } from '../../db/enums'
+import { now } from '../../lib/clock'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
+import { assertEntityUsable, defaultEntityId } from './entities'
 
 export type ClassTypeRow = typeof classTypes.$inferSelect
 
@@ -64,12 +67,23 @@ export async function assertClassTypeInStudio(tenantId: string, id: string): Pro
 async function assertValidParent(
   tenantId: string,
   parentId: string | null | undefined,
-): Promise<void> {
-  if (!parentId) return
+): Promise<ClassTypeRow | null> {
+  if (!parentId) return null
   const parent = await getClassType(tenantId, parentId) // 404 if missing
   if (parent.parentId !== null) {
     throw new BadRequestError('parent_must_be_root', { parent_id: parentId })
   }
+  return parent
+}
+
+/**
+ * A sub-type has no Entity of its own: it shares its parent's, so an Entity
+ * named on a write that makes or keeps a sub-type is refused, even one equal to
+ * the parent's. Saying it is refused rather than ignored keeps a screen that
+ * offers the choice for a sub-type from believing it was saved.
+ */
+function assertNoOwnEntity(entityId: string | undefined): void {
+  if (entityId !== undefined) throw new BadRequestError('class_type_entity_inherited')
 }
 
 // Reject if this row currently has children — we can't turn a parent into a child.
@@ -96,9 +110,23 @@ export async function createClassType(
     description?: string | null
     difficulty?: ClassDifficulty
     parent_id?: string | null
+    entity_id?: string
   },
 ): Promise<ClassTypeRow> {
-  await assertValidParent(tenantId, input.parent_id)
+  const parent = await assertValidParent(tenantId, input.parent_id)
+  // A sub-type takes its parent's Entity; a top-level type the one named, or
+  // the studio's first when none is (a studio with one Entity never has to think
+  // about it, and no route writes a type with no Entity).
+  let entityId: string | null
+  if (parent) {
+    assertNoOwnEntity(input.entity_id)
+    entityId = parent.entityId
+  } else if (input.entity_id !== undefined) {
+    await assertEntityUsable(tenantId, input.entity_id)
+    entityId = input.entity_id
+  } else {
+    entityId = await defaultEntityId(tenantId)
+  }
   const [row] = await db
     .insert(classTypes)
     .values({
@@ -107,6 +135,7 @@ export async function createClassType(
       description: input.description ?? null,
       difficulty: input.difficulty ?? 'general',
       parentId: input.parent_id ?? null,
+      entityId,
     })
     .returning()
   return row!
@@ -120,28 +149,98 @@ export async function updateClassType(
     description?: string | null
     difficulty?: ClassDifficulty
     parent_id?: string | null
+    entity_id?: string
   },
 ): Promise<ClassTypeRow> {
-  await getClassType(tenantId, id) // 404 if missing
+  const existing = await getClassType(tenantId, id) // 404 if missing
+  // The type's parent once this write is applied: the one named, or the one it has.
+  const parentId: string | null = patch.parent_id !== undefined ? patch.parent_id : existing.parentId
+  let parent: ClassTypeRow | null = null
   if (patch.parent_id !== undefined) {
     if (patch.parent_id === id) throw new BadRequestError('parent_self_reference')
-    await assertValidParent(tenantId, patch.parent_id)
+    parent = await assertValidParent(tenantId, patch.parent_id)
     if (patch.parent_id !== null) {
       // We're turning this row into a child — make sure it isn't currently a parent.
       await assertNoChildren(tenantId, id)
     }
   }
+
   const setPatch: Record<string, unknown> = {}
   if (patch.name !== undefined) setPatch.name = patch.name
   if (patch.description !== undefined) setPatch.description = patch.description
   if (patch.difficulty !== undefined) setPatch.difficulty = patch.difficulty
   if (patch.parent_id !== undefined) setPatch.parentId = patch.parent_id
-  const [row] = await db
-    .update(classTypes)
-    .set(setPatch)
-    .where(and(eq(classTypes.tenantId, tenantId), eq(classTypes.id, id)))
-    .returning()
-  return row!
+
+  // The Entity. A row that is or becomes a sub-type has none of its own: it is
+  // its parent's, which a reparent re-reads. A row that is or becomes top-level
+  // keeps the one it stores and accepts a new one; moving a parent rewrites its
+  // sub-types, archived and deleted ones included (they stay in the tree).
+  let rewriteChildren = false
+  if (parentId !== null) {
+    assertNoOwnEntity(patch.entity_id)
+    if (parent) setPatch.entityId = parent.entityId
+  } else if (patch.entity_id !== undefined) {
+    await assertEntityUsable(tenantId, patch.entity_id)
+    if (patch.entity_id !== existing.entityId) {
+      setPatch.entityId = patch.entity_id
+      rewriteChildren = true
+    }
+  }
+
+  if (Object.keys(setPatch).length === 0) return existing
+  // One savepoint: a failure never leaves a sub-type on the wrong Entity.
+  return db.transaction(async tx => {
+    const [row] = await tx
+      .update(classTypes)
+      .set(setPatch)
+      .where(and(eq(classTypes.tenantId, tenantId), eq(classTypes.id, id)))
+      .returning()
+    if (rewriteChildren) {
+      await tx
+        .update(classTypes)
+        .set({ entityId: patch.entity_id })
+        .where(and(eq(classTypes.tenantId, tenantId), eq(classTypes.parentId, id)))
+    }
+    return row!
+  })
+}
+
+/**
+ * What changing a top-level Class Type's Entity reaches, before the admin saves:
+ * the upcoming classes of the type and of its sub-types, and the confirmed
+ * bookings on them. "Upcoming" is the rule archiving uses (an active class that
+ * has not ended), read against the app clock. A move cancels nothing and touches
+ * neither table: a class reads its Entity through its Class Type, so these are
+ * the classes whose eligible packages change, not rows that change.
+ */
+export async function previewEntityMove(
+  tenantId: string,
+  id: string,
+  entityId: string,
+): Promise<{ upcoming_classes: number; bookings: number }> {
+  const type = await getClassType(tenantId, id)
+  if (type.parentId !== null) throw new BadRequestError('class_type_entity_inherited')
+  await assertEntityUsable(tenantId, entityId)
+  // Nothing moves when the Entity is the one it has.
+  if (entityId === type.entityId) return { upcoming_classes: 0, bookings: 0 }
+
+  const family = db
+    .select({ id: classTypes.id })
+    .from(classTypes)
+    .where(and(eq(classTypes.tenantId, tenantId), or(eq(classTypes.id, id), eq(classTypes.parentId, id))))
+  const upcoming = and(
+    eq(classes.tenantId, tenantId),
+    inArray(classes.classTypeId, family),
+    eq(classes.lifecycle, 'active'),
+    gt(classes.endsAt, now()),
+  )
+  const [classCount] = await db.select({ n: count() }).from(classes).where(upcoming)
+  const [bookingCount] = await db
+    .select({ n: count() })
+    .from(bookings)
+    .innerJoin(classes, eq(bookings.classId, classes.id))
+    .where(and(upcoming, eq(bookings.tenantId, tenantId), eq(bookings.kind, 'class'), eq(bookings.state, 'confirmed')))
+  return { upcoming_classes: Number(classCount?.n ?? 0), bookings: Number(bookingCount?.n ?? 0) }
 }
 
 // Returns the list of ids whose "linked data" we must check before allowing archive.
@@ -199,6 +298,8 @@ export async function unarchiveClassType(tenantId: string, id: string): Promise<
   if (existing.archivedAt === null) {
     throw new BadRequestError('class_type_not_archived')
   }
+  // Not back into an Entity the studio has retired: a move to a live one comes first.
+  await assertEntityUsable(tenantId, existing.entityId)
   const [row] = await db
     .update(classTypes)
     .set({ archivedAt: null })

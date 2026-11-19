@@ -45,6 +45,7 @@ import type { ClassAction, WaitlistPlace } from "@/lib/waitlist";
 import { clashNote, type ApiClash } from "@/lib/clash";
 import { formatClassTime, formatDate } from "@/lib/studio-time";
 import { useStudioZone } from "@/components/brand/brand-provider";
+import { packagesHref, type PublicEntity } from "@/lib/entities";
 
 type Load =
   | { state: "loading" }
@@ -274,7 +275,7 @@ export function ClassDetailOverlay({
             <button type="button" onClick={onClose} className={BTN_SECONDARY}>
               Close
             </button>
-            <PrimaryAction action={action} joining={joining} onBook={onBook} onJoinWaitlist={onJoinWaitlist} />
+            <PrimaryAction action={action} entity={cls.entity} joining={joining} onBook={onBook} onJoinWaitlist={onJoinWaitlist} />
           </div>
         </div>
       </div>
@@ -367,8 +368,8 @@ function MyPackages({ detail, isSignedIn }: { detail: ApiClassDetail | ApiMember
   if (detail.my_packages.length === 0) {
     return (
       <p className="mt-3 rounded-xl bg-ink/[0.04] px-4 py-3 text-sm text-ink">
-        You don&apos;t hold a class package yet.{" "}
-        <Link href="/packages" className="font-semibold underline underline-offset-2">
+        {detail.entity ? `You don't hold a ${detail.entity.name} package yet.` : "You don't hold a class package yet."}{" "}
+        <Link href={packagesHref(detail.entity)} className="font-semibold underline underline-offset-2">
           See packages
         </Link>
       </p>
@@ -408,11 +409,14 @@ function MyPackages({ detail, isSignedIn }: { detail: ApiClassDetail | ApiMember
 /** The row's own action, at the foot of the overlay. */
 function PrimaryAction({
   action,
+  entity,
   joining,
   onBook,
   onJoinWaitlist,
 }: {
   action: ClassAction;
+  /** The class's Entity: where "See packages" goes. */
+  entity: PublicEntity | null | undefined;
   joining: boolean;
   onBook: () => void;
   onJoinWaitlist: () => void;
@@ -442,7 +446,7 @@ function PrimaryAction({
       );
     case "not_accepted":
       return (
-        <Link href="/packages" className={BTN_PRIMARY}>
+        <Link href={packagesHref(entity)} className={BTN_PRIMARY}>
           See packages
         </Link>
       );

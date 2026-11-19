@@ -25,6 +25,7 @@ import { daysBetween, instantAt, localDate, plusCalendarDays } from '../../lib/s
 import { now as clockNow } from '../../lib/clock'
 import { sendPtRequestSubmittedEmail } from '../notifications/send-pt-request-email'
 import { tenantTimezone } from '../tenants/tenants'
+import { entitiesMatch } from '../catalog/entity-rules'
 
 /** The days after today, on the studio's clock, a member may propose a private session on. */
 export interface PtBookingWindow {
@@ -133,6 +134,7 @@ export async function submitPtRequest(
         validityDays: clientPackages.validityDays,
         remaining: clientPackages.creditsOrSessionsRemaining,
         sessionType: ptPackages.sessionType,
+        entityId: ptPackages.entityId,
       })
       .from(clientPackages)
       .leftJoin(ptPackages, eq(ptPackages.id, clientPackages.sourcePtPackageId))
@@ -152,7 +154,17 @@ export async function submitPtRequest(
     if (pkg.kind !== 'pt') throw new BadRequestError('not_a_pt_package')
     if (pkg.sessionType !== input.sessionType) throw new BadRequestError('session_type_mismatch')
 
-    await assertOwnReferences(tx, tenantId, input)
+    const classTypeEntityId = await assertOwnReferencesAndReadClassTypeEntity(tx, tenantId, input)
+    // The Class Type is in the paying package's Entity (be/CONTEXT.md § Entity).
+    // A package or Class Type with no Entity restricts nothing, as before
+    // Entities, and a request naming no Class Type has nothing to check. Before
+    // anything is debited or written.
+    if (!entitiesMatch(pkg.entityId, classTypeEntityId)) {
+      throw new ConflictError('class_type_not_in_entity', {
+        class_type_id: input.classTypeId,
+        client_package_id: pkg.id,
+      })
+    }
 
     const notExpired = pkg.expiresAt === null || pkg.expiresAt > now
     if (!pkg.active || !notExpired) throw new ConflictError('package_not_consumable')
@@ -231,8 +243,16 @@ export async function submitPtRequest(
  * And each is still in use (be-client.md §4d step 1): an archived or deleted
  * Location or class type is refused as a missing one is, and the partner must
  * pass `assertPartnerEligible`, the rule linking a partner later applies.
+ *
+ * Returns the Entity of the class type it has just read, so the caller checks it
+ * against the paying package's without a second read: null when no class type is
+ * named or the one named has no Entity.
  */
-async function assertOwnReferences(tx: Tx, tenantId: string, input: PtRequestInput): Promise<void> {
+async function assertOwnReferencesAndReadClassTypeEntity(
+  tx: Tx,
+  tenantId: string,
+  input: PtRequestInput,
+): Promise<string | null> {
   const [location] = await tx
     .select({ id: locations.id })
     .from(locations)
@@ -247,9 +267,10 @@ async function assertOwnReferences(tx: Tx, tenantId: string, input: PtRequestInp
     .limit(1)
   if (!location) throw new NotFoundError('location_not_found')
 
+  let classTypeEntityId: string | null = null
   if (input.classTypeId) {
     const [classType] = await tx
-      .select({ id: classTypes.id })
+      .select({ id: classTypes.id, entityId: classTypes.entityId })
       .from(classTypes)
       .where(
         and(
@@ -261,6 +282,7 @@ async function assertOwnReferences(tx: Tx, tenantId: string, input: PtRequestInp
       )
       .limit(1)
     if (!classType) throw new NotFoundError('class_type_not_found')
+    classTypeEntityId = (classType.entityId as string | null) ?? null
   }
 
   if (input.partner?.kind === 'existing') {
@@ -272,6 +294,7 @@ async function assertOwnReferences(tx: Tx, tenantId: string, input: PtRequestInp
     if (!partner) throw new NotFoundError('partner_client_not_found')
     assertPartnerEligible(input.clientId, partner)
   }
+  return classTypeEntityId
 }
 
 /**

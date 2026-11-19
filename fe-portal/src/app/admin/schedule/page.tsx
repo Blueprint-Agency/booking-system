@@ -32,6 +32,9 @@ import {
 import { ScheduleListView } from "@/components/schedule/schedule-list-view";
 import { useWorkspace } from "@/lib/workspace-context";
 import { useSchedule } from "@/lib/use-schedule";
+import { useEntities } from "@/lib/use-entities";
+import { ALL_ENTITIES, showEntityFilter } from "@/lib/entities";
+import { entityFilterOptions, entityFilterQuery } from "@/lib/schedule-entity-filter";
 import { useSchedulePosition } from "@/lib/use-schedule-position";
 import { slotHref, type Slot } from "@/lib/schedule";
 
@@ -70,6 +73,8 @@ export default function SchedulePage() {
     useSchedulePosition("admin-schedule-position");
   const [type, setType] = useState<FilterType>("all");
   const [instructorId, setInstructorId] = useState<string>("all");
+  // An Entity id, or ALL_ENTITIES. The filter is offered with two or more Entities.
+  const [entityPick, setEntityPick] = useState(ALL_ENTITIES);
   const [filtersOpen, setFiltersOpen] = useState(false);
   // Picking a "+ …" button arms the grid: slots light up on hover and the next
   // click chooses when the thing goes. Nothing is placeable until then.
@@ -142,11 +147,16 @@ export default function SchedulePage() {
     [view, cursor, timezone],
   );
 
+  const { entities: entityChoices } = useEntities("admin");
+  const entityId = entityFilterQuery(entityPick, entityChoices);
+
   const { entries: allEntries, loading, error, reload } = useSchedule(
     {
       from: range.from,
       to: range.to,
       locationId: activeLocationId ?? undefined,
+      // Narrows classes on the server, for every view; workshops stay in view.
+      entityId,
     },
     { enabled: ready },
   );
@@ -174,7 +184,7 @@ export default function SchedulePage() {
     [entries, range]
   );
 
-  const activeFilters = [type !== "all", instructorId !== "all"].filter(Boolean).length;
+  const activeFilters = [type !== "all", instructorId !== "all", entityId !== undefined].filter(Boolean).length;
 
   const clearAdd = () => {
     setAddMode(null);
@@ -238,6 +248,7 @@ export default function SchedulePage() {
                 ? () => {
                     setType("all");
                     setInstructorId("all");
+                    setEntityPick(ALL_ENTITIES);
                   }
                 : null
             }
@@ -257,6 +268,14 @@ export default function SchedulePage() {
               ]}
               onChange={setInstructorId}
             />
+            {showEntityFilter(entityChoices) && (
+              <FilterPill
+                label="Entity"
+                value={entityId ?? ALL_ENTITIES}
+                options={entityFilterOptions(entityChoices)}
+                onChange={setEntityPick}
+              />
+            )}
           </FiltersRow>
         )}
 

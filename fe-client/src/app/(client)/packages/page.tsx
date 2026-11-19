@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useParams, usePathname, useRouter } from "next/navigation";
 import { Check, Loader2, MessageCircle } from "lucide-react";
 import { useMemberSession } from "@/lib/member-auth";
 import { useAuthGate } from "@/components/auth/auth-gate";
@@ -46,6 +47,15 @@ import {
   WHATSAPP_COPY_KEY,
 } from "@/lib/corporate";
 import { useBrandCopy } from "@/components/brand/brand-provider";
+import { packagesHref } from "@/lib/entities";
+import { usePackagesEntity } from "@/lib/public-entities";
+import {
+  trialClosedLabel,
+  trialClosedText,
+  trialRefusalText,
+  trialStandingFor,
+  type TrialStanding,
+} from "@/lib/trial-standing";
 
 // ── Tab definitions ────────────────────────────────────────────────────────────
 
@@ -68,13 +78,18 @@ const PACKAGE_GRID = "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:ga
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function PackagesPage() {
-  const { data, loading, error, refresh } = usePackagesCatalog();
+  // `/packages` has no slug and `/packages/<slug>` renders this same page: a
+  // studio with two or more Entities with packages shows one Entity's at a time.
+  const routeParams = useParams<{ entity?: string }>();
+  const router = useRouter();
+  const { entity, entities } = usePackagesEntity(routeParams.entity);
+  const { data, loading, error, refresh } = usePackagesCatalog(entity);
   const {
     data: corporateData,
     loading: corporateLoading,
     error: corporateError,
     refresh: refreshCorporate,
-  } = useCorporatePackages();
+  } = useCorporatePackages(entity);
   const api = useApi();
   const [activeTab, setActiveTab] = useState<MainTab>("group");
   const [classSubTab, setClassSubTab] = useState<ClassSubTab>("bundle");
@@ -174,9 +189,14 @@ export default function PackagesPage() {
   const ent = data?.entitlements ?? null;
   const hasUnlimited = ent?.has_active_unlimited ?? false;
   const hasBundle = ent?.has_active_bundle_credits ?? false;
-  const trialUsed = ent?.trial_used ?? false;
-  // Default eligible when signed-out (entitlements null) — auth gate runs on click.
-  const trialEligible = ent?.trial_eligible ?? true;
+  // A trial is for a member new to its Entity, so each one reads its own
+  // Entity's standing. Signed out (entitlements null) every trial reads open —
+  // the auth gate runs on click.
+  const standingOf = (pkg: ApiClassPackage) => trialStandingFor(ent, pkg.entity_id);
+  // The sentence names the Entity only when trials of several are on the page.
+  const namesEntities = new Set(trials.map((p) => p.entity_id ?? null)).size > 1;
+  const entityNameOf = (pkg: ApiClassPackage) =>
+    namesEntities ? (pkg.entity?.name ?? null) : null;
 
   const MAIN_TABS: { key: MainTab; label: string; hidden?: boolean }[] = [
     { key: "group", label: "Group" },
@@ -224,9 +244,9 @@ export default function PackagesPage() {
           : "";
       const text =
         code === ERROR_CODES.trial_already_used
-          ? "You've already used your trial pass."
+          ? trialRefusalText("trial_already_used", entityNameOf(pkg))
           : code === ERROR_CODES.trial_not_eligible
-            ? "The trial pass is for new members only."
+            ? trialRefusalText("trial_not_eligible", entityNameOf(pkg))
             : code === ERROR_CODES.payments_not_configured
               ? NO_ONLINE_PAYMENTS
               : "Couldn't get the trial pass. Try again.";
@@ -239,6 +259,18 @@ export default function PackagesPage() {
     <>
       <BookingSurface>
           <PageHeader title="Packages" />
+
+          {/* On a phone the Entities are tabs at the top; on a wider screen they are the nav's dropdown. */}
+          {entities && entity && (
+            <SegmentedTabs
+              label="Entity"
+              centered
+              className="md:hidden"
+              tabs={entities.map((e) => ({ value: e.slug, label: e.name }))}
+              value={entity}
+              onChange={(slug) => router.push(packagesHref(slug))}
+            />
+          )}
 
           {loading && (
             <ContentLoading label="Loading packages" />
@@ -273,8 +305,8 @@ export default function PackagesPage() {
                   setSubTab={setClassSubTab}
                   hasUnlimited={hasUnlimited}
                   hasBundle={hasBundle}
-                  trialUsed={trialUsed}
-                  trialEligible={trialEligible}
+                  standingOf={standingOf}
+                  entityNameOf={entityNameOf}
                   claimingTrialId={claimingTrialId}
                   trialBanner={trialMessage}
                   onRequestTrial={requestTrial}
@@ -339,8 +371,8 @@ function ClassCreditsSection({
   setSubTab,
   hasUnlimited,
   hasBundle,
-  trialUsed,
-  trialEligible,
+  standingOf,
+  entityNameOf,
   claimingTrialId,
   trialBanner,
   onRequestTrial,
@@ -352,8 +384,8 @@ function ClassCreditsSection({
   setSubTab: (s: ClassSubTab) => void;
   hasUnlimited: boolean;
   hasBundle: boolean;
-  trialUsed: boolean;
-  trialEligible: boolean;
+  standingOf: (pkg: ApiClassPackage) => TrialStanding;
+  entityNameOf: (pkg: ApiClassPackage) => string | null;
   claimingTrialId: string | null;
   trialBanner: { kind: "ok" | "err"; text: string } | null;
   onRequestTrial: (pkg: ApiClassPackage) => void;
@@ -428,8 +460,8 @@ function ClassCreditsSection({
       {subTab === "trial" && (
         <TrialSection
           trials={trials}
-          trialUsed={trialUsed}
-          trialEligible={trialEligible}
+          standingOf={standingOf}
+          entityNameOf={entityNameOf}
           claimingId={claimingTrialId}
           banner={trialBanner}
           onRequestTrial={onRequestTrial}
@@ -441,15 +473,15 @@ function ClassCreditsSection({
 
 function TrialSection({
   trials,
-  trialUsed,
-  trialEligible,
+  standingOf,
+  entityNameOf,
   claimingId,
   banner,
   onRequestTrial,
 }: {
   trials: ApiClassPackage[];
-  trialUsed: boolean;
-  trialEligible: boolean;
+  standingOf: (pkg: ApiClassPackage) => TrialStanding;
+  entityNameOf: (pkg: ApiClassPackage) => string | null;
   claimingId: string | null;
   banner: { kind: "ok" | "err"; text: string } | null;
   onRequestTrial: (pkg: ApiClassPackage) => void;
@@ -458,11 +490,16 @@ function TrialSection({
   if (trials.length === 0) {
     return <EmptyCatalog kind="trial" />;
   }
-  // Greyed out unless the client owns nothing yet. A member who has had theirs
-  // is told they are not eligible rather than reminded they used it.
-  const disabledReason = trialUsed
-    ? "Not eligible"
-    : "New members only";
+  // Each trial is greyed out unless the member is new to its Entity. One who
+  // has had theirs is told they are not eligible rather than reminded they used it.
+  // One note per Entity that is closed (one at a studio with a single Entity).
+  const closedNotes = new Map<string, string>();
+  for (const p of trials) {
+    const standing = standingOf(p);
+    if (standing.eligible) continue;
+    const name = entityNameOf(p);
+    closedNotes.set(name ?? "", trialClosedText(standing.used, name));
+  }
   return (
     <div className="space-y-4">
       <p className="text-center text-sm text-muted">For first-timers. One per member.</p>
@@ -488,24 +525,26 @@ function TrialSection({
           {banner.text}
         </div>
       )}
-      {!trialEligible && !banner && (
-        <p className={NOTE}>
-          {trialUsed
-            ? "You've used your trial pass. See credit bundles or Unlimited to keep booking."
-            : "The trial pass is for new members only. See credit bundles or Unlimited instead."}
-        </p>
-      )}
-      <div className={PACKAGE_GRID}>
-        {trials.map((p) => (
-          <TrialCard
-            key={p.id}
-            pkg={p}
-            disabled={!trialEligible}
-            disabledReason={disabledReason}
-            isClaiming={claimingId === p.id}
-            onRequestPurchase={() => onRequestTrial(p)}
-          />
+      {!banner &&
+        [...closedNotes.values()].map((text) => (
+          <p key={text} className={NOTE}>
+            {text}
+          </p>
         ))}
+      <div className={PACKAGE_GRID}>
+        {trials.map((p) => {
+          const standing = standingOf(p);
+          return (
+            <TrialCard
+              key={p.id}
+              pkg={p}
+              disabled={!standing.eligible}
+              disabledReason={trialClosedLabel(standing)}
+              isClaiming={claimingId === p.id}
+              onRequestPurchase={() => onRequestTrial(p)}
+            />
+          );
+        })}
       </div>
     </div>
   );
@@ -674,6 +713,8 @@ function BundleCard({
   disabledReason: string;
 }) {
   const credits = pkg.credits ?? 0;
+  // Signing in returns to this page, on this Entity.
+  const here = usePathname();
   return (
     <PackageCard
       name={pkg.name}
@@ -690,7 +731,7 @@ function BundleCard({
           target={{ kind: "package", packageKind: "class", packageId: pkg.id }}
           context="buy a package"
           itemName={pkg.name}
-          gateHref="/packages"
+          gateHref={here}
           priceSgd={pkg.effective_price_sgd}
           className={CARD_BUTTON}
         >
@@ -710,6 +751,7 @@ function UnlimitedCard({
   disabled: boolean;
   disabledReason: string;
 }) {
+  const here = usePathname();
   const months =
     pkg.duration_months != null
       ? formatDurationMonths(pkg.duration_months)
@@ -731,7 +773,7 @@ function UnlimitedCard({
           target={{ kind: "package", packageKind: "class", packageId: pkg.id }}
           context="buy a package"
           itemName={pkg.name}
-          gateHref="/packages"
+          gateHref={here}
           priceSgd={pkg.effective_price_sgd}
           // A plan has a Home studio to pick, at every price — including one a
           // Promotion took to zero.
@@ -760,6 +802,7 @@ function TrialCard({
 }) {
   const { isSignedIn } = useMemberSession();
   const { requireAuth, gate } = useAuthGate("buy a package");
+  const here = usePathname();
   const credits = pkg.credits ?? 1;
   const isFree = Number(pkg.effective_price_sgd) === 0;
   const onlinePayments = useOnlinePayments();
@@ -788,7 +831,7 @@ function TrialCard({
             disabled={isClaiming}
             onClick={() => {
               if (!isSignedIn) {
-                requireAuth("/packages#trial");
+                requireAuth(`${here}#trial`);
                 return;
               }
               if (!isClaiming) onRequestPurchase();
@@ -868,6 +911,7 @@ function TrialTermsModal({
 }
 
 function PtCard({ pkg }: { pkg: ApiPtPackage }) {
+  const here = usePathname();
   const perSession = Math.round(Number(pkg.effective_price_sgd) / pkg.num_sessions);
   return (
     <PackageCard
@@ -894,7 +938,7 @@ function PtCard({ pkg }: { pkg: ApiPtPackage }) {
         target={{ kind: "package", packageKind: "pt", packageId: pkg.id }}
         context="buy a package"
         itemName={pkg.name}
-        gateHref="/packages"
+        gateHref={here}
         priceSgd={pkg.effective_price_sgd}
         className={CARD_BUTTON}
       >
@@ -975,6 +1019,7 @@ function CorporateSection({
 // request. There is no request form — date, venue and headcount are settled with
 // the studio on WhatsApp, and the member lands on their corporate bookings.
 function CorporateCard({ pkg }: { pkg: ApiCorporatePackage }) {
+  const here = usePathname();
   return (
     <div className={cn(CARD, "flex flex-col p-5 sm:p-6")}>
       <p className="font-bold text-ink">{pkg.name}</p>
@@ -987,7 +1032,7 @@ function CorporateCard({ pkg }: { pkg: ApiCorporatePackage }) {
         target={{ kind: "package", packageKind: "corporate", packageId: pkg.id }}
         context="buy a package"
         itemName={pkg.name}
-        gateHref="/packages#corporate"
+        gateHref={`${here}#corporate`}
         priceSgd={pkg.price_sgd}
         className={CARD_BUTTON}
       >

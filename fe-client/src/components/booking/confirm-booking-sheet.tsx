@@ -31,6 +31,7 @@ import {
   type MyClassPackage,
 } from "@/lib/package-picker";
 import { ruleSentence, type ApiPackageRule } from "@/lib/package-rule";
+import { packagesHref } from "@/lib/entities";
 import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useCancellationPolicy } from "@/lib/cancellation-policy";
@@ -112,7 +113,7 @@ export function ConfirmBookingSheet({
   // a row may be greyed "Not accepted for this class".
   const rule = load.state === "ready" && load.rule.mode !== "all" ? load.rule : null;
   const pickedPkg = packages.find((p) => p.id === picked && p.eligible) ?? null;
-  const blocked = load.state === "ready" ? nothingEligibleCopy(packages) : null;
+  const blocked = load.state === "ready" ? nothingEligibleCopy(packages, cls.entity?.name) : null;
   // Held back until the rate has loaded, so the link never quotes S$0.
   const offerAddOn = !!cls.location && Number(addOnRateSgd) > 0;
 
@@ -240,7 +241,7 @@ export function ConfirmBookingSheet({
               Not now
             </button>
             {blocked ? (
-              <button type="button" onClick={() => router.push("/packages")} className={BTN_PRIMARY}>
+              <button type="button" onClick={() => router.push(packagesHref(cls.entity))} className={BTN_PRIMARY}>
                 See packages
               </button>
             ) : (

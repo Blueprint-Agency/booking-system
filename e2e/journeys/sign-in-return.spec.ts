@@ -56,7 +56,9 @@ test('BKG-20 a member holding nothing who taps Book Now is offered a package and
   const popup = page.getByRole('dialog', { name: 'You need a package to book this class' })
   await expect(popup).toBeVisible()
   await popup.getByRole('link', { name: 'Buy a Package' }).click()
-  await expect(page).toHaveURL(`${urls.client}/packages`)
+  // The link opens the class's own Entity's Packages page (PKR-25); every class
+  // type but the Pilates one is in the studio's first Entity, Yoga.
+  await expect(page).toHaveURL(`${urls.client}/packages/yoga`)
   await expect(page.getByText(catalogue.packageName, { exact: true }).first()).toBeVisible()
   expect(bookingRequests).toEqual([])
 })

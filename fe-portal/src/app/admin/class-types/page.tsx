@@ -22,7 +22,16 @@ import {
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
 import { ERROR_CODES } from "@/lib/error-codes";
-import { refusalMessage } from "@/lib/refusal-message";
+import {
+  classTypeBody,
+  entityRefusal,
+  movePreviewSentence,
+  postEntity,
+  readEntities,
+  type Entity,
+  type EntityMovePreview,
+} from "@/lib/entities";
+import { EntitySelect } from "@/components/entity-select";
 import type { ClassType, ClassTypeDifficulty } from "@/types";
 
 // Shared difficulty presentation. `general` = "all levels".
@@ -45,6 +54,8 @@ interface ApiClassType {
   description: string | null;
   difficulty: ClassTypeDifficulty;
   parent_id: string | null;
+  // Optional: a backend from before Entities sends none.
+  entity_id?: string | null;
   archived_at: string | null;
 }
 
@@ -55,6 +66,7 @@ function fromApi(r: ApiClassType): ClassType {
     description: r.description ?? "",
     difficulty: r.difficulty ?? "general",
     parentId: r.parent_id,
+    entityId: r.entity_id ?? null,
     archivedAt: r.archived_at,
   };
 }
@@ -62,6 +74,8 @@ function fromApi(r: ApiClassType): ClassType {
 export default function ClassTypesPage() {
   const { api } = useWorkspace();
   const [classTypes, setClassTypes] = useState<ClassType[]>([]);
+  // The studio's live Entities, in order: the dialog's choices, and the badge on each row.
+  const [entities, setEntities] = useState<Entity[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [dialog, setDialog] = useState<{ kind: "create" } | { kind: "edit"; ct: ClassType } | null>(
@@ -75,11 +89,13 @@ export default function ClassTypesPage() {
     if (!api) return;
     setError(null);
     try {
-      const data = await api.get<{ class_types: ApiClassType[] }>(
-        "/portal/admin/class-types",
-        { include_archived: "true" },
-      );
+      const [data, live] = await Promise.all([
+        api.get<{ class_types: ApiClassType[] }>("/portal/admin/class-types", { include_archived: "true" }),
+        // A backend from before Entities has no such route: the page then simply has no Entity to show.
+        readEntities(api).catch(() => [] as Entity[]),
+      ]);
       setClassTypes(data.class_types.map(fromApi));
+      setEntities(live);
     } catch (err) {
       setError(err instanceof ApiError ? `HTTP ${err.status}` : "Network error");
     } finally {
@@ -103,12 +119,13 @@ export default function ClassTypesPage() {
     if (!api) return;
     try {
       const exists = classTypes.some((c) => c.id === ct.id);
-      const body = {
+      const body = classTypeBody({
         name: ct.name,
-        description: ct.description?.trim() ? ct.description.trim() : null,
+        description: ct.description ?? "",
         difficulty: ct.difficulty,
-        parent_id: ct.parentId,
-      };
+        parentId: ct.parentId,
+        entityId: ct.entityId,
+      });
       if (exists) {
         await api.patch(`/portal/admin/class-types/${ct.id}`, body);
       } else {
@@ -133,11 +150,29 @@ export default function ClassTypesPage() {
           toast.error("A class type can't be its own parent.");
           return;
         }
-        toast.error(refusalMessage(err, `Save failed (HTTP ${err.status}).`));
+        toast.error(entityRefusal(err, `Save failed (HTTP ${err.status}).`));
       } else {
         toast.error("Save failed.");
       }
     }
+  }
+
+  // "+ New entity" in the dialog: made now, offered at once. Throws a sentence the dialog shows.
+  async function createEntity(name: string): Promise<Entity> {
+    if (!api) throw new Error("Not signed in.");
+    try {
+      const made = await postEntity(api, { name });
+      setEntities((prev) => [...prev, made]);
+      return made;
+    } catch (err) {
+      throw new Error(entityRefusal(err, "Couldn't add that entity."));
+    }
+  }
+
+  // What moving this type (and its sub-types) to another Entity reaches, before it is saved.
+  async function previewMove(id: string, entityId: string): Promise<EntityMovePreview> {
+    if (!api) throw new Error("Not signed in.");
+    return api.get<EntityMovePreview>(`/portal/admin/class-types/${id}/entity-preview`, { entity_id: entityId });
   }
 
   async function toggleArchive(ct: ClassType) {
@@ -215,6 +250,7 @@ export default function ClassTypesPage() {
       ) : view === "active" ? (
         <Tree
           all={active}
+          entities={entities}
           onEdit={(ct) => setDialog({ kind: "edit", ct })}
           onArchive={(ct) => toggleArchive(ct)}
         />
@@ -223,6 +259,7 @@ export default function ClassTypesPage() {
       ) : (
         <Tree
           all={archived}
+          entities={entities}
           onEdit={(ct) => setDialog({ kind: "edit", ct })}
           onArchive={(ct) => toggleArchive(ct)}
           onDelete={(ct) => handleDelete(ct)}
@@ -234,6 +271,9 @@ export default function ClassTypesPage() {
         <ClassTypeDialog
           ct={dialog.kind === "edit" ? dialog.ct : null}
           parents={parentCandidates(dialog.kind === "edit" ? dialog.ct.id : undefined)}
+          entities={entities}
+          onCreateEntity={createEntity}
+          onPreviewMove={previewMove}
           onSave={handleSave}
           onClose={() => setDialog(null)}
         />
@@ -263,12 +303,14 @@ function ErrorBlock({ message, onRetry }: { message: string; onRetry: () => void
 
 function Tree({
   all,
+  entities,
   onEdit,
   onArchive,
   onDelete,
   dimmed,
 }: {
   all: ClassType[];
+  entities: Entity[];
   onEdit: (ct: ClassType) => void;
   onArchive: (ct: ClassType) => void;
   onDelete?: (ct: ClassType) => void;
@@ -292,6 +334,9 @@ function Tree({
   // Page by top-level row, so a parent never lands on one page and its children
   // on the next. The count in the footer is of top-level types.
   const { visible, pagination } = usePaged([...roots, ...orphans]);
+  // A studio with one Entity sees no difference: the name is shown once there is a choice.
+  const entityName = (ct: ClassType) =>
+    entities.length > 1 ? (entities.find((e) => e.id === ct.entityId)?.name ?? null) : null;
 
   return (
     <div
@@ -306,6 +351,7 @@ function Tree({
             <Fragment key={ct.id}>
               <ClassTypeRow
                 ct={ct}
+                entityName={entityName(ct)}
                 onEdit={() => onEdit(ct)}
                 onArchive={() => onArchive(ct)}
                 onDelete={onDelete ? () => onDelete(ct) : undefined}
@@ -331,12 +377,15 @@ function Tree({
 
 function ClassTypeRow({
   ct,
+  entityName,
   onEdit,
   onArchive,
   onDelete,
   indent,
 }: {
   ct: ClassType;
+  /** The Entity's name, on a top-level row of a studio with more than one; a sub-type shows its parent's by sitting under it. */
+  entityName?: string | null;
   onEdit: () => void;
   onArchive: () => void;
   onDelete?: () => void;
@@ -357,6 +406,7 @@ function ClassTypeRow({
             <Badge tone={ct.difficulty === "general" ? "neutral" : "accent"}>
               {DIFFICULTY_LABEL[ct.difficulty]}
             </Badge>
+            {entityName && <Badge tone="neutral">{entityName}</Badge>}
             {isArchived && <Badge tone="neutral">Archived</Badge>}
           </div>
           {ct.description && (
@@ -392,11 +442,17 @@ function ClassTypeRow({
 function ClassTypeDialog({
   ct,
   parents,
+  entities,
+  onCreateEntity,
+  onPreviewMove,
   onSave,
   onClose,
 }: {
   ct: ClassType | null;
   parents: ClassType[];
+  entities: Entity[];
+  onCreateEntity: (name: string) => Promise<Entity>;
+  onPreviewMove: (id: string, entityId: string) => Promise<EntityMovePreview>;
   onSave: (ct: ClassType) => void;
   onClose: () => void;
 }) {
@@ -406,6 +462,45 @@ function ClassTypeDialog({
     ct?.difficulty ?? "general",
   );
   const [parentId, setParentId] = useState<string | "">(ct?.parentId ?? "");
+  // A top-level type's own Entity: what it has, else the studio's first.
+  const [entityId, setEntityId] = useState<string>(ct?.entityId ?? entities[0]?.id ?? "");
+  // The Entities offered include one made from this dialog a moment ago.
+  const [extra, setExtra] = useState<Entity[]>([]);
+  const choices = [...entities, ...extra.filter((x) => !entities.some((e) => e.id === x.id))];
+
+  const parent = parents.find((p) => p.id === parentId) ?? null;
+  const isSubType = parentId !== "";
+  // What a move reaches is asked only of a top-level type that already exists and is being given another Entity.
+  const moving = !!ct && ct.parentId === null && !isSubType && !!entityId && entityId !== ct.entityId;
+  const [preview, setPreview] = useState<
+    { for: string; state: "loaded"; data: EntityMovePreview } | { for: string; state: "failed" } | null
+  >(null);
+  const previewKey = ct && moving ? `${ct.id}:${entityId}` : null;
+
+  useEffect(() => {
+    if (!ct || !previewKey) return;
+    let cancelled = false;
+    onPreviewMove(ct.id, entityId).then(
+      (data) => {
+        if (!cancelled) setPreview({ for: previewKey, state: "loaded", data });
+      },
+      () => {
+        if (!cancelled) setPreview({ for: previewKey, state: "failed" });
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+    // The key names everything the request depends on.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [previewKey]);
+  const shownPreview = previewKey && preview?.for === previewKey ? preview : null;
+
+  async function createEntity(entityName: string) {
+    const made = await onCreateEntity(entityName);
+    setExtra((prev) => [...prev, made]);
+    return made;
+  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -415,6 +510,8 @@ function ClassTypeDialog({
       description: description.trim(),
       difficulty,
       parentId: parentId === "" ? null : parentId,
+      // A sub-type's is its parent's and is not sent (classTypeBody leaves it out).
+      entityId: isSubType ? (parent?.entityId ?? null) : entityId || null,
       archivedAt: ct?.archivedAt ?? null,
     });
   }
@@ -490,6 +587,47 @@ function ClassTypeDialog({
             Optional. Single-level hierarchy — only top-level types can be parents.
           </p>
         </div>
+
+        {/* Only a studio with Entities has anything to choose; one with a single Entity sees it read-only. */}
+        {choices.length > 0 && (
+          <div className="space-y-1.5">
+            <Label htmlFor="ct-entity">Entity</Label>
+            {isSubType ? (
+              <p id="ct-entity" className="text-sm text-ink">
+                {choices.find((e) => e.id === parent?.entityId)?.name ?? "The parent’s entity"}
+                <span className="ml-2 text-xs text-muted">Shared with the parent.</span>
+              </p>
+            ) : (
+              <>
+                <EntitySelect
+                  id="ct-entity"
+                  entities={choices}
+                  value={entityId}
+                  onChange={setEntityId}
+                  onCreate={createEntity}
+                />
+                {shownPreview?.state === "loaded" && (
+                  <p className="rounded-md bg-warm px-3 py-2 text-xs text-ink" role="status">
+                    {movePreviewSentence(shownPreview.data)}
+                  </p>
+                )}
+                {shownPreview?.state === "failed" && (
+                  <p className="text-xs text-muted" role="status">
+                    Couldn’t check what this move reaches. Saving still cancels nothing.
+                  </p>
+                )}
+                {moving && !shownPreview && (
+                  <p className="text-xs text-muted" role="status">
+                    Checking what this move reaches…
+                  </p>
+                )}
+                <p className="text-xs text-muted">
+                  The entity this class type belongs to. Its sub-types move with it, and a move cancels no booking.
+                </p>
+              </>
+            )}
+          </div>
+        )}
 
         <DialogFooter>
           <Button type="button" variant="ghost" onClick={onClose}>

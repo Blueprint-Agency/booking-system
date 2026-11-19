@@ -28,6 +28,10 @@ export const nameField = z
   .min(1, 'A package needs a name.')
   .max(160, 'A name can be at most 160 characters.')
 
+// `?entity=` on a list: the Entity to show packages of. (The Entity a package is
+// sold under is `entityIdField`, in ../../entity-fields.)
+export const entityFilterField = z.string().uuid('The entity filter must be an entity id.')
+
 // Ten years is the most: past that the admin means "no expiry" and may not.
 const VALIDITY_MESSAGE = `Validity must be a whole number of days from 1 to ${MAX_VALIDITY_DAYS}.`
 export const validityDaysField = z

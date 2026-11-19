@@ -15,7 +15,7 @@
 import { and, count, countDistinct, eq, gte, isNull, lt, lte, or } from 'drizzle-orm'
 import { db } from '../../db'
 import { now as clockNow } from '../../lib/clock'
-import { clientPackages } from '../../db/schema/packages'
+import { classPackages, clientPackages, ptPackages } from '../../db/schema/packages'
 import { clients } from '../../db/schema/identity'
 import { bookings } from '../../db/schema/bookings'
 import { classes } from '../../db/schema/schedule'
@@ -23,6 +23,8 @@ import { classTypes } from '../../db/schema/catalog'
 import { heldOnOpenPurchases } from '../billing/open-purchases'
 import { isMoneyIn } from './events'
 import { getFinance, type FinanceFilter } from './list'
+import { heldPackageEntityId } from '../catalog/entities'
+import { NO_ENTITY } from './entity'
 import { toCents } from './totals'
 import type { FinanceInstructorTotal, FinanceLine, FinanceTotals } from './totals'
 
@@ -149,10 +151,13 @@ async function attendanceByClassType(
   tenantId: string,
   from: Date | undefined,
   to: Date | undefined,
+  entity: string | undefined,
 ) {
   const conds = [eq(bookings.tenantId, tenantId), eq(bookings.checkInState, 'attended')]
   if (from) conds.push(gte(classes.startsAt, from))
   if (to) conds.push(lt(classes.startsAt, to))
+  // Only the Class Types of that Entity ("No entity": those that name none).
+  if (entity) conds.push(entity === NO_ENTITY ? isNull(classTypes.entityId) : eq(classTypes.entityId, entity))
   return db
     .select({ id: classTypes.id, name: classTypes.name, attended: count() })
     .from(bookings)
@@ -180,9 +185,9 @@ async function classPopularity(
 ): Promise<ClassPopularity[]> {
   const prevWindow = previousWindow(filter.from, filter.to)
   const [current, previous] = await Promise.all([
-    attendanceByClassType(tenantId, filter.from, filter.to),
+    attendanceByClassType(tenantId, filter.from, filter.to, filter.entity),
     prevWindow
-      ? attendanceByClassType(tenantId, prevWindow.from, prevWindow.to)
+      ? attendanceByClassType(tenantId, prevWindow.from, prevWindow.to, filter.entity)
       : Promise.resolve([]),
   ])
   const before = new Map(previous.map(r => [r.id, r.attended]))
@@ -223,22 +228,42 @@ async function classPopularity(
  * be/docs/adr/0003.
  */
 async function memberCounts(tenantId: string, filter: FinanceFilter): Promise<MemberCounts> {
-  const [active] = await db
-    .select({ n: countDistinct(clientPackages.clientId) })
-    .from(clientPackages)
-    .innerJoin(clients, eq(clients.id, clientPackages.clientId))
-    .where(
-      and(
-        eq(clientPackages.tenantId, tenantId),
-        eq(clientPackages.active, true),
-        isNull(clients.deletedAt),
-        // Expiry flips `active` on a nightly sweep, so between the expiry and
-        // the nightly hour the flag is stale. The bound closes that window.
-        // A Dormant Unlimited Plan has no expiry yet (its clock starts at
-        // Activation). It is an entitlement the member holds, so it counts.
-        or(isNull(clientPackages.expiresAt), gte(clientPackages.expiresAt, clockNow())),
-      ),
-    )
+  const live = [
+    eq(clientPackages.tenantId, tenantId),
+    eq(clientPackages.active, true),
+    isNull(clients.deletedAt),
+    // Expiry flips `active` on a nightly sweep, so between the expiry and
+    // the nightly hour the flag is stale. The bound closes that window.
+    // A Dormant Unlimited Plan has no expiry yet (its clock starts at
+    // Activation). It is an entitlement the member holds, so it counts.
+    or(isNull(clientPackages.expiresAt), gte(clientPackages.expiresAt, clockNow())),
+  ]
+  // With an Entity: members holding a live plan whose source package is in it.
+  // A plan reads its Entity through its source package, as in the ledger, so a
+  // member holding two Entities is counted under each (and once for the studio,
+  // which is the unfiltered query below, untouched). "No entity": members
+  // holding a live plan with no source package, or one whose package names none.
+  const [active] = filter.entity
+    ? await db
+        .select({ n: countDistinct(clientPackages.clientId) })
+        .from(clientPackages)
+        .innerJoin(clients, eq(clients.id, clientPackages.clientId))
+        .leftJoin(
+          classPackages,
+          and(eq(classPackages.id, clientPackages.sourceClassPackageId), eq(classPackages.tenantId, tenantId)),
+        )
+        .leftJoin(ptPackages, and(eq(ptPackages.id, clientPackages.sourcePtPackageId), eq(ptPackages.tenantId, tenantId)))
+        .where(
+          and(
+            ...live,
+            filter.entity === NO_ENTITY ? isNull(heldPackageEntityId) : eq(heldPackageEntityId, filter.entity),
+          ),
+        )
+    : await db
+        .select({ n: countDistinct(clientPackages.clientId) })
+        .from(clientPackages)
+        .innerJoin(clients, eq(clients.id, clientPackages.clientId))
+        .where(and(...live))
 
   const joinedConds = [eq(clients.tenantId, tenantId), isNull(clients.deletedAt)]
   if (filter.from) joinedConds.push(gte(clients.joinedAt, filter.from))
@@ -250,14 +275,18 @@ async function memberCounts(tenantId: string, filter: FinanceFilter): Promise<Me
 
 /**
  * The overview for a period. Takes the same filter the ledger does so the two
- * can be driven by one set of controls, but reads only its date bounds — a
- * breakdown narrowed to one instructor is not an overview of anything.
+ * can be driven by one set of controls, but reads only its date bounds and its
+ * Entity — a breakdown narrowed to one instructor is not an overview of
+ * anything, but the Entity is the one filter that says which Entity
+ * the whole page is about, so the summary follows it exactly as the table does.
+ * The two stocks that are not about a period at all — what is held on open
+ * Purchases, and Members joined — stay studio-wide: neither has an Entity.
  */
 export async function getFinanceOverview(
   tenantId: string,
   filter: FinanceFilter,
 ): Promise<FinanceOverview> {
-  const period: FinanceFilter = { from: filter.from, to: filter.to }
+  const period: FinanceFilter = { from: filter.from, to: filter.to, entity: filter.entity }
   const [finance, members, classPopularityRows, held] = await Promise.all([
     getFinance(tenantId, period),
     memberCounts(tenantId, period),

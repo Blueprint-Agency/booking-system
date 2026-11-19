@@ -204,8 +204,20 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     return row
   })
 
+  // The studio's one Entity. A Mindbody studio is one Entity as far as
+  // this export can tell, so everything it creates (Class Types, and the packages
+  // that name this id too) lands in the studio's first Entity: "All classes", the
+  // generic default every studio starts with, which the studio renames and splits
+  // from settings. Carried in the archive, because the archive is built offline,
+  // the importer refuses a studio that already has rows, and so the studio it is
+  // restored into arrives with no Entity of its own.
+  const entityId = id('entity', 'all-classes')
+  const entities: Row[] = [
+    { id: entityId, tenant_id: tenantId, name: 'All classes', slug: 'all-classes', position: 0, archived_at: null },
+  ]
+
   const classTypes: Row[] = config.classTypes.map(t => {
-    const row = { id: id('class-type', t.name.trim().toLowerCase()), tenant_id: tenantId, name: t.name }
+    const row = { id: id('class-type', t.name.trim().toLowerCase()), tenant_id: tenantId, name: t.name, entity_id: entityId }
     for (const name of [t.name, ...t.mindbodyNames]) ids.class_types![name] = row.id
     return row
   })
@@ -462,6 +474,7 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     balances: reports.balances,
     config,
     tenantId,
+    entityId,
     id,
     ids,
     memberNames,
@@ -497,7 +510,7 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
   const ensurePtType = () => {
     if (!ptTypeId) {
       ptTypeId = id('class-type', ptTypeKey)
-      ptClassTypes.push({ id: ptTypeId, tenant_id: tenantId, name: config.ptClassType, archived_at: null })
+      ptClassTypes.push({ id: ptTypeId, tenant_id: tenantId, name: config.ptClassType, entity_id: entityId, archived_at: null })
       ids.class_types![config.ptClassType] = ptTypeId
     }
     return ptTypeId
@@ -629,6 +642,7 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
   // Parents first, as an export writes them — the importer orders by the
   // schema, but a person reading the zip reads it in this order.
   const rows: Record<string, Row[]> = {
+    entities,
     locations,
     rooms,
     class_types: [...classTypes, ...ptClassTypes],

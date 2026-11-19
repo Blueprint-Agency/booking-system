@@ -508,6 +508,112 @@ describe('moving a studio between deployments', () => {
     assert.equal(before?.n, originals.size)
   })
 
+  test('SUP-39 a studio\'s Entities travel in its archive: restored in place they keep their ids, copied beside it they are new rows with the same names, slugs, order and archived state', options, async () => {
+    const source = await studioWithData(`entsrc-${Date.now()}`)
+    await harness.db.execute(sql`
+      INSERT INTO entities (tenant_id, name, slug, position, archived_at) VALUES
+        (${source}, 'Yoga', 'yoga', 0, NULL),
+        (${source}, 'Pilates', 'pilates', 1, NULL),
+        (${source}, 'Barre', 'barre', 2, now())
+    `)
+    const archive = await transfer.exportTenant(source)
+    assert.deepEqual(archive.rows.entities!.map(r => r.name).sort(), ['Barre', 'Pilates', 'Yoga'])
+    assert.equal(archive.manifest.counts.entities, 3, 'the manifest counts them')
+    for (const row of archive.rows.entities!) assert.equal(row.tenant_id, source)
+
+    const lines = (tenantId: string) =>
+      harness.db.execute<{ id: string; name: string; slug: string; position: number; archived: boolean }>(sql`
+        SELECT id, name, slug, position, archived_at IS NOT NULL AS archived
+        FROM entities WHERE tenant_id = ${tenantId} ORDER BY position
+      `)
+    const original = [...(await lines(source))]
+    assert.deepEqual(original.map(r => [r.name, r.slug, r.position, r.archived]), [
+      ['Yoga', 'yoga', 0, false],
+      ['Pilates', 'pilates', 1, false],
+      ['Barre', 'barre', 2, true],
+    ])
+
+    // Beside the source: new rows, the same lines.
+    const copy = await emptyTenant(`entcopy-${Date.now()}`)
+    await transfer.importTenant(copy, archive)
+    const copied = [...(await lines(copy))]
+    assert.deepEqual(
+      copied.map(r => [r.name, r.slug, r.position, r.archived]),
+      original.map(r => [r.name, r.slug, r.position, r.archived]),
+    )
+    const originalIds = new Set(original.map(r => r.id))
+    for (const row of copied) assert.ok(!originalIds.has(row.id), 'a copied Entity is its own row')
+    assert.deepEqual([...(await lines(source))], original, 'the source is untouched')
+
+    // In place: emptied and put back, under the ids they had.
+    await deleteTenantRows(source)
+    assert.equal((await lines(source)).length, 0)
+    await transfer.importTenant(source, archive)
+    assert.deepEqual([...(await lines(source))], original)
+  })
+
+  test('SUP-40 an archive taken before Entities existed restores a studio with one Entity, "All classes", and one that carries its own is not given a second', options, async () => {
+    const source = await studioWithData(`entoldsrc-${Date.now()}`)
+    const archive = await transfer.exportTenant(source)
+    // The archive as it was before the table: no `entities` in it at all.
+    delete archive.rows.entities
+    archive.manifest.tables = archive.manifest.tables.filter(t => t !== 'entities')
+    delete archive.manifest.counts.entities
+
+    const target = await emptyTenant(`entolddst-${Date.now()}`)
+    const summary = await transfer.importTenant(target, archive)
+    assert.equal(summary.written.entities, 1)
+    const restored = await harness.db.execute<{ name: string; slug: string; position: number; archived: boolean }>(sql`
+      SELECT name, slug, position, archived_at IS NOT NULL AS archived FROM entities WHERE tenant_id = ${target}
+    `)
+    assert.deepEqual([...restored], [{ name: 'All classes', slug: 'all-classes', position: 0, archived: false }])
+
+    // An archive that has its own — renamed, say — keeps exactly those.
+    const owned = await studioWithData(`entownsrc-${Date.now()}`)
+    await harness.db.execute(sql`INSERT INTO entities (tenant_id, name, slug, position) VALUES (${owned}, 'Yoga', 'yoga', 0)`)
+    const own = await transfer.exportTenant(owned)
+    const ownTarget = await emptyTenant(`entowndst-${Date.now()}`)
+    await transfer.importTenant(ownTarget, own)
+    const names = await harness.db.execute<{ name: string }>(sql`SELECT name FROM entities WHERE tenant_id = ${ownTarget}`)
+    assert.deepEqual([...names].map(r => r.name), ['Yoga'])
+  })
+
+  test('SUP-41 each Class Type travels with its Entity: restored in place under the same ids, copied beside the source onto the copy’s own Entity of the same name, a sub-type with its parent’s', options, async () => {
+    const source = await studioWithData(`ctesrc-${Date.now()}`)
+    const [yoga] = await harness.db.execute<{ id: string }>(sql`
+      INSERT INTO entities (tenant_id, name, slug, position) VALUES (${source}, 'Yoga', 'yoga', 0) RETURNING id`)
+    const [pilates] = await harness.db.execute<{ id: string }>(sql`
+      INSERT INTO entities (tenant_id, name, slug, position) VALUES (${source}, 'Pilates', 'pilates', 1) RETURNING id`)
+    const [mat] = await harness.db.execute<{ id: string }>(sql`
+      INSERT INTO class_types (tenant_id, name, entity_id) VALUES (${source}, 'Mat', ${pilates!.id}) RETURNING id`)
+    await harness.db.execute(sql`
+      INSERT INTO class_types (tenant_id, name, entity_id, parent_id) VALUES (${source}, 'Mat Basics', ${pilates!.id}, ${mat!.id})`)
+    await harness.db.execute(sql`INSERT INTO class_types (tenant_id, name, entity_id) VALUES (${source}, 'Hatha', ${yoga!.id})`)
+    const archive = await transfer.exportTenant(source)
+
+    const placed = (tenantId: string) =>
+      harness.db.execute<{ id: string; name: string; entity_id: string; entity: string }>(sql`
+        SELECT ct.id, ct.name, ct.entity_id, e.name AS entity
+        FROM class_types ct JOIN entities e ON e.id = ct.entity_id AND e.tenant_id = ct.tenant_id
+        WHERE ct.tenant_id = ${tenantId} ORDER BY ct.name`)
+    const shape = (rows: Iterable<{ name: string; entity: string }>) => [...rows].map(r => [r.name, r.entity])
+    const original = [...(await placed(source))]
+    assert.deepEqual(shape(original), [['Hatha', 'Yoga'], ['Mat', 'Pilates'], ['Mat Basics', 'Pilates']])
+
+    // Beside the source: new rows, each in the copy's Entity of the same name.
+    const copy = await emptyTenant(`ctecopy-${Date.now()}`)
+    await transfer.importTenant(copy, archive)
+    const copied = [...(await placed(copy))]
+    assert.deepEqual(shape(copied), shape(original))
+    const originalEntityIds = new Set(original.map(r => r.entity_id))
+    for (const row of copied) assert.ok(!originalEntityIds.has(row.entity_id), 'the copy points at its own Entity')
+
+    // In place: emptied and put back, under the ids they had.
+    await deleteTenantRows(source)
+    await transfer.importTenant(source, archive)
+    assert.deepEqual([...(await placed(source))], original)
+  })
+
   test('CPS-15 a studio copied beside its source gets a ClassPass address of its own, with no Gmail code', options, async () => {
     const source = await studioWithData(`cpsrc-${Date.now()}`)
     await harness.db.execute(sql`

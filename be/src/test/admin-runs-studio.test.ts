@@ -20,6 +20,7 @@ describe('admins run the studio', { skip: integrationTestsEnabled ? false : SKIP
   const DOMAIN = `admin-runs-${run}.test`
   const TAG = `arun-${run}`
   const at = (name: string) => `${name}@${DOMAIN}`
+  let entityId!: string
 
   const send = (path: string, headers: Record<string, string>, method = 'GET', body?: unknown) =>
     harness.app.request(`/api/v1/portal/admin${path}`, {
@@ -66,6 +67,15 @@ describe('admins run the studio', { skip: integrationTestsEnabled ? false : SKIP
       .limit(1)
     assert.ok(seededLocation, 'the fixture studio has a seeded location')
     location = seededLocation
+    // Packages are sold under an Entity, which the routes require: the studio's first.
+    const [firstEntity] = await harness.db
+      .select({ id: schema.entities.id })
+      .from(schema.entities)
+      .where(eq(schema.entities.tenantId, one.id))
+      .orderBy(schema.entities.position)
+      .limit(1)
+    assert.ok(firstEntity, 'the fixture studio has an Entity')
+    entityId = firstEntity.id
   })
 
   after(async () => {
@@ -132,9 +142,9 @@ describe('admins run the studio', { skip: integrationTestsEnabled ? false : SKIP
     { group: 'locations', method: 'POST', path: '/locations', body: { name: `${TAG} Studio` } },
     { group: 'class types', method: 'POST', path: '/class-types', body: { name: `${TAG} Flow` } },
     { group: 'instructors', method: 'POST', path: '/instructors', body: { email: at(`teacher-${Math.random().toString(36).slice(2)}`), name: 'New Teacher' } },
-    { group: 'class packages', method: 'POST', path: '/class-packages', body: { name: `${TAG} Ten`, kind: 'credit_bundle', credits: 10, validity_days: 90, price_sgd: 200 } },
-    { group: 'PT packages', method: 'POST', path: '/pt-packages', body: { name: `${TAG} PT`, session_type: '1on1', num_sessions: 5, validity_days: 90, price_sgd: 400 } },
-    { group: 'corporate packages', method: 'POST', path: '/corporate-packages', body: { name: `${TAG} Corp`, price_sgd: '900.00' } },
+    { group: 'class packages', method: 'POST', path: '/class-packages', body: { name: `${TAG} Ten`, entity_id: entityId, kind: 'credit_bundle', credits: 10, validity_days: 90, price_sgd: 200 } },
+    { group: 'PT packages', method: 'POST', path: '/pt-packages', body: { name: `${TAG} PT`, entity_id: entityId, session_type: '1on1', num_sessions: 5, validity_days: 90, price_sgd: 400 } },
+    { group: 'corporate packages', method: 'POST', path: '/corporate-packages', body: { name: `${TAG} Corp`, entity_id: entityId, price_sgd: '900.00' } },
     { group: 'promo codes', method: 'POST', path: '/promo-codes', body: { label: `${TAG} Promo`, kind: 'percent', percent_off: 10, applies_to_all: true } },
     { group: 'policy', method: 'PATCH', path: '/policy/global', body: {} },
     { group: 'clients', method: 'POST', path: '/clients', body: { name: 'Ada Lovelace', email: at(`member-${Math.random().toString(36).slice(2)}`), phone: '+6591234567' } },
@@ -199,7 +209,7 @@ describe('admins run the studio', { skip: integrationTestsEnabled ? false : SKIP
       .where(and(eq(schema.rooms.locationId, location.id), sql`${schema.rooms.name} NOT LIKE ${`${TAG}%`}`))
       .limit(1)
     assert.ok(room, 'the seeded location has a room')
-    const pkg = await ok(await send('/corporate-packages', admin.headers, 'POST', { name: `${TAG} Offsite`, price_sgd: '900.00' }))
+    const pkg = await ok(await send('/corporate-packages', admin.headers, 'POST', { name: `${TAG} Offsite`, entity_id: entityId, price_sgd: '900.00' }))
 
     // A corporate session only comes from a member's Corporate Request (admin-restructure §7c).
     const email = at('corporate-client')

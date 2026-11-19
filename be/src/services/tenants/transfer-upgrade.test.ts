@@ -36,6 +36,8 @@ test('an archive already in the current shape is returned as it was', () => {
     staff_users: [{ id: ANNA, role: 'admin', annual_leave_days: 14, medical_leave_days: 14, study_leave_days: 7 }],
     instructors: [{ staff_user_id: ADA, photo_r2_key: null }],
     leave_requests: [{ id: 'r1', staff_user_id: ANNA }],
+    // Current means it carries Entities, as every archive has since 0142.
+    entities: [{ id: 'e1', name: 'Yoga', slug: 'yoga', position: 0, archived_at: null }],
   }
   assert.deepEqual(upgradeArchiveRows(current), current)
 })
@@ -118,6 +120,73 @@ test('TEN-52 an archive from before migration 0140 restores a request whose sess
     pt_requests: [{ id: 'r2', status: 'scheduled', scheduled_pt_session_id: GONE }],
   })
   assert.deepEqual(noSessions.pt_requests, [{ id: 'r2', status: 'scheduled', scheduled_pt_session_id: null }])
+})
+
+test('TEN-142 an archive from before migration 0145 restores each Class Type, sub-types too, in the studio’s first live Entity, and one that carries an Entity is left as it is', () => {
+  const upgraded = upgradeArchiveRows({
+    entities: [
+      { id: 'old', name: 'Old', slug: 'old', position: 0, archived_at: '2026-01-01T00:00:00Z' },
+      { id: 'second', name: 'Barre', slug: 'barre', position: 2, archived_at: null },
+      { id: 'first', name: 'Yoga', slug: 'yoga', position: 1, archived_at: null },
+    ],
+    class_types: [
+      { id: 'root', name: 'Yoga', parent_id: null },
+      { id: 'sub', name: 'Hatha', parent_id: 'root' },
+    ],
+  })
+  assert.deepEqual(
+    upgraded.class_types!.map(r => [r.id, r.entity_id]),
+    [['root', 'first'], ['sub', 'first']],
+  )
+
+  // An archive from before the Entities table gets the one every studio starts with, and its Class Types go to it.
+  const older = upgradeArchiveRows({ class_types: [{ id: 'root', name: 'Yoga' }] })
+  assert.equal(older.entities!.length, 1)
+  assert.equal(older.class_types![0]!.entity_id, older.entities![0]!.id)
+
+  // A row that has the column keeps it, null included.
+  const current = upgradeArchiveRows({
+    entities: [{ id: 'first', name: 'Yoga', slug: 'yoga', position: 0, archived_at: null }],
+    class_types: [
+      { id: 'a', entity_id: 'first' },
+      { id: 'b', entity_id: null },
+    ],
+  })
+  assert.deepEqual(current.class_types!.map(r => r.entity_id), ['first', null])
+})
+
+test('SUP-44 an archive whose packages name no Entity puts them in the first live Entity, and one whose packages already name theirs is left alone', () => {
+  const packages = { class_packages: [{ id: 'c1' }, { id: 'c2' }], pt_packages: [{ id: 'p1' }], corporate_packages: [{ id: 'k1' }] }
+
+  // Before Entities: the one synthesised "All classes" holds every package.
+  const old = upgradeArchiveRows(packages)
+  const [all] = old.entities!
+  assert.equal(all!.name, 'All classes')
+  for (const table of ['class_packages', 'pt_packages', 'corporate_packages']) {
+    for (const row of old[table]!) assert.equal(row.entity_id, all!.id, `${table} lands in it`)
+  }
+
+  // Entities, but taken before packages carried one: the first live Entity by position, archived ones passed over.
+  const between = upgradeArchiveRows({
+    ...packages,
+    entities: [
+      { id: 'barre', position: 0, archived_at: '2026-01-01T00:00:00Z' },
+      { id: 'pilates', position: 2, archived_at: null },
+      { id: 'yoga', position: 1, archived_at: null },
+    ],
+  })
+  assert.deepEqual(between.class_packages, [
+    { id: 'c1', entity_id: 'yoga' },
+    { id: 'c2', entity_id: 'yoga' },
+  ])
+  assert.deepEqual(between.corporate_packages, [{ id: 'k1', entity_id: 'yoga' }])
+
+  // Current: a package's own Entity, even one since archived, or none, is the studio's choice.
+  const current = {
+    entities: [{ id: 'yoga', position: 0, archived_at: null }, { id: 'barre', position: 1, archived_at: '2026-01-01T00:00:00Z' }],
+    class_packages: [{ id: 'c1', entity_id: 'barre' }, { id: 'c2', entity_id: null }],
+  }
+  assert.deepEqual(upgradeArchiveRows(current), current)
 })
 
 test("the caller's archive is not changed", () => {

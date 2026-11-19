@@ -510,12 +510,14 @@ async function seedAll(db: PostgresJsDatabase<typeof schema>): Promise<void> {
   const { seedLocations } = await import('../db/seed/locations')
   const { seedRooms } = await import('../db/seed/rooms')
   const { seedPolicy } = await import('../db/seed/policy')
+  const { seedEntities } = await import('../db/seed/entities')
   const { seedEmailTemplates } = await import('../db/seed/email-templates')
   const { seedMarketing } = await import('../db/seed/marketing')
   for (const tenant of seededTenants()) {
     await seedLocations(db, tenant)
     await seedRooms(db, tenant)
     await seedPolicy(db, tenant)
+    await seedEntities(db, tenant)
     // A tenant's own content, for the same reason: an email template resolved
     // by (tenant, slug) is missing for tenant #2 unless it is seeded for
     // tenant #2, and a leave decision that cannot render is a test failure

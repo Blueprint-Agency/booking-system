@@ -5160,4 +5160,174 @@ describe('PT requests over HTTP', { skip: integrationTestsEnabled ? false : SKIP
     assert.equal(await sessionsLeft(pair.secondPackage), 9)
     assert.equal(await sessionsLeft(pair.firstPackage), 9)
   })
+
+  // ── Entities (#559): a private session's Class Type is in its package's Entity ──
+
+  /**
+   * Two Entities at studio one, a PT package and a Class Type in each, and a
+   * member holding the Yoga 1on1 package. `pilatesPackage` is the other
+   * Entity's, for a held package of a different Entity.
+   */
+  async function entityFixture(scenario: string) {
+    // Names are unique per studio and the test database outlives a run.
+    const label = `${scenario} ${run}`
+    const [yoga, pilates] = await harness.db
+      .insert(schema.entities)
+      .values([
+        { tenantId: one.id, name: `${label} Yoga`, slug: `${run}-${scenario}-yoga`.toLowerCase(), position: 90 },
+        { tenantId: one.id, name: `${label} Pilates`, slug: `${run}-${scenario}-pilates`.toLowerCase(), position: 91 },
+      ])
+      .returning({ id: schema.entities.id })
+    const [yogaType, pilatesType, bareType] = await harness.db
+      .insert(schema.classTypes)
+      .values([
+        { tenantId: one.id, name: `${label} yoga type`, entityId: yoga!.id },
+        { tenantId: one.id, name: `${label} pilates type`, entityId: pilates!.id },
+        { tenantId: one.id, name: `${label} bare type` },
+      ])
+      .returning({ id: schema.classTypes.id })
+    const [yogaPackage, pilatesPackage, barePackage] = await harness.db
+      .insert(schema.ptPackages)
+      .values(
+        [
+          { name: `${label} yoga PT`, entityId: yoga!.id },
+          { name: `${label} pilates PT`, entityId: pilates!.id },
+          { name: `${label} legacy PT`, entityId: null },
+        ].map(p => ({
+          tenantId: one.id,
+          ...p,
+          sessionType: '1on1' as const,
+          numSessions: 10,
+          validityDays: 90,
+          priceSgd: '900.00',
+        })),
+      )
+      .returning({ id: schema.ptPackages.id })
+    return {
+      yoga: yoga!.id,
+      pilates: pilates!.id,
+      yogaType: yogaType!.id,
+      pilatesType: pilatesType!.id,
+      bareType: bareType!.id,
+      yogaPackage: yogaPackage!.id,
+      pilatesPackage: pilatesPackage!.id,
+      barePackage: barePackage!.id,
+    }
+  }
+
+  async function holding(who: Member, ptPackageId: string): Promise<string> {
+    const { clientPackageId } = await purchaseSvc.grantPackage(one.id, {
+      clientId: who.clientId,
+      purchaseId: null,
+      amountSgd: '900.00',
+      packageKind: 'pt',
+      packageId: ptPackageId,
+    })
+    return clientPackageId
+  }
+
+  test('PT-186 a request whose Class Type is in another Entity than the paying PT package is refused with class_type_not_in_entity, and nothing is created or debited', async () => {
+    const fx = await entityFixture('PT186')
+    const ada = await member(one, 'Ada Elsewhere')
+    const held = await holding(ada, fx.yogaPackage)
+
+    const res = await expectStatus(
+      await submit(one, ada, { sessionType: '1on1', clientPackageId: held, classTypeId: fx.pilatesType }),
+      409,
+    )
+    assert.equal(res.error, 'class_type_not_in_entity')
+
+    assert.equal((await requestsOf(ada)).length, 0)
+    assert.equal(await sessionsLeft(held), 10)
+    assert.equal((await movementsOn(held)).length, 0)
+  })
+
+  test('PT-187 a request whose Class Type is in the paying PT package\'s Entity is accepted and debits one session', async () => {
+    const fx = await entityFixture('PT187')
+    const bea = await member(one, 'Bea Inside')
+    const held = await holding(bea, fx.pilatesPackage)
+
+    const requestId = await requestOk(one, bea, {
+      sessionType: '1on1',
+      clientPackageId: held,
+      classTypeId: fx.pilatesType,
+    })
+
+    assert.equal((await requestRow(requestId)).classTypeId, fx.pilatesType)
+    assert.equal(await sessionsLeft(held), 9)
+  })
+
+  test('PT-188 a request naming no Class Type is accepted whichever Entity the PT package is in', async () => {
+    const fx = await entityFixture('PT188')
+    const cal = await member(one, 'Cal Anything')
+    const held = await holding(cal, fx.yogaPackage)
+
+    const res = await expectStatus(
+      await harness.app.request('/api/v1/me/pt-sessions/request', {
+        method: 'POST',
+        headers: { ...cal.headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          locationId: one.places[0]!.locationId,
+          sessionType: '1on1',
+          clientPackageId: held,
+          slots: [{ proposedDate, startTime: '09:00', endTime: '10:00' }],
+        }),
+      }),
+      201,
+    )
+
+    assert.equal((await requestRow(res.pt_request_id)).classTypeId, null)
+    assert.equal(await sessionsLeft(held), 9)
+  })
+
+  test('PT-189 a PT package or Class Type with no Entity (made before Entities) restricts nothing: the request is accepted either way round', async () => {
+    const fx = await entityFixture('PT189')
+    const dee = await member(one, 'Dee Legacy')
+    const legacyPackage = await holding(dee, fx.barePackage)
+    const yogaPackage = await holding(dee, fx.yogaPackage)
+
+    // A package with no Entity pays for a Class Type in any Entity.
+    await requestOk(one, dee, { sessionType: '1on1', clientPackageId: legacyPackage, classTypeId: fx.pilatesType })
+    // A Class Type with no Entity is open to a package of any Entity.
+    await requestOk(one, dee, { sessionType: '1on1', clientPackageId: yogaPackage, classTypeId: fx.bareType })
+
+    assert.equal(await sessionsLeft(legacyPackage), 9)
+    assert.equal(await sessionsLeft(yogaPackage), 9)
+  })
+
+  test('PT-190 the Entity check never changes what an unknown or archived Class Type answers: still 404 class_type_not_found, before the Entity is looked at', async () => {
+    const fx = await entityFixture('PT190')
+    const eve = await member(one, 'Eve Missing')
+    const held = await holding(eve, fx.yogaPackage)
+    await harness.db.update(schema.classTypes).set({ archivedAt: new Date() }).where(eq(schema.classTypes.id, fx.pilatesType))
+
+    for (const classTypeId of [fx.pilatesType, randomUUID()]) {
+      const res = await expectStatus(
+        await submit(one, eve, { sessionType: '1on1', clientPackageId: held, classTypeId }),
+        404,
+      )
+      assert.equal(res.error, 'class_type_not_found')
+    }
+    assert.equal((await requestsOf(eve)).length, 0)
+    assert.equal(await sessionsLeft(held), 10)
+  })
+
+  test('PT-191 the member app can narrow: the public Class Type read and the member\'s package wallet each name their Entity', async () => {
+    const fx = await entityFixture('PT191')
+    const fay = await member(one, 'Fay Narrow')
+    const held = await holding(fay, fx.pilatesPackage)
+
+    const types = await expectStatus(
+      await harness.app.request('/api/v1/public/class-types', { headers: { 'X-Tenant-Slug': one.slug } }),
+      200,
+    )
+    const entityOf = (id: string) => types.class_types.find((t: any) => t.id === id)?.entity_id
+    assert.equal(entityOf(fx.yogaType), fx.yoga)
+    assert.equal(entityOf(fx.pilatesType), fx.pilates)
+    assert.equal(entityOf(fx.bareType), null)
+
+    const wallet = await expectStatus(await harness.app.request('/api/v1/me/packages', { headers: fay.headers }), 200)
+    const mine = wallet.client_packages.find((p: any) => p.id === held)
+    assert.equal(mine.entity_id, fx.pilates)
+  })
 })

@@ -2,6 +2,12 @@ import { and, eq, isNull, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { ptPackages } from '../../db/schema/packages'
 import { BadRequestError, NotFoundError } from '../../shared/errors'
+import {
+  assertEntityUsable,
+  entityForNewPackage,
+  entityMoveOf,
+  entityScopeForSlug,
+} from '../catalog/entities'
 import { replacePromotionsForParent, type PromotionWriteInput } from './promotions'
 
 export type PtPackageRow = typeof ptPackages.$inferSelect
@@ -12,11 +18,18 @@ export async function listPtPackages(
   opts: {
     status?: 'active' | 'archived'
     sessionType?: PtSessionType
+    entityId?: string
+    /** `?entity=<slug>`: a slug naming no live Entity of the studio lists nothing. */
+    entitySlug?: string
   },
 ): Promise<PtPackageRow[]> {
+  const scope = await entityScopeForSlug(tenantId, opts.entitySlug)
+  if (scope === null) return []
   const filters = [eq(ptPackages.tenantId, tenantId), isNull(ptPackages.deletedAt)]
   if (opts.status) filters.push(eq(ptPackages.status, opts.status))
   if (opts.sessionType) filters.push(eq(ptPackages.sessionType, opts.sessionType))
+  if (opts.entityId) filters.push(eq(ptPackages.entityId, opts.entityId))
+  if (scope.entityId) filters.push(eq(ptPackages.entityId, scope.entityId))
   return db
     .select()
     .from(ptPackages)
@@ -48,16 +61,20 @@ export interface CreatePtPackageInput {
    */
   instructorBound?: boolean
   priceSgd: string
+  /** The Entity it is sold under. Left out, it goes in the studio's first live Entity; the admin routes always send it. */
+  entityId?: string
 }
 
 export async function createPtPackage(
   tenantId: string,
   input: CreatePtPackageInput,
 ): Promise<PtPackageRow> {
+  const entityId = await entityForNewPackage(tenantId, input.entityId)
   const [row] = await db
     .insert(ptPackages)
     .values({
       tenantId,
+      entityId,
       name: input.name,
       sessionType: input.sessionType,
       numSessions: input.numSessions,
@@ -107,6 +124,11 @@ export interface UpdatePtPackageInput {
    */
   instructorBound?: boolean
   status?: 'active' | 'archived'
+  /**
+   * A move to another Entity, checked only when it is a change. A move cancels
+   * nothing: the packages members hold read their Entity through this one.
+   */
+  entityId?: string
 }
 
 export async function updatePtPackage(
@@ -114,17 +136,23 @@ export async function updatePtPackage(
   id: string,
   patch: UpdatePtPackageInput,
 ): Promise<PtPackageRow> {
-  await getPtPackage(tenantId, id)
+  const current = await getPtPackage(tenantId, id)
+  const moveTo = await entityMoveOf(tenantId, current, patch)
+  const changes = {
+    ...(moveTo !== undefined ? { entityId: moveTo } : {}),
+    ...(patch.name !== undefined ? { name: patch.name } : {}),
+    ...(patch.priceSgd !== undefined ? { priceSgd: patch.priceSgd } : {}),
+    ...(patch.numSessions !== undefined ? { numSessions: patch.numSessions } : {}),
+    ...(patch.validityDays !== undefined ? { validityDays: patch.validityDays } : {}),
+    ...(patch.instructorBound !== undefined ? { instructorBound: patch.instructorBound } : {}),
+    ...(patch.status !== undefined ? { status: patch.status } : {}),
+  }
+  // Nothing to change (an edit naming the Entity the package is already in):
+  // an empty UPDATE is an error, and the package is as it should be.
+  if (Object.keys(changes).length === 0) return current
   const [row] = await db
     .update(ptPackages)
-    .set({
-      ...(patch.name !== undefined ? { name: patch.name } : {}),
-      ...(patch.priceSgd !== undefined ? { priceSgd: patch.priceSgd } : {}),
-      ...(patch.numSessions !== undefined ? { numSessions: patch.numSessions } : {}),
-      ...(patch.validityDays !== undefined ? { validityDays: patch.validityDays } : {}),
-      ...(patch.instructorBound !== undefined ? { instructorBound: patch.instructorBound } : {}),
-      ...(patch.status !== undefined ? { status: patch.status } : {}),
-    })
+    .set(changes)
     .where(and(eq(ptPackages.tenantId, tenantId), eq(ptPackages.id, id)))
     .returning()
   return row!
@@ -170,6 +198,7 @@ export async function unarchivePtPackage(tenantId: string, id: string): Promise<
   if (existing.status !== 'archived') {
     throw new BadRequestError('pt_package_not_archived')
   }
+  await assertEntityUsable(tenantId, existing.entityId)
   const [row] = await db
     .update(ptPackages)
     .set({ status: 'active', archivedAt: null })

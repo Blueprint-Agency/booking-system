@@ -10,7 +10,17 @@ import {
 import { MAX_DURATION_MONTHS } from '../../../services/packages/validity'
 import { tenantId } from '../../../middleware/tenant'
 import { explainInvalid } from '../../explain-invalid'
-import { nameField, priceField, promotionsField, toPromotionWriteInput, validityDaysField } from './package-fields'
+import { entityIdField } from '../../entity-fields'
+import { entityFieldsFor, type EntityFields } from '../../../services/catalog/entities'
+import { packageEntityPreview } from './package-entity-preview'
+import {
+  entityFilterField,
+  nameField,
+  priceField,
+  promotionsField,
+  toPromotionWriteInput,
+  validityDaysField,
+} from './package-fields'
 
 const kindEnum = z.enum(['credit_bundle', 'unlimited', 'trial'], {
   message: 'A class package is a credit bundle, an unlimited plan or a trial.',
@@ -20,6 +30,7 @@ const statusEnum = z.enum(['active', 'archived'], { message: 'A status is active
 const listQuery = z.object({
   status: statusEnum.optional(),
   kind: kindEnum.optional(),
+  entity: entityFilterField.optional(),
 })
 
 const idParam = z.object({ id: z.string().uuid() })
@@ -33,6 +44,7 @@ const explainPackage = explainInvalid('That class package is not valid.')
 
 const createSchema = z.object({
   name: nameField,
+  entity_id: entityIdField.optional(),
   description: descriptionField.nullish(),
   kind: kindEnum,
   credits: creditsField.nullish(),
@@ -44,6 +56,7 @@ const createSchema = z.object({
 
 const updateSchema = z.object({
   name: nameField.optional(),
+  entity_id: entityIdField.optional(),
   description: descriptionField.nullish().optional(),
   credits: creditsField.nullish().optional(),
   validity_days: validityDaysField.nullish().optional(),
@@ -60,9 +73,11 @@ function serialize(
     effectivePriceSgd: r.priceSgd,
     appliedPromotionId: null,
   },
+  entity: EntityFields,
 ) {
   return {
     id: r.id,
+    ...entity,
     name: r.name,
     description: r.description,
     kind: r.kind,
@@ -81,26 +96,30 @@ function serialize(
 async function serializeWithPromos(tenant: string, r: svc.ClassPackageRow) {
   const map = await listManagedPromotionsFor(tenant, 'class_package', [r.id])
   const promos = map[r.id] ?? []
+  const [entity] = await entityFieldsFor(tenant, [r])
   return serialize(
     r,
     promos.map(serializePromotion),
     bestPrice(r.priceSgd, promos),
+    entity!,
   )
 }
 
 const app = new Hono()
   .get('/', zValidator('query', listQuery), async c => {
     const q = c.req.valid('query')
-    const rows = await svc.listClassPackages(tenantId(c), q)
+    const rows = await svc.listClassPackages(tenantId(c), { status: q.status, kind: q.kind, entityId: q.entity })
     const ids = rows.map(r => r.id)
     const promosByPkg = await listManagedPromotionsFor(tenantId(c), 'class_package', ids)
+    const entities = await entityFieldsFor(tenantId(c), rows)
     return c.json({
-      class_packages: rows.map(r => {
+      class_packages: rows.map((r, i) => {
         const ps = promosByPkg[r.id] ?? []
-        return serialize(r, ps.map(serializePromotion), bestPrice(r.priceSgd, ps))
+        return serialize(r, ps.map(serializePromotion), bestPrice(r.priceSgd, ps), entities[i]!)
       }),
     })
   })
+  .route('/', packageEntityPreview('class', explainPackage))
   .get('/:id', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     return c.json(await serializeWithPromos(tenantId(c), await svc.getClassPackage(tenantId(c), id)))
@@ -112,6 +131,7 @@ const app = new Hono()
       tenantId(c),
       {
         name: body.name,
+        entityId: body.entity_id,
         description: body.description ?? null,
         kind: body.kind,
         credits: body.credits ?? null,
@@ -134,6 +154,7 @@ const app = new Hono()
       id,
       {
         ...(body.name !== undefined ? { name: body.name } : {}),
+        ...(body.entity_id !== undefined ? { entityId: body.entity_id } : {}),
         ...(body.description !== undefined ? { description: body.description ?? null } : {}),
         ...(body.credits !== undefined ? { credits: body.credits ?? null } : {}),
         ...(body.validity_days !== undefined ? { validityDays: body.validity_days ?? null } : {}),

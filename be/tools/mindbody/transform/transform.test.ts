@@ -53,6 +53,20 @@ test('the archive is for the Tenant it was built for, and asks for accounts to b
   assert.notEqual(other.ids.clients!['100000001'], ids.clients!['100000001'])
 })
 
+test('SUP-42 every Class Type the transform makes, the PT focus included, is in the one Entity the archive carries', async () => {
+  const { archive } = await run()
+  assert.equal(archive.rows.entities!.length, 1)
+  const [entity] = archive.rows.entities!
+  assert.equal(entity!.tenant_id, TENANT)
+  assert.equal(entity!.archived_at, null)
+  assert.equal(archive.manifest.counts.entities, 1)
+
+  const types = archive.rows.class_types!
+  assert.ok(types.some(t => t.name === 'Personal Training'), 'the PT focus is among them')
+  assert.ok(types.length >= 3)
+  for (const type of types) assert.equal(type.entity_id, entity!.id, `${type.name} is in the Entity`)
+})
+
 test('members: every profile, lower-cased email, join date in the studio timezone, placeholders gone', async () => {
   const { archive, ids } = await run()
   const byId = (barcode: string) => archive.rows.clients!.find(r => r.id === ids.clients![barcode])!

@@ -148,6 +148,33 @@ test("PT-144 a time after the furthest any package runs is named before sending,
   assert.equal(ptLatestDate("2026-11-08", null, SG), "2026-11-08");
 });
 
+test("PT-192 once a class type is picked, a PT package of another Entity is greyed with the reason; Any, a class type or a package with no Entity rules nothing out", () => {
+  const packages = [
+    pt({ id: "yoga", entityId: "e-yoga" }),
+    pt({ id: "pilates", entityId: "e-pilates" }),
+    pt({ id: "legacy", entityId: null }),
+    pt({ id: "unsent" }),
+  ];
+  const eligible = (classTypeEntityId: string | null) =>
+    ptPickRows(packages, "1on1", 1, SG, null, NOW, classTypeEntityId).map((r) => [r.pkg.id, r.eligible]);
+
+  assert.deepEqual(eligible("e-yoga"), [
+    ["yoga", true],
+    ["pilates", false],
+    ["legacy", true],
+    ["unsent", true],
+  ]);
+  assert.deepEqual(
+    eligible(null).map(([, ok]) => ok),
+    [true, true, true, true],
+  );
+
+  const [, other] = ptPickRows(packages, "1on1", 1, SG, null, NOW, "e-yoga");
+  assert.equal(other!.reason, "Not for the class type you picked — choose another class type, or Any");
+  // The first package that can pay is ticked, not one the class type rules out.
+  assert.equal(initialPtPick(ptPickRows([packages[1]!, packages[0]!], "1on1", 1, SG, null, NOW, "e-yoga")), "yoga");
+});
+
 test("the first package that can pay starts ticked; none when nothing can", () => {
   const rows = ptPickRows([pt({ id: "empty", creditsOrSessionsRemaining: 0 }), pt({ id: "full" })], "1on1", 1, SG);
   assert.equal(initialPtPick(rows), "full");

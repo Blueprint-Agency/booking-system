@@ -35,10 +35,13 @@ import {
   FINANCE_TYPES,
   METHOD_CATEGORIES,
   METHOD_CATEGORY_LABEL,
+  NO_ENTITY_LABEL,
   UNATTRIBUTED,
   createManualEntry,
   deleteManualEntry,
   downloadFinanceCsv,
+  entityFilterOptions,
+  entityScopeName,
   fetchFinance,
   fetchFinanceOverview,
   financeErrorMessage,
@@ -51,6 +54,8 @@ import {
   type FinanceResponse,
   type FinanceRow,
 } from "@/lib/finance";
+import { ALL_ENTITIES, showEntityFilter } from "@/lib/entities";
+import { useEntities } from "@/lib/use-entities";
 import { OverviewPanel } from "./overview";
 
 /**
@@ -112,6 +117,10 @@ function FinanceScreen() {
   const [location, setLocation] = useState("");
   const [needsPay, setNeedsPay] = useState(initial.needsPay);
   const [method, setMethod] = useState("");
+  // The one narrowing control that also narrows the figures: an Entity is what
+  // the whole page can be about, so it rides with the period.
+  const [entity, setEntity] = useState(ALL_ENTITIES);
+  const { entities, status: entitiesStatus, reload: reloadEntities } = useEntities();
 
   // Needs pay and the period live in the address bar, so a bell link opens on
   // them and a reload keeps them. After commit, not in an updater: Next patches
@@ -138,8 +147,8 @@ function FinanceScreen() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const filters: FinanceFilters = useMemo(
-    () => ({ type, q, location, needsPay, method, range }),
-    [type, q, location, needsPay, method, range],
+    () => ({ type, q, location, entity, needsPay, method, range }),
+    [type, q, location, entity, needsPay, method, range],
   );
 
   useEffect(() => {
@@ -165,18 +174,19 @@ function FinanceScreen() {
     };
   }, [api, listsAttempt]);
 
-  // The overview reloads on the period alone. Kept separate from the ledger's
-  // effect so typing in the search box doesn't re-run four analytics queries.
+  // The overview reloads on the period and the Entity alone. Kept separate from
+  // the ledger's effect so typing in the search box doesn't re-run four
+  // analytics queries.
   const loadOverview = useCallback(async () => {
     if (!api) return;
     setOverview(null);
     setOverviewFailed(false);
     try {
-      setOverview(await fetchFinanceOverview(api, timezone, range));
+      setOverview(await fetchFinanceOverview(api, timezone, range, entity));
     } catch (err) {
       if (!answeredElsewhere(err)) setOverviewFailed(true);
     }
-  }, [api, timezone, range]);
+  }, [api, timezone, range, entity]);
 
   useEffect(() => {
     void loadOverview();
@@ -372,12 +382,38 @@ function FinanceScreen() {
 
       {/* The period. Drives the overview AND the ledger, so it sits above both
           rather than inside either. */}
-      <div className="mb-4 rounded-xl border border-border bg-card p-3 shadow-soft">
+      <div className="mb-4 flex flex-col gap-3 rounded-xl border border-border bg-card p-3 shadow-soft sm:flex-row sm:flex-wrap sm:items-end">
         <DateRangeFilter value={range} onChange={setRange} />
+        {/* Only a studio with two or more Entities has one to choose: with
+            one it would narrow nothing. Beside the period because it narrows
+            the figures below as well as the table. */}
+        {showEntityFilter(entities) && (
+          <FilterSelect
+            label="Entity"
+            value={entity}
+            onChange={setEntity}
+            allLabel="All entities"
+            options={entityFilterOptions(entities)}
+          />
+        )}
       </div>
 
+      {entitiesStatus === "failed" && (
+        <LoadFailure
+          what="the entity list"
+          variant="inline"
+          detail="The Entity filter is unavailable."
+          onRetry={reloadEntities}
+          className="mb-4"
+        />
+      )}
+
       {overview ? (
-        <OverviewPanel data={overview} unpricedCount={overview.unpriced_count} />
+        <OverviewPanel
+          data={overview}
+          unpricedCount={overview.unpriced_count}
+          entityName={entityScopeName(entity, entities)}
+        />
       ) : overviewFailed ? (
         <div className="rounded-xl border border-border bg-card shadow-soft">
           <LoadFailure what="the period's figures" onRetry={loadOverview} className="py-6" />
@@ -525,6 +561,11 @@ function FinanceScreen() {
                       <LocationName row={row} />
                     </span>
                   </MobileField>
+                  <MobileField label="Entity">
+                    <span className="break-words text-muted">
+                      <EntityName row={row} />
+                    </span>
+                  </MobileField>
                   <MobileField label="Code">
                     <PromoCode row={row} />
                   </MobileField>
@@ -556,6 +597,7 @@ function FinanceScreen() {
                   <th className="px-3 py-2.5 font-medium">Variant</th>
                   <th className="px-3 py-2.5 text-right font-medium">Price</th>
                   <th className="px-3 py-2.5 font-medium">Location</th>
+                  <th className="px-3 py-2.5 font-medium">Entity</th>
                   <th className="px-3 py-2.5 text-right font-medium">Discount</th>
                   <th className="px-3 py-2.5 font-medium">Code</th>
                   <th className="px-3 py-2.5 text-right font-medium">Money in</th>
@@ -586,6 +628,9 @@ function FinanceScreen() {
                     </td>
                     <td className="px-3 py-2.5 text-muted">
                       <LocationName row={row} />
+                    </td>
+                    <td className="px-3 py-2.5 text-muted">
+                      <EntityName row={row} />
                     </td>
                     <td className="px-3 py-2.5 text-right tabular-nums">
                       <Discount row={row} />
@@ -687,6 +732,11 @@ function LocationName({ row }: { row: FinanceRow }) {
   ) : (
     <>{row.location_name}</>
   );
+}
+
+/** The Entity the row is filed under, or a faint "No entity" (as Unattributed is). */
+function EntityName({ row }: { row: FinanceRow }) {
+  return row.entity_name ? <>{row.entity_name}</> : <span className="text-muted/60">{NO_ENTITY_LABEL}</span>;
 }
 
 function Discount({ row }: { row: FinanceRow }) {

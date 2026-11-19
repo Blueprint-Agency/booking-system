@@ -166,6 +166,8 @@ Locations are the workspace boundary — every scoped surface (Schedule, Rooms, 
 - **Blocked** — if any upcoming or ongoing session uses this class type. Parents are also blocked while any child still has linked data.
 - Archived class types appear at bottom of list with Restore option.
 
+**Entity (#557).** Every class type belongs to an Entity (`be/CONTEXT.md` § Entity). The class type dialog has an **Entity** dropdown on a top-level type, defaulting to the studio's first, with "+ New entity". Picking a parent hides the dropdown and shows the parent's Entity read-only: a sub-type shares it. Changing a top-level type's Entity (with its sub-types) first shows "N upcoming classes and M bookings are reached; nothing is cancelled" (`GET /class-types/:id/entity-preview`); the move itself cancels no booking. Each row and parent group shows its Entity as a badge once the studio has two or more.
+
 ---
 
 ## 3. Instructors
@@ -254,6 +256,8 @@ Single source of truth for client-initiated class and PT cancellation. Workshops
 **Purpose:** Pre-requisite config. Admin sets up class packages here before any class sessions can be created on the Schedule. No scheduling happens here. **Admin-only.**
 
 **Cancellation policy lives in §4 Global Policy — not configured here.**
+
+**Every package belongs to an Entity** (Packages → Classes, Packages → Private Sessions and Packages → Corporate alike; `be/CONTEXT.md` § Entity, `be-portal.md` § Package Entities). Each package form opens with an **Entity** dropdown that starts on the studio's first Entity and offers "+ New entity", which creates one in place (`POST /portal/admin/entities`) and selects it. Each card names its Entity, and the list has an Entity filter that is hidden while the studio has one. Editing a package and choosing a different Entity first asks the move preview how many members hold it and says so ("N members hold this package. It moves with it, and nothing is cancelled."); Save waits for that answer. A package in an Entity that has been archived cannot be unarchived until it is moved to a live one.
 
 `ClassPackageKind = "credit_bundle" | "unlimited" | "trial"`. Page lists Trial Pass first, then credit bundles, then unlimited memberships.
 
@@ -434,6 +438,8 @@ The old Packages → Workshops list and its `/admin/packages/workshops` pages ar
 ### 7g. An Instructor's Full studio schedule
 
 An Instructor's schedule page (`/instructor/schedule`) has a dropdown beside its "+" buttons: **My schedule** (the default: their own classes, private sessions, workshops and corporate sessions) or **Full studio schedule** (titled "Studio schedule"): the whole studio's timetable, read from `GET /portal/instructor/schedule/studio`. That means every instructor's classes with their booked/capacity and waiting counts, private sessions with their members' names, workshops and corporate sessions, so an instructor picks a slot knowing what else is on. It draws in the same day, week, month and List views, and the "+ Class" / "+ PT Session" buttons work on it as on My schedule. Its filters add **Instructor** (active instructors, from `GET /portal/instructor/catalog/instructors`) and, with more than one location, **Location** to Type. Only the instructor's own class or private session opens its page (and offers Cancel); another instructor's entry shows but opens nothing, so other classes' rosters stay unseen. The choice is kept for the tab (session storage), like the position.
+
+**Entity filter** (#563). With two or more Entities, the Admin's Schedule and both Instructor scopes (My schedule and Full studio schedule) add an **Entity** pill to Filters (All, then each Entity in the studio's order; the Instructor's list comes from `GET /portal/instructor/catalog/entities`). It narrows classes by their Class Type's Entity on the server, so it holds in every view (Day, Week, Month, List) and counts in the Filters badge and Clear all. Workshops, private sessions and corporate sessions stay in view under every choice. With one Entity the pill is not shown and the schedule reads as before. The choice is not kept across visits.
 
 ---
 
@@ -767,6 +773,7 @@ The page is **Customers** in the nav and lives at `/admin/customers`; `/admin/cl
 - **Attended** is attendance *on the trial package*, never the member's attendance overall — someone who skipped their trial and returned later on a bundle reads zero, and zero is the follow-up signal.
 - **Converted** means they paid for a package that is not another trial. A comped grant is not a conversion; a second trial is not one either.
 - The tiles count **every member the filter and search match**, across all pages — the backend returns them as `funnel` beside the page — so a search narrows the figures with the list rather than contradicting it, and the page size never changes them.
+- **By Entity (#565).** A studio with two or more Entities gets an **Entity** select beside the pills, shown only under **Trials** (hidden at one Entity). Chosen, the list keeps members with a trial in that Entity, the tiles' heading names it ("Pilates trials"), **Attended** counts classes that Entity's trial paid for, and **Converted** means they paid for a non-trial, non-comp package of that Entity. The choice is part of the address-bar position (`entity=`), is sent to the list read as `entity`, and is dropped when the admin leaves Trials.
 - The funnel lives here rather than on Finance because it is a question about a client, not about a period (`be/docs/adr/0003-finance-reads-as-a-general-ledger.md`).
 - "+ Customer" adds a member (`POST /portal/admin/clients`) with the details sign-up asks for: first and last name, email, phone (country picker, Singapore first) and gender. **Email them an invite** is on by default and sends the `client_invite`; turned off, nothing is mailed and the studio tells the member itself. Either way the account has no password, and the member's first sign-in mails them the set-password link. Most members self-register via the client app or arrive by import.
 
@@ -1029,7 +1036,7 @@ The studio's money in one place, replacing the admin Payroll surface. Full behav
 - **Its own sidebar group, at the top.** Not Packages (it is not a catalogue) and not Settings (it is not config).
 - **Admin.** Admins read the records and edit instructor pay.
 - **Workspace-agnostic.** Most purchases record no Location at all, so filtering the ledger by the switcher would silently drop them; the Location filter on the page carries an explicit **Unattributed** bucket instead.
-- **The overview reads a period and nothing else.** The other filters narrow the table below them and never the figures above — a headline that moved because of a control the reader has scrolled past reads as a fact.
+- **The overview reads a period and an Entity, and nothing else.** The other filters narrow the table below them and never the figures above — a headline that moved because of a control the reader has scrolled past reads as a fact. The **Entity** filter (All entities, each Entity, **No entity**) is the exception and sits beside the period for that reason: it narrows the tiles, Active Members, Class Popularity, the table and the CSV together. It is shown only when the studio has two or more Entities. Every row, and the CSV, carries an **Entity** column (a faint "No entity" for workshops, merch, manual entries and sales whose package names none). With an Entity chosen the Active Members tile says whose members it counts; Joined and Held on partial payments stay studio-wide and say so.
 - The trial funnel is **not** here; it is the Customers page's Trials filter (§15a).
 
 ---

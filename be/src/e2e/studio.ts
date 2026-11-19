@@ -6,6 +6,7 @@ import { withTenant } from '../db'
 import * as schema from '../db/schema'
 import { env } from '../env'
 import { seedEmailTemplates } from '../db/seed/email-templates'
+import { seedEntities } from '../db/seed/entities'
 import { seedPolicy } from '../db/seed/policy'
 import { tenantOrigin } from '../lib/allowed-origins'
 import { discardedMail, transport } from '../lib/mailer'
@@ -13,6 +14,7 @@ import { ensureAuthUser, setFirstStaffPassword } from '../services/auth/auth-use
 import { configureProviderAccount } from '../services/billing/provider-onboarding'
 import { saleLine } from '../services/billing/purchase-lines'
 import { createClassType } from '../services/catalog/class-types'
+import { createEntity, listEntities, updateEntity } from '../services/catalog/entities'
 import { createMerch } from '../services/catalog/merch'
 import { bookClass } from '../services/bookings/book'
 import { createClassPackage } from '../services/packages/class-packages'
@@ -90,6 +92,16 @@ export type E2eStudio = {
     staffWaitlistClassType: string
     /** The my bookings journey's class — days away, the holder booked into it. */
     myBookingsClassType: string
+    /**
+     * A class type in the studio's second Entity (Pilates; the first is Yoga, which
+     * holds every other class type here), so the member schedule has Entity buttons.
+     */
+    pilatesClassType: string
+    /**
+     * A class package in the second Entity: the Packages menu offers an Entity
+     * only once it has one on sale, and every other package here is Yoga's.
+     */
+    pilatesPackageName: string
     /** A free workshop, one day, the holder holding a place on it. */
     workshopName: string
     /** A one-on-one PT package; the holder's session is scheduled from it. */
@@ -124,6 +136,8 @@ export type E2eStudio = {
     waitlist: { id: string; startsAt: string }
     staffWaitlist: { id: string; startsAt: string }
     myBookings: { id: string; startsAt: string }
+    /** A class in the second Entity, hours out, bookable. */
+    pilates: { id: string; startsAt: string }
   }
   /** The staff waitlist class's line, in order, by the names staff see. */
   staffWaitlistLine: string[]
@@ -253,6 +267,17 @@ export async function createE2eStudio({
   // until a person writes them, and booking mail and cancelling both need them.
   await seedEmailTemplates(db, seeded)
   await seedPolicy(db, seeded)
+  // Every studio has an Entity, and "All classes" is the one a created studio starts with.
+  await seedEntities(db, seeded)
+  // Two Entities, so the member schedule shows its Entity buttons and
+  // both can be verified: the starting Entity is named for what the studio's
+  // classes are, and a second one is added. Every class type but one is in the first.
+  const entityIds = await withTenant(tenant.id, async () => {
+    const [first] = await listEntities(tenant.id, { includeArchived: false })
+    await updateEntity(tenant.id, first!.id, { name: 'Yoga', slug: 'yoga' })
+    const second = await createEntity(tenant.id, { name: 'Pilates' })
+    return { yoga: first!.id, pilates: second.id }
+  })
   if (payments) await configureProviderAccount(tenant.id, payments)
 
   const [location] = await db
@@ -302,6 +327,8 @@ export async function createE2eStudio({
     waitlistClassType: 'E2E waitlist class',
     staffWaitlistClassType: 'E2E staff waitlist class',
     myBookingsClassType: 'E2E my bookings class',
+    pilatesClassType: 'E2E pilates class',
+    pilatesPackageName: 'E2E pilates pack',
     workshopName: 'E2E workshop',
     ptPackageName: 'E2E private pack',
     corporatePackageName: 'E2E team session',
@@ -316,6 +343,14 @@ export async function createE2eStudio({
       validityDays: 30,
       priceSgd: catalogue.packagePriceSgd,
     }),
+    pilatesPackage: await createClassPackage(tenant.id, {
+      name: catalogue.pilatesPackageName,
+      kind: 'credit_bundle',
+      credits: 8,
+      validityDays: 60,
+      priceSgd: '120.00',
+      entityId: entityIds.pilates,
+    }),
     classTypes: {
       buy: await createClassType(tenant.id, { name: catalogue.buyClassType }),
       cancel: await createClassType(tenant.id, { name: catalogue.cancelClassType }),
@@ -325,6 +360,7 @@ export async function createE2eStudio({
       waitlist: await createClassType(tenant.id, { name: catalogue.waitlistClassType }),
       staffWaitlist: await createClassType(tenant.id, { name: catalogue.staffWaitlistClassType }),
       myBookings: await createClassType(tenant.id, { name: catalogue.myBookingsClassType }),
+      pilates: await createClassType(tenant.id, { name: catalogue.pilatesClassType, entity_id: entityIds.pilates }),
     },
   }))
   const { ptPackage, corporatePackage } = await withTenant(tenant.id, async () => ({
@@ -387,6 +423,8 @@ export async function createE2eStudio({
     staffWaitlist: await addClass(classTypes.staffWaitlist.id, hourFromNow(2), { online: 1, buffer: 1, waitlist: 3 }),
     // Days out and well outside the window, so its booking can still be cancelled.
     myBookings: await addClass(classTypes.myBookings.id, hourFromNow(5)),
+    // In the second Entity: on the Pilates button, not on the first one the schedule opens on.
+    pilates: await addClass(classTypes.pilates.id, hourFromNow(6)),
   }
 
   const register = async (who: string, lastName: string) => {

@@ -15,6 +15,7 @@
 import type { Api } from "@/lib/api";
 import { rangeToParams, type DateRange } from "@/lib/date-range";
 import { atLocalTime } from "@/lib/local-day";
+import { ALL_ENTITIES } from "@/lib/entities";
 
 export {
   payrollErrorMessage as financeErrorMessage,
@@ -107,6 +108,37 @@ export interface FinanceMethod {
 /** The Location filter value for rows that record no Location at all. */
 export const UNATTRIBUTED = "unattributed";
 
+/**
+ * The Entity filter value for rows filed under no Entity: workshops, merch and
+ * manual entries, and sales whose package names none. A value, not the absence
+ * of a filter, like UNATTRIBUTED.
+ */
+export const NO_ENTITY = "none";
+
+/** What a row says in the Entity column when it is filed under none. */
+export const NO_ENTITY_LABEL = "No entity";
+
+/**
+ * The Entity filter's options: each live Entity, then "No entity" for the rows
+ * filed under none (workshops, merch, manual entries). Shown only for a studio
+ * with two or more Entities (`showEntityFilter`): with one the filter would
+ * narrow nothing.
+ */
+export function entityFilterOptions(entities: readonly { id: string; name: string }[]): { val: string; label: string }[] {
+  return [...entities.map((e) => ({ val: e.id, label: e.name })), { val: NO_ENTITY, label: NO_ENTITY_LABEL }];
+}
+
+/**
+ * Who the figures are about when an Entity is chosen, for the tiles that say so:
+ * null with no filter. An id that is no longer in the list (an archived Entity
+ * opened from a link) still reads as an entity rather than as the whole studio.
+ */
+export function entityScopeName(value: string, entities: readonly { id: string; name: string }[]): string | null {
+  if (value === ALL_ENTITIES) return null;
+  if (value === NO_ENTITY) return NO_ENTITY_LABEL;
+  return entities.find((e) => e.id === value)?.name ?? "this entity";
+}
+
 export interface FinanceRow {
   kind: MoneyEventKind;
   type: FinanceType;
@@ -120,6 +152,13 @@ export interface FinanceRow {
   location_id: string | null;
   location_name: string | null;
   unattributed: boolean;
+  /**
+   * The Entity the row is filed under; null is "No entity". Optional because
+   * the portal and the backend deploy apart, and an older backend sends
+   * neither: absent reads as "No entity".
+   */
+  entity_id?: string | null;
+  entity_name?: string | null;
   list_price_sgd: number | null;
   paid_sgd: number | null;
   discount_sgd: number | null;
@@ -192,6 +231,8 @@ export interface FinanceFilters {
   q?: string;
   /** A Location id, or UNATTRIBUTED. Empty means every Location. */
   location?: string;
+  /** An Entity id, or NO_ENTITY. Empty means every Entity. Narrows the overview too. */
+  entity?: string;
   needsPay?: boolean;
   /** One method category, or empty for any. Money out is never paid any way, so it drops out. */
   method?: string;
@@ -239,6 +280,7 @@ const toParams = (timezone: string, f: FinanceFilters) => ({
   needs_pay: f.needsPay ? "true" : undefined,
   ...rangeToParams(timezone, f.range),
   ...(f.method ? { method: f.method } : {}),
+  ...(f.entity ? { entity: f.entity } : {}),
 });
 
 /** `timezone` is the studio's: the period's days become its midnights. */
@@ -296,13 +338,23 @@ export interface FinanceOverview {
 }
 
 /**
- * The overview reads ONLY a period — it deliberately ignores the ledger's
- * type/user/location filters. A "total sales" figure narrowed to one instructor
- * is not an overview, and a reader who scrolled past the filters would have no
- * way to tell that the number above them had moved.
+ * The overview reads a period and an Entity — it deliberately ignores the
+ * ledger's type/user/location filters. A "total sales" figure narrowed to one
+ * instructor is not an overview, and a reader who scrolled past the filters
+ * would have no way to tell that the number above them had moved. The Entity is
+ * the exception: it names the Entity the whole page is about, so the
+ * summary follows it exactly as the table does.
  */
-export function fetchFinanceOverview(api: Api, timezone: string, range: DateRange): Promise<FinanceOverview> {
-  return api.get<FinanceOverview>("/portal/admin/finance/overview", rangeToParams(timezone, range));
+export function fetchFinanceOverview(
+  api: Api,
+  timezone: string,
+  range: DateRange,
+  entity?: string,
+): Promise<FinanceOverview> {
+  return api.get<FinanceOverview>("/portal/admin/finance/overview", {
+    ...rangeToParams(timezone, range),
+    ...(entity ? { entity } : {}),
+  });
 }
 
 /**
