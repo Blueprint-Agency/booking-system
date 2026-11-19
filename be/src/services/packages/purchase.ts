@@ -12,6 +12,7 @@ import type { Tx } from './ledger'
 import { computeActive, crossLocationMonths, crossLocationPriceSgd } from './validity'
 import { classPackageTerms, ptPackageTerms, soldTermsForKind, type SoldTerms } from './sold-terms'
 import { logger } from '../../shared/logger'
+import { assertNoTrialInEntity } from './trial-standing'
 
 /**
  * The client's live Unlimited Plans. Live means active and either Activated with
@@ -447,7 +448,8 @@ export interface GrantPackageInput {
  *  - free trial pass purchase
  *  - admin complimentary grants
  *
- * Throws ConflictError('trial_already_used') on partial-unique violation.
+ * Throws ConflictError('trial_already_used') for a trial when the member already
+ * holds one in the trial's Entity (`assertNoTrialInEntity`).
  *
  * `created` says whether THIS call inserted the row (§13). It is what the
  * confirmation email is gated on: the Purchase's unique index already decides
@@ -474,6 +476,8 @@ export async function grantPackage(
   let kind: PackageKind
   let sourceClassPackageId: string | null = null
   let sourcePtPackageId: string | null = null
+  /** The Entity of the catalogue package: where a trial is judged. */
+  let entityId: string | null = null
   let catalogueTerms: SoldTerms
   /** The catalogue's Instructor-Bound flag, read at purchase — never a class package's. */
   let instructorBound = false
@@ -494,6 +498,7 @@ export async function grantPackage(
     if (!input.alreadySold && row.status !== 'active') throw new BadRequestError('class_package_not_active')
     kind = row.kind
     sourceClassPackageId = row.id
+    entityId = row.entityId
     catalogueTerms = classPackageTerms(row)
   } else {
     const [row] = await db
@@ -555,6 +560,11 @@ export async function grantPackage(
     validityDays = terms.validityDays
   }
 
+  // One trial per member per Entity. Before the insert and under the member's
+  // row lock, so it holds for every way a trial is granted and for two of them
+  // racing (the webhook and the sync, two checkouts, a comp beside a sale).
+  if (kind === 'trial') await assertNoTrialInEntity(tenantId, input.clientId, entityId)
+
   try {
     // In its own savepoint: this runs inside the caller's Tenant transaction,
     // and the unique violation the catch below turns into an answer would
@@ -602,9 +612,6 @@ export async function grantPackage(
       const existingId = await packageForPurchase(tenantId, input.purchaseId)
       if (existingId) return { clientPackageId: existingId, created: false }
     }
-    if (kind === 'trial' && isUniqueViolation(err, 'client_packages_trial_unique_per_client')) {
-      throw new ConflictError('trial_already_used')
-    }
     throw err
   }
 }
@@ -649,35 +656,8 @@ export async function grantFreePurchase(
 }
 
 /**
- * Trial-pass eligibility gate (fe-client-features.md §6.1). A trial pass is for
- * brand-new members only: the client must have NO packages of any kind yet, and
- * may claim a trial only once ever. Workshops never create a client_packages row,
- * so a prior workshop booking does NOT disqualify the client.
- *
- * Runs BEFORE creating a Stripe Checkout session so a priced trial never charges
- * an ineligible client. The partial-unique index on client_packages remains the
- * final backstop against a race.
- *
- *   409 trial_already_used  — client has claimed a trial before (active or expired)
- *   409 trial_not_eligible  — client already owns some other package (bundle/unlimited/pt)
- */
-export async function assertTrialEligible(tenantId: string, clientId: string): Promise<void> {
-  const rows = await db
-    .select({ kind: clientPackages.kind })
-    .from(clientPackages)
-    .where(
-      and(eq(clientPackages.tenantId, tenantId), eq(clientPackages.clientId, clientId)),
-    )
-  if (rows.length === 0) return
-  if (rows.some(r => r.kind === 'trial')) {
-    throw new ConflictError('trial_already_used')
-  }
-  throw new ConflictError('trial_not_eligible')
-}
-
-/**
  * Free trial pass purchase — no Stripe, no payment intent. Reuses grantPackage
- * so the partial-unique index enforces one-trial-per-client. `salePurchaseId`
+ * so the one-trial-per-Entity rule holds here too. `salePurchaseId`
  * is the settled Purchase its checkout opened, whose Receipt the confirmation
  * carries.
  */
