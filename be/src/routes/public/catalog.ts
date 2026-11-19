@@ -10,12 +10,12 @@ import {
   serializePromotion,
 } from '../../services/packages/promotions'
 import * as merchSvc from '../../services/catalog/merch'
+import { listPublicEntities } from '../../services/catalog/entities-public'
 import { listCorporatePackages } from '../../services/packages/corporate-packages'
 import { readCancellationPolicy } from '../../services/policy/evaluate-cancellation'
 import { readPtBookingWindow } from '../../services/pt-sessions/request'
 import { tenantId } from '../../middleware/tenant'
 import { entityFieldsFor, entityFilter, entityQuery, explainEntityQuery, type EntityFields } from '../entity-fields'
-import { listPublicEntities } from '../../services/catalog/entities'
 import { takesOnlinePayments } from '../../lib/stripe'
 
 function serializeClassPackage(
@@ -69,6 +69,11 @@ const app = new Hono()
     const locations = await classCatalog.listActiveLocations(tenantId(c))
     return c.json({ locations })
   })
+  // The studio's live Entities in its order, each with its slug and whether it has a
+  // package on sale: what the schedule draws its buttons and the Packages menu from.
+  .get('/entities', async c => {
+    return c.json({ entities: await listPublicEntities(tenantId(c)) })
+  })
   .get('/classes', async c => {
     const filters = classCatalog.parseClassFilters(c.req.query())
     const classes = await classCatalog.listClassCards(tenantId(c), filters)
@@ -94,11 +99,6 @@ const app = new Hono()
   .get('/class-types', async c => {
     const rows = await classTypesSvc.listClassTypes(tenantId(c), { includeArchived: false })
     return c.json({ class_types: rows.map(r => ({ id: r.id, name: r.name, entity_id: r.entityId ?? null })) })
-  })
-  // The studio's live Entities in display order, for the Packages menu: each
-  // with its slug and whether it has a package on sale.
-  .get('/entities', async c => {
-    return c.json({ entities: await listPublicEntities(tenantId(c)) })
   })
   // `?entity=<slug>` narrows to one Entity; a slug naming no live Entity of the
   // studio answers with empty lists.

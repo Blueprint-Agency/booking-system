@@ -82,48 +82,6 @@ async function usageOf(tenantId: string, entityId: string): Promise<EntityUsage>
 
 export type EntityRef = { id: string; name: string; slug: string }
 
-export type PublicEntity = EntityRef & { has_live_packages: boolean }
-
-/**
- * The studio's live Entities in display order, for the member app's Packages
- * menu: each with its slug and whether it has a package on sale (a class, PT or
- * corporate one that is active and not removed). Archived Entities are left out.
- * "On sale" is read for all three tables in one query, not once per Entity.
- */
-export async function listPublicEntities(tenantId: string): Promise<PublicEntity[]> {
-  const [rows, live] = await Promise.all([
-    db
-      .select({ id: entities.id, name: entities.name, slug: entities.slug })
-      .from(entities)
-      .where(and(eq(entities.tenantId, tenantId), isNull(entities.archivedAt)))
-      .orderBy(asc(entities.position), asc(entities.createdAt)),
-    db
-      .select({ entityId: classPackages.entityId })
-      .from(classPackages)
-      .where(and(eq(classPackages.tenantId, tenantId), eq(classPackages.status, 'active'), isNull(classPackages.deletedAt)))
-      .union(
-        db
-          .select({ entityId: ptPackages.entityId })
-          .from(ptPackages)
-          .where(and(eq(ptPackages.tenantId, tenantId), eq(ptPackages.status, 'active'), isNull(ptPackages.deletedAt))),
-      )
-      .union(
-        db
-          .select({ entityId: corporatePackages.entityId })
-          .from(corporatePackages)
-          .where(
-            and(
-              eq(corporatePackages.tenantId, tenantId),
-              eq(corporatePackages.status, 'active'),
-              isNull(corporatePackages.deletedAt),
-            ),
-          ),
-      ),
-  ])
-  const withPackages = new Set(live.map(r => r.entityId))
-  return rows.map(row => ({ ...row, has_live_packages: withPackages.has(row.id) }))
-}
-
 /**
  * The live Entity of this studio a slug names, in any casing, or null when it
  * names none: an unknown slug, an archived Entity's (a slug is handed back when
