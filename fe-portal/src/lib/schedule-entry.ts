@@ -14,6 +14,8 @@ export interface ApiScheduleEntry {
   label: string;
   subtitle: string | null;
   class_type_id: string | null;
+  /** A class's Class Type's Entity; null for every other kind. Absent from a backend from before Entities. */
+  entity_id?: string | null;
   main_instructor_id: string | null;
   supporting_instructor_ids: string[];
   instructor_ids: string[];
@@ -42,6 +44,8 @@ export type ScheduleEntry =
       id: string;
       label: string;
       classTypeId: string;
+      /** The Class Type's Entity; null when it has none (or the backend predates Entities). */
+      entityId: string | null;
       /** Who leads it: an Instructor opens only the classes they lead. */
       mainInstructorId: string | null;
       instructorIds: string[];
@@ -112,6 +116,7 @@ export function scheduleEntryFromApi(e: ApiScheduleEntry): ScheduleEntry {
       id: e.id,
       label: e.label,
       classTypeId: e.class_type_id ?? "",
+      entityId: e.entity_id ?? null,
       mainInstructorId: e.main_instructor_id,
       instructorIds: e.instructor_ids,
       locationId: e.location_id ?? "",
