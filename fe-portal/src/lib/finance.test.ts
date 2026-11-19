@@ -1,9 +1,13 @@
 import test from "node:test";
 import assert from "node:assert";
 import {
+  NO_ENTITY,
   UNATTRIBUTED,
   createManualEntry,
+  entityFilterOptions,
+  entityScopeName,
   fetchFinance,
+  fetchFinanceOverview,
   financeSearch,
   parseFinanceSearch,
   saveInstructorPay,
@@ -85,6 +89,47 @@ test("the Unattributed bucket is sent as a value", async () => {
   const seen: { query?: unknown } = {};
   await fetchFinance(spyApi(seen), SG, { location: UNATTRIBUTED, range: null });
   assert.strictEqual((seen.query as { location?: string }).location, UNATTRIBUTED);
+});
+
+// The Entity is the one filter that narrows the summary as well as the table, so
+// the same value has to reach all three reads. "none" is a value, like
+// Unattributed; a blank one (the picker's "All entities") is not sent.
+test("FIN-65 the Entity filter is sent to the ledger, the overview and the export alike, and a blank one is omitted", async () => {
+  const ledger: { path?: string; query?: unknown } = {};
+  const summary: { path?: string; query?: unknown } = {};
+  await fetchFinance(spyApi(ledger), SG, { entity: NO_ENTITY, range: null });
+  await fetchFinanceOverview(spyApi(summary), SG, null, NO_ENTITY);
+  assert.strictEqual((ledger.query as { entity?: string }).entity, "none");
+  assert.strictEqual((summary.query as { entity?: string }).entity, "none");
+  assert.strictEqual(summary.path, "/portal/admin/finance/overview");
+
+  const live: { query?: unknown } = {};
+  await fetchFinanceOverview(spyApi(live), SG, null, "e-1");
+  assert.strictEqual((live.query as { entity?: string }).entity, "e-1");
+
+  const blank: { query?: unknown } = {};
+  const blankOverview: { query?: unknown } = {};
+  await fetchFinance(spyApi(blank), SG, { entity: "", range: null });
+  await fetchFinanceOverview(spyApi(blankOverview), SG, null, "");
+  assert.ok(!("entity" in (blank.query as object)));
+  assert.ok(!("entity" in (blankOverview.query as object)));
+});
+
+test("FIN-65 the Entity filter offers each Entity and No entity, and the figures name the one chosen", () => {
+  const entities = [
+    { id: "e-1", name: "Yoga" },
+    { id: "e-2", name: "Pilates" },
+  ];
+  assert.deepStrictEqual(entityFilterOptions(entities), [
+    { val: "e-1", label: "Yoga" },
+    { val: "e-2", label: "Pilates" },
+    { val: "none", label: "No entity" },
+  ]);
+  assert.strictEqual(entityScopeName("", entities), null);
+  assert.strictEqual(entityScopeName("e-2", entities), "Pilates");
+  assert.strictEqual(entityScopeName(NO_ENTITY, entities), "No entity");
+  // An archived Entity opened from a link is not in the live list, and still is not the whole studio.
+  assert.strictEqual(entityScopeName("e-9", entities), "this entity");
 });
 
 test("needs-pay is only sent when it is on", async () => {

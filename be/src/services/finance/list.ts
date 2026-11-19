@@ -29,6 +29,7 @@ import { workshops } from '../../db/schema/schedule'
 import { clients } from '../../db/schema/identity'
 import { listPayroll, type PayrollRow } from '../payroll/list'
 import { summarizeFinance, type FinanceSummary } from './totals'
+import { NO_ENTITY, nameEntities, purchaseEntities } from './entity'
 import type { MoneyEvent, MoneyEventType } from './events'
 import { offlineMethod, providerMethod, type MethodCategory, type PaymentMethod } from './methods'
 
@@ -44,6 +45,12 @@ export interface FinanceFilter {
   to?: Date
   /** A Location id, or UNATTRIBUTED. */
   location?: string
+  /**
+   * An Entity id (live or archived), or NO_ENTITY. Narrows every row to the ones
+   * filed under it — see ./entity.ts. Not a teaching question, so unlike
+   * `classTypeId` it never empties the money-in side.
+   */
+  entity?: string
   /** Narrows the money-OUT side only — money in names no instructor. */
   instructorId?: string
   /** Narrows the money-OUT side only. Excludes every money-in row. */
@@ -66,6 +73,8 @@ const base = {
   party: null,
   locationId: null,
   locationName: null,
+  entityId: null,
+  entityName: null,
   listPriceSgd: null,
   paidSgd: null,
   promoCode: null,
@@ -111,6 +120,9 @@ function payrollToEvent(r: PayrollRow): MoneyEvent {
     variant: r.label,
     locationId: r.locationId,
     locationName: r.locationName,
+    // Class pay by the Class Type, PT pay by the request or the paying package,
+    // the rest none: decided where the rows are read (payroll/list.ts).
+    entityId: r.entityId,
     instructorId: r.instructorId,
     instructorName: r.instructorName,
     paySgd: r.instructorPaySgd,
@@ -151,6 +163,10 @@ async function listMoneyIn(tenantId: string, filter: FinanceFilter): Promise<Mon
       ptPackageName: ptPackages.name,
       purchaseId: clientPackages.purchaseId,
       complimentary: clientPackages.complimentary,
+      // A plan names no Entity of its own: it reads its source package's, so
+      // moving the package moves what was sold from it.
+      classPackageEntityId: classPackages.entityId,
+      ptPackageEntityId: ptPackages.entityId,
     })
     .from(clientPackages)
     .innerJoin(clients, eq(clients.id, clientPackages.clientId))
@@ -210,6 +226,7 @@ async function listMoneyIn(tenantId: string, filter: FinanceFilter): Promise<Mon
       amountSgd: stripePayments.amountSgd,
       clientName: clients.name,
       paymentIntentId: stripePayments.paymentIntentId,
+      purchaseId: stripePayments.purchaseId,
     })
     .from(stripePayments)
     .innerJoin(clients, eq(clients.id, stripePayments.clientId))
@@ -257,6 +274,8 @@ async function listMoneyIn(tenantId: string, filter: FinanceFilter): Promise<Mon
       amountSgd: stripePayments.amountSgd,
       kind: stripePayments.kind,
       clientName: clients.name,
+      purchaseId: stripePayments.purchaseId,
+      clientPackageId: stripePayments.clientPackageId,
     })
     .from(stripePayments)
     .innerJoin(clients, eq(clients.id, stripePayments.clientId))
@@ -343,14 +362,28 @@ async function listMoneyIn(tenantId: string, filter: FinanceFilter): Promise<Mon
 
   const paidWith = await paymentMethods(tenantId)
 
+  // Which Entity each corporate sale and each Refund belongs to: neither row has
+  // a column for it, so it is read off what the Purchase bought.
+  const filedUnder = await purchaseEntities(
+    tenantId,
+    [
+      ...corporateRows.map(r => r.purchaseId),
+      ...refundRows.map(r => r.purchaseId),
+      ...migratedRefundRows.map(r => r.id),
+    ],
+    refundRows.flatMap(r => (r.clientPackageId ? [r.clientPackageId] : [])),
+  )
+
   const events: MoneyEvent[] = []
 
   for (const r of packageRows) {
+    const entityId = r.classPackageEntityId ?? r.ptPackageEntityId ?? null
     events.push({
       ...base,
       kind: 'purchase',
       type: PACKAGE_TYPE[r.kind],
       id: r.id,
+      entityId,
       occurredAt: r.purchasedAt,
       // The catalogue item bought — "Bundle of 10". Null where the source
       // package has been deleted: the type still says what it was.
@@ -376,6 +409,7 @@ async function listMoneyIn(tenantId: string, filter: FinanceFilter): Promise<Mon
         kind: 'addon',
         type: 'addon',
         id: r.id,
+        entityId,
         occurredAt: r.purchasedAt,
         party: r.clientName,
         locationId: r.locationId,
@@ -416,6 +450,7 @@ async function listMoneyIn(tenantId: string, filter: FinanceFilter): Promise<Mon
       kind: 'corporate',
       type: 'corporate',
       id: r.id,
+      entityId: filedUnder.ofPurchase(r.purchaseId),
       occurredAt: r.createdAt,
       // No variant: a corporate package is negotiated off-platform and has no
       // catalogue item behind it to name.
@@ -451,6 +486,8 @@ async function listMoneyIn(tenantId: string, filter: FinanceFilter): Promise<Mon
       kind: 'refund',
       type: 'refund',
       id: r.id,
+      // A Standalone Add-On's own Purchase bought no plan, so its payment's plan answers.
+      entityId: filedUnder.ofPurchase(r.purchaseId, r.clientPackageId),
       // Guarded by isNotNull above; the cast is the query's shape, not a guess.
       occurredAt: r.refundedAt as Date,
       party: r.clientName,
@@ -467,6 +504,7 @@ async function listMoneyIn(tenantId: string, filter: FinanceFilter): Promise<Mon
       kind: 'refund',
       type: 'refund',
       id: r.id,
+      entityId: filedUnder.ofPurchase(r.id),
       occurredAt: r.refundedAt as Date,
       party: r.clientName,
       // The whole sale back. A refunded Purchase holds nothing, so its total is what went back.
@@ -581,13 +619,22 @@ export async function getFinance(
     listMoneyIn(tenantId, filter),
   ])
 
-  let events = [...payrollRows.map(payrollToEvent), ...moneyIn]
+  let events = await nameEntities(tenantId, [...payrollRows.map(payrollToEvent), ...moneyIn])
 
   if (filter.location) {
     events =
       filter.location === UNATTRIBUTED
         ? events.filter(e => e.locationId == null)
         : events.filter(e => e.locationId === filter.location)
+  }
+
+  // An Entity id from another studio matches nothing: every row above is
+  // already this Tenant's, and none of them is filed under a foreign id.
+  if (filter.entity) {
+    events =
+      filter.entity === NO_ENTITY
+        ? events.filter(e => e.entityId == null)
+        : events.filter(e => e.entityId === filter.entity)
   }
 
   if (filter.types?.length) {

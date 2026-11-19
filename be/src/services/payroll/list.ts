@@ -92,6 +92,13 @@ export interface PayrollRow {
    */
   locationId: string | null
   locationName: string | null
+  /**
+   * The Entity the pay is filed under in Finance (be/CONTEXT.md § Entity): a
+   * class's Class Type's, a PT session's request's Class Type's else the paying
+   * package's. Null — "No entity" — for a workshop and a manual entry, and where
+   * nothing names one.
+   */
+  entityId: string | null
 }
 
 /**
@@ -115,6 +122,33 @@ export interface PayrollRow {
 // when they asked for "any".
 const ptLabel = sql<string>`coalesce(${classTypes.name}, 'Private session')`
 
+/**
+ * The Entity a PT session's pay is filed under: its request's Class Type's, else
+ * the package that paid for it. That package is the one the request debited at
+ * submit, or — a manual session's request debits nothing, each seat's booking
+ * names its own — the earliest booking's. Read live from the catalogue, like
+ * every Entity in Finance. Correlated subqueries rather than joins, so the arms
+ * keep the shape `countUnpricedPayroll` counts through.
+ */
+const ptEntityId = (tenantId: string) =>
+  sql<string | null>`coalesce(
+    ${classTypes.entityId},
+    (select pp.entity_id
+       from client_packages cp
+       join pt_packages pp on pp.id = cp.source_pt_package_id
+      where cp.id = ${ptRequests.debitedClientPackageId}
+        and cp.tenant_id = ${tenantId}),
+    (select pp.entity_id
+       from bookings b
+       join client_packages cp on cp.id = b.client_package_id
+       join pt_packages pp on pp.id = cp.source_pt_package_id
+      where b.pt_session_id = ${ptSessions.id}
+        and b.tenant_id = ${tenantId}
+        and pp.entity_id is not null
+      order by b.booked_at, b.id
+      limit 1)
+  )`.as('entity_id')
+
 /** Main class pay. */
 function mainClassLines(tenantId: string, filter: PayrollFilter, now: Date, extra?: SQL) {
   const conds = [eq(classes.tenantId, tenantId), eq(classes.lifecycle, 'active'), lt(classes.endsAt, now)]
@@ -134,6 +168,7 @@ function mainClassLines(tenantId: string, filter: PayrollFilter, now: Date, extr
       instructorPaySgd: classes.instructorPaySgd,
       locationId: classes.locationId,
       locationName: locations.name,
+      entityId: classTypes.entityId,
     })
     .from(classes)
     .innerJoin(staffUsers, eq(staffUsers.id, classes.mainInstructorId))
@@ -165,6 +200,7 @@ function supportingClassLines(tenantId: string, filter: PayrollFilter, now: Date
       instructorPaySgd: classSupportingInstructors.paySgd,
       locationId: classes.locationId,
       locationName: locations.name,
+      entityId: classTypes.entityId,
     })
     .from(classSupportingInstructors)
     .innerJoin(classes, eq(classes.id, classSupportingInstructors.classId))
@@ -194,6 +230,7 @@ function mainPtLines(tenantId: string, filter: PayrollFilter, now: Date, extra?:
       instructorPaySgd: ptSessions.instructorPaySgd,
       locationId: ptSessions.locationId,
       locationName: locations.name,
+      entityId: ptEntityId(tenantId),
     })
     .from(ptSessions)
     .innerJoin(staffUsers, eq(staffUsers.id, ptSessions.instructorId))
@@ -228,6 +265,7 @@ function supportingPtLines(tenantId: string, filter: PayrollFilter, now: Date, e
       instructorPaySgd: ptSessionSupportingInstructors.paySgd,
       locationId: ptSessions.locationId,
       locationName: locations.name,
+      entityId: ptEntityId(tenantId),
     })
     .from(ptSessionSupportingInstructors)
     .innerJoin(ptSessions, eq(ptSessions.id, ptSessionSupportingInstructors.ptSessionId))
@@ -382,7 +420,8 @@ export async function listPayroll(
     ...classSupportingRows.map(r => ({ ...r, kind: 'class' as const, sessionType: null })),
     ...ptRows.map(r => ({ ...r, kind: 'pt' as const })),
     ...ptSupportingRows.map(r => ({ ...r, kind: 'pt' as const })),
-    ...workshopRows.map(r => ({ ...r, kind: 'workshop' as const, classTypeId: null, sessionType: null })),
+    // A workshop and a manual entry are in no Entity.
+    ...workshopRows.map(r => ({ ...r, kind: 'workshop' as const, classTypeId: null, sessionType: null, entityId: null })),
     ...manualRows.map(r => ({
       ...r,
       kind: 'manual' as const,
@@ -390,6 +429,7 @@ export async function listPayroll(
       sessionType: null,
       locationId: null,
       locationName: null,
+      entityId: null,
     })),
   ]
   return rows

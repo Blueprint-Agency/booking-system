@@ -40,6 +40,7 @@ import {
 import { toast } from "sonner";
 import { LeaveWaitlistDialog } from "@/components/booking/leave-waitlist-dialog";
 import { ConfirmBookingSheet } from "@/components/booking/confirm-booking-sheet";
+import { packagesHref } from "@/lib/packages-href";
 import { ClassDetailOverlay } from "@/components/booking/class-detail-overlay";
 import { BookedCelebration } from "@/components/booking/booked-celebration";
 import { CancelBookingDialog, type CancelOutcome } from "@/components/account/cancel-booking-dialog";
@@ -675,7 +676,7 @@ export function ClassRow({
             <p className={SHEET_TEXT}>Nothing you hold can pay for it. Pick a package, then come back and book.</p>
             <div className={SHEET_ACTIONS}>
               <button onClick={() => setShowNoPackage(false)} className={BTN_SECONDARY}>Not now</button>
-              <Link href="/packages" className={BTN_PRIMARY}>Buy a Package</Link>
+              <Link href={packagesHref(cls.entity)} className={BTN_PRIMARY}>Buy a Package</Link>
             </div>
           </div>
         </div>

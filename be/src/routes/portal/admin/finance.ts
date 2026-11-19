@@ -2,6 +2,7 @@ import { Hono, type Context } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import { getFinance, UNATTRIBUTED } from '../../../services/finance/list'
+import { NO_ENTITY } from '../../../services/finance/entity'
 import { getFinanceOverview } from '../../../services/finance/overview'
 import { financeCsv } from '../../../services/finance/csv'
 import { tenantTimezone } from '../../../services/tenants/tenants'
@@ -41,6 +42,11 @@ import { dateTime } from '../../../shared/date-time'
 // adds it here, and a stale copy can no longer drift out of the enum.
 const financeType = z.enum(MONEY_EVENT_TYPES)
 
+// An Entity id (a retired one still names its history), or "none" for the rows
+// filed under no Entity — workshops, merch, manual entries. Another studio's id
+// is well-formed and matches nothing.
+const entity = z.union([z.string().uuid(), z.literal(NO_ENTITY)]).optional()
+
 const listQuery = z.object({
   instructor_id: z.string().uuid().optional(),
   class_type_id: z.string().uuid().optional(),
@@ -50,6 +56,7 @@ const listQuery = z.object({
   q: z.string().trim().min(1).optional(),
   // A Location id, or the Unattributed bucket — the rows that record no Location.
   location: z.union([z.string().uuid(), z.literal(UNATTRIBUTED)]).optional(),
+  entity,
   needs_pay: z.enum(['true', 'false']).optional(),
   /** How it was paid, by category. Money out is never paid any way, so it drops out. */
   method: z.enum(METHOD_CATEGORIES).optional(),
@@ -57,7 +64,13 @@ const listQuery = z.object({
   to: dateTime('A to time').optional(),
 })
 
-const overviewQuery = z.object({ from: dateTime('A from time').optional(), to: dateTime('A to time').optional() })
+// The summary follows the period and the Entity alone: every other table filter
+// is a question about rows, not about the line of practice (FIN-37, FIN-65).
+const overviewQuery = z.object({
+  from: dateTime('A from time').optional(),
+  to: dateTime('A to time').optional(),
+  entity,
+})
 
 const patchParam = z.object({
   kind: z.enum(['class', 'pt', 'workshop', 'manual']),
@@ -95,6 +108,7 @@ const filterFrom = (q: z.infer<typeof listQuery>) => ({
   types: q.type ? [q.type] : undefined,
   q: q.q,
   location: q.location,
+  entity: q.entity,
   needsPayOnly: q.needs_pay === 'true',
   methods: q.method ? [q.method] : undefined,
   from: q.from ? new Date(q.from) : undefined,
@@ -113,13 +127,15 @@ const app = new Hono()
   })
   // The period's headline figures: sales by category, members and class
   // popularity. Its own period, independent of the ledger's filters — an
-  // "overview" narrowed to one instructor is not an overview.
+  // "overview" narrowed to one instructor is not an overview — except the
+  // Entity, which narrows it as it narrows the table.
   .get('/overview', zValidator('query', overviewQuery), async c => {
-    const { from, to } = c.req.valid('query')
+    const { from, to, entity } = c.req.valid('query')
     return c.json(
       await getFinanceOverview(tenantId(c), {
         from: from ? new Date(from) : undefined,
         to: to ? new Date(to) : undefined,
+        entity,
       }),
     )
   })

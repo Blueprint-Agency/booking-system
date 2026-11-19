@@ -1035,7 +1035,7 @@ The studio's money in one place, replacing the admin Payroll surface. Full behav
 - **Its own sidebar group, at the top.** Not Packages (it is not a catalogue) and not Settings (it is not config).
 - **Admin.** Admins read the records and edit instructor pay.
 - **Workspace-agnostic.** Most purchases record no Location at all, so filtering the ledger by the switcher would silently drop them; the Location filter on the page carries an explicit **Unattributed** bucket instead.
-- **The overview reads a period and nothing else.** The other filters narrow the table below them and never the figures above — a headline that moved because of a control the reader has scrolled past reads as a fact.
+- **The overview reads a period and an Entity, and nothing else.** The other filters narrow the table below them and never the figures above — a headline that moved because of a control the reader has scrolled past reads as a fact. The **Entity** filter (All entities, each Entity, **No entity**) is the exception and sits beside the period for that reason: it narrows the tiles, Active Members, Class Popularity, the table and the CSV together. It is shown only when the studio has two or more Entities. Every row, and the CSV, carries an **Entity** column (a faint "No entity" for workshops, merch, manual entries and sales whose package names none). With an Entity chosen the Active Members tile says whose members it counts; Joined and Held on partial payments stay studio-wide and say so.
 - The trial funnel is **not** here; it is the Customers page's Trials filter (§15a).
 
 ---

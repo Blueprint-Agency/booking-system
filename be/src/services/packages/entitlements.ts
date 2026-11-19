@@ -17,8 +17,14 @@ import { now as clockNow } from '../../lib/clock'
 import { publicObjectUrl } from '../../lib/r2'
 
 export interface ClientEntitlements {
+  /**
+   * The client has held a trial in ANY Entity. The trial rules are per Entity
+   * (`trialStandingsByEntity`, which the member Packages page reads); this is
+   * the studio-wide answer, the same as the per-Entity one at a studio with
+   * one Entity.
+   */
   trialUsed: boolean
-  /** Trial is for brand-new members only: true iff the client owns NO packages yet. */
+  /** True iff the client owns NO packages yet, in any Entity (see `trialUsed`). */
   trialEligible: boolean
   hasActiveUnlimited: boolean
   /**

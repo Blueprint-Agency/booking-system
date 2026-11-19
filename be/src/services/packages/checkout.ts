@@ -32,13 +32,13 @@ import { applyPromoCode, type AppliedPromoCode } from './promo-redemption'
 import { classPackageTerms, ptPackageTerms, soldTermsMetadata, type SoldTerms } from './sold-terms'
 import {
   assertPurchasableLocation,
-  assertTrialEligible,
   grantFreePurchase,
   priceCrossLocationForNewPlan,
   purchaseFreeTrial,
   quoteCrossLocationAddOn,
   resolveBoundInstructor,
 } from './purchase'
+import { assertTrialEligible } from './trial-standing'
 
 /**
  * The lines a plan-plus-Add-On purchase charges, and the charge itself. Pure, so
@@ -187,7 +187,7 @@ export async function beginPackageCheckout(input: PackageCheckoutInput): Promise
 
     // Trial pass: new-member-only + once-per-client. Gate BEFORE any charge.
     if (pkg.kind === 'trial') {
-      await assertTrialEligible(tenantId, clientId)
+      await assertTrialEligible(tenantId, clientId, pkg.entityId)
       // A $0 trial is granted immediately (no Stripe). A priced trial falls
       // through to the standard paid-class-package Checkout below.
       if (grantsWithoutPaying(toCents(eff.effectivePriceSgd))) {

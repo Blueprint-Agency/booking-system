@@ -85,6 +85,20 @@ test("BKG-31 with nothing eligible, an accepted package's reason comes before th
   );
 });
 
+test("PKR-24 a member with no package of the class's Entity is told which package they need", () => {
+  // Packages of another Entity are not listed, so the sheet's list is empty.
+  assert.equal(nothingEligibleCopy([], "Pilates"), "You need a Pilates package to book this class.");
+  // A studio with one Entity, or a class with none, keeps the plain sentence.
+  assert.equal(nothingEligibleCopy([], null), "You don't have a class package that can pay for this class.");
+  assert.equal(nothingEligibleCopy([]), "You don't have a class package that can pay for this class.");
+  // The name never replaces a reason a listed package has.
+  assert.equal(
+    nothingEligibleCopy([pkg({ id: "y", eligible: false, reason: "insufficient_credits", remaining: 0 })], "Pilates"),
+    "You don't have enough credits for this class.",
+  );
+  assert.equal(nothingEligibleCopy([pkg({ id: "b" })], "Pilates"), null);
+});
+
 test("BKG-31 a class accepts none of the member's packages only when every one is refused by its rule", () => {
   const refused = pkg({ id: "n", eligible: false, reason: "not_accepted" });
   assert.equal(acceptsNone([refused]), true);
