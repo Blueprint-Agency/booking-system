@@ -194,10 +194,11 @@ describe('the staff schedule filters by Entity over HTTP', { skip: integrationTe
     return row!.id
   }
 
-  async function addCorporateSession(at: Studio, teacher: Teacher, startsInMs: number): Promise<string> {
+  async function addCorporateSession(at: Studio, teacher: Teacher, entityId: string, startsInMs: number): Promise<string> {
+    // Its package's Entity does not file it on the schedule: it stays under every Entity.
     const [pack] = await harness.db
       .insert(schema.corporatePackages)
-      .values({ tenantId: at.id, name: `Entity filter corporate ${run}`, priceSgd: '1000.00', createdByStaffId: at.adminId })
+      .values({ tenantId: at.id, name: `Entity filter corporate ${run}`, priceSgd: '1000.00', createdByStaffId: at.adminId, entityId })
       .returning({ id: schema.corporatePackages.id })
     const startsAt = new Date(Date.now() + startsInMs)
     const [row] = await harness.db
@@ -259,7 +260,7 @@ describe('the staff schedule filters by Entity over HTTP', { skip: integrationTe
     const otherPilatesClass = await addClass(at, pilatesType, at.otherTeacher, 4 * DAY)
     const workshop = await addWorkshop(at, at.teacher, 5 * DAY)
     const pt = await addPtSession(at, at.teacher, 6 * DAY)
-    const corporate = await addCorporateSession(at, at.teacher, 7 * DAY)
+    const corporate = await addCorporateSession(at, at.teacher, pilates, 7 * DAY)
     return { at, yoga, pilates, yogaType, pilatesType, yogaClass, pilatesClass, otherPilatesClass, workshop, pt, corporate }
   }
 
@@ -326,6 +327,9 @@ describe('the staff schedule filters by Entity over HTTP', { skip: integrationTe
     const past = await addClass(f.at, f.pilatesType, f.at.teacher, -3 * DAY)
     // An Entity archives once nothing live is in it.
     await harness.db.execute(sql`UPDATE class_types SET archived_at = now() WHERE id = ${f.pilatesType}`)
+    await harness.db.execute(
+      sql`UPDATE corporate_packages SET status = 'archived', archived_at = now() WHERE tenant_id = ${f.at.id}`,
+    )
     const archived = await send('POST', `/api/v1/portal/admin/entities/${f.pilates}/archive`, f.at.admin)
     assert.equal(archived.status, 200, JSON.stringify(archived.body))
 
