@@ -9,7 +9,18 @@ import {
 } from '../../../services/packages/promotions'
 import { tenantId } from '../../../middleware/tenant'
 import { explainInvalid } from '../../explain-invalid'
-import { nameField, priceField, promotionsField, toPromotionWriteInput, validityDaysField } from './package-fields'
+import { entityFieldsFor, type EntityFields } from '../../entity-fields'
+import { previewMove } from '../../../services/packages/entity-move'
+import {
+  entityFilterField,
+  entityIdField,
+  movePreviewQuery,
+  nameField,
+  priceField,
+  promotionsField,
+  toPromotionWriteInput,
+  validityDaysField,
+} from './package-fields'
 
 const sessionTypeEnum = z.enum(['1on1', '2on1'], { message: 'A PT package is 1-on-1 or 2-on-1.' })
 const statusEnum = z.enum(['active', 'archived'], { message: 'A status is active or archived.' })
@@ -19,6 +30,7 @@ const idParam = z.object({ id: z.string().uuid() })
 const listQuery = z.object({
   status: statusEnum.optional(),
   session_type: sessionTypeEnum.optional(),
+  entity: entityFilterField.optional(),
 })
 
 const SESSIONS_MESSAGE = 'Sessions must be a whole number from 1 to 200.'
@@ -30,6 +42,7 @@ const explainPackage = explainInvalid('That PT package is not valid.')
 // the domain, so a blank field cannot be how an admin creates an eternal PT package.
 const createSchema = z.object({
   name: nameField,
+  entity_id: entityIdField,
   session_type: sessionTypeEnum,
   num_sessions: numSessionsField,
   validity_days: validityDaysField,
@@ -42,6 +55,7 @@ const createSchema = z.object({
 
 const updateSchema = z.object({
   name: nameField.optional(),
+  entity_id: entityIdField.optional(),
   num_sessions: numSessionsField.optional(),
   validity_days: validityDaysField.optional(),
   instructor_bound: instructorBoundField.optional(),
@@ -57,9 +71,11 @@ function serialize(
     effectivePriceSgd: r.priceSgd,
     appliedPromotionId: null,
   },
+  entity: EntityFields,
 ) {
   return {
     id: r.id,
+    ...entity,
     name: r.name,
     session_type: r.sessionType,
     num_sessions: r.numSessions,
@@ -77,7 +93,8 @@ function serialize(
 async function serializeWithPromos(tenant: string, r: svc.PtPackageRow) {
   const map = await listManagedPromotionsFor(tenant, 'pt_package', [r.id])
   const promos = map[r.id] ?? []
-  return serialize(r, promos.map(serializePromotion), bestPrice(r.priceSgd, promos))
+  const [entity] = await entityFieldsFor(tenant, [r])
+  return serialize(r, promos.map(serializePromotion), bestPrice(r.priceSgd, promos), entity!)
 }
 
 const app = new Hono()
@@ -86,18 +103,27 @@ const app = new Hono()
     const rows = await svc.listPtPackages(tenantId(c), {
       status: q.status,
       sessionType: q.session_type,
+      entityId: q.entity,
     })
     const promosByPkg = await listManagedPromotionsFor(
       tenantId(c),
       'pt_package',
       rows.map(r => r.id),
     )
+    const entities = await entityFieldsFor(tenantId(c), rows)
     return c.json({
-      pt_packages: rows.map(r => {
+      pt_packages: rows.map((r, i) => {
         const ps = promosByPkg[r.id] ?? []
-        return serialize(r, ps.map(serializePromotion), bestPrice(r.priceSgd, ps))
+        return serialize(r, ps.map(serializePromotion), bestPrice(r.priceSgd, ps), entities[i]!)
       }),
     })
+  })
+  // How many members hold this package, before it is moved to another Entity.
+  // A read: the move itself is the PATCH, and cancels nothing.
+  .get('/:id/entity-preview', zValidator('param', idParam), zValidator('query', movePreviewQuery, explainPackage), async c => {
+    const { id } = c.req.valid('param')
+    const { entity_id } = c.req.valid('query')
+    return c.json(await previewMove(tenantId(c), 'pt', id, entity_id))
   })
   .get('/:id', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
@@ -110,6 +136,7 @@ const app = new Hono()
       tenantId(c),
       {
         name: body.name,
+        entityId: body.entity_id,
         sessionType: body.session_type,
         numSessions: body.num_sessions,
         validityDays: body.validity_days,
@@ -131,6 +158,7 @@ const app = new Hono()
       id,
       {
         ...(body.name !== undefined ? { name: body.name } : {}),
+        ...(body.entity_id !== undefined ? { entityId: body.entity_id } : {}),
         ...(body.num_sessions !== undefined ? { numSessions: body.num_sessions } : {}),
         ...(body.validity_days !== undefined ? { validityDays: body.validity_days } : {}),
         ...(body.instructor_bound !== undefined

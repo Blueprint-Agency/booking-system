@@ -6,11 +6,16 @@ import { Loader2 } from "lucide-react";
 import { Button, PageHeader, Input, Label, Textarea } from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
+import { EntityPicker } from "@/components/packages/entity-picker";
+import { entityRefusal } from "@/lib/entities";
 
 export default function NewCorporatePackagePage() {
   const router = useRouter();
   const { api } = useWorkspace();
 
+  // The Entity it is sold under; a new package starts in the studio's first.
+  const [entityId, setEntityId] = useState("");
+  const [entityReady, setEntityReady] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [priceSgd, setPriceSgd] = useState("");
@@ -25,14 +30,14 @@ export default function NewCorporatePackagePage() {
     try {
       await api.post("/portal/admin/corporate-packages", {
         name: name.trim(),
+        entity_id: entityId,
         description: description.trim() ? description.trim() : null,
         price_sgd: priceSgd,
       });
       router.push("/admin/packages/corporate");
     } catch (err) {
       if (err instanceof ApiError) {
-        const body = err.body as { error?: string; message?: string } | null;
-        setError(body?.message ?? body?.error ?? `Failed (HTTP ${err.status})`);
+        setError(entityRefusal(err, `Failed (HTTP ${err.status})`));
       } else {
         setError("Network error");
       }
@@ -56,6 +61,8 @@ export default function NewCorporatePackagePage() {
         onSubmit={onSubmit}
         className="space-y-5 rounded-xl border border-border bg-card p-4 shadow-soft sm:p-6"
       >
+        <EntityPicker value={entityId} onChange={setEntityId} onReady={setEntityReady} />
+
         <div className="space-y-1.5">
           <Label htmlFor="cp-name">Name</Label>
           <Input
@@ -105,7 +112,7 @@ export default function NewCorporatePackagePage() {
               Cancel
             </Button>
           </Link>
-          <Button type="submit" disabled={submitting || !name.trim() || !priceSgd}>
+          <Button type="submit" disabled={submitting || !name.trim() || !priceSgd || !entityReady}>
             {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
             Create
           </Button>
