@@ -9,6 +9,7 @@ import {
   serializePromotion,
 } from '../../services/packages/promotions'
 import * as merchSvc from '../../services/catalog/merch'
+import { listPublicEntities } from '../../services/catalog/entities-public'
 import { listCorporatePackages } from '../../services/packages/corporate-packages'
 import { readCancellationPolicy } from '../../services/policy/evaluate-cancellation'
 import { readPtBookingWindow } from '../../services/pt-sessions/request'
@@ -61,6 +62,10 @@ const app = new Hono()
   .get('/locations', async c => {
     const locations = await classCatalog.listActiveLocations(tenantId(c))
     return c.json({ locations })
+  })
+  // The studio's live Entities in its order: what the member schedule draws its buttons from.
+  .get('/entities', async c => {
+    return c.json({ entities: await listPublicEntities(tenantId(c)) })
   })
   .get('/classes', async c => {
     const filters = classCatalog.parseClassFilters(c.req.query())
