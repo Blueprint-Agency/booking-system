@@ -17,6 +17,7 @@ function row(p: Partial<PayrollRow> & { instructorId: string }): PayrollRow {
     instructorPaySgd: '50.00',
     locationId: 'loc-1',
     locationName: 'Harbour Studio',
+    entityId: null,
     ...p,
   }
 }

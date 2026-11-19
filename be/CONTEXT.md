@@ -344,7 +344,7 @@ A member as the payment provider knows them, and the thing a Saved Card is actua
 _Avoid_: Stripe customer, billing account, payment profile, member record
 
 **Money Event**:
-One thing that moved money, or that owes money, on the day it happened. A purchase, a Refund, a session's Instructor Pay, or a Manual Entry. Every figure the studio reports is a sum over Money Events; there is no separate stored total.
+One thing that moved money, or that owes money, on the day it happened. A purchase, a Refund, a session's Instructor Pay, or a Manual Entry. Every figure the studio reports is a sum over Money Events; there is no separate stored total. Each is filed under an **Entity** (or under none), read live from the current catalogue rather than stored on the event: a package sale by its package, a Refund by what its Purchase bought, a corporate sale by its corporate package, Class pay by the class's Class Type, PT session pay by its request's Class Type else the package that paid; workshops, merch and manual entries are in none.
 _Avoid_: transaction, ledger entry, line item, record
 
 **Type**:

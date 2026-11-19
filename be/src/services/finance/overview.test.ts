@@ -13,6 +13,8 @@ function ev(p: Partial<MoneyEvent> & { kind: MoneyEvent['kind']; type: MoneyEven
     party: null,
     locationId: null,
     locationName: null,
+    entityId: null,
+    entityName: null,
     listPriceSgd: null,
     paidSgd: null,
     promoCode: null,

@@ -28,6 +28,8 @@ export function financeCsv(summary: FinanceSummary, timezone: string): string {
     'variant',
     'price_sgd',
     'location',
+    // Which line of practice the row is filed under; "No entity" where none.
+    'entity',
     'discount_sgd',
     'promo_code',
     'money_in_sgd',
@@ -55,6 +57,7 @@ export function financeCsv(summary: FinanceSummary, timezone: string): string {
       r.variant,
       r.list_price_sgd,
       r.unattributed ? 'Unattributed' : r.location_name,
+      r.entity_name ?? 'No entity',
       r.discount_sgd,
       r.promo_code,
       r.paid_sgd,
