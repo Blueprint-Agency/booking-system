@@ -83,6 +83,26 @@ async function usageOf(tenantId: string, entityId: string): Promise<EntityUsage>
 export type EntityRef = { id: string; name: string; slug: string }
 
 /**
+ * The live Entity of this studio a slug names, in any casing, or null when it
+ * names none: an unknown slug, an archived Entity's (a slug is handed back when
+ * an Entity is archived, so a live one may reuse it) or another studio's.
+ */
+export async function liveEntityIdBySlug(tenantId: string, slug: string): Promise<string | null> {
+  const [row] = await db
+    .select({ id: entities.id })
+    .from(entities)
+    .where(
+      and(
+        eq(entities.tenantId, tenantId),
+        isNull(entities.archivedAt),
+        sql`lower(${entities.slug}) = lower(${slug})`,
+      ),
+    )
+    .limit(1)
+  return row?.id ?? null
+}
+
+/**
  * The Entity a catalogue row names, to say who it belongs to: name and slug
  * for the screens that draw it. Archived Entities are included, because a
  * package left in one is still read.

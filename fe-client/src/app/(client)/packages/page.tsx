@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useParams, usePathname, useRouter } from "next/navigation";
 import { Check, Loader2, MessageCircle } from "lucide-react";
 import { useMemberSession } from "@/lib/member-auth";
 import { useAuthGate } from "@/components/auth/auth-gate";
@@ -46,6 +47,8 @@ import {
   WHATSAPP_COPY_KEY,
 } from "@/lib/corporate";
 import { useBrandCopy } from "@/components/brand/brand-provider";
+import { packagesHref } from "@/lib/entities";
+import { usePackagesEntity } from "@/lib/public-entities";
 import {
   trialClosedLabel,
   trialClosedText,
@@ -75,13 +78,18 @@ const PACKAGE_GRID = "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:ga
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function PackagesPage() {
-  const { data, loading, error, refresh } = usePackagesCatalog();
+  // `/packages` has no slug and `/packages/<slug>` renders this same page: a
+  // studio with two or more Entities with packages shows one Entity's at a time.
+  const routeParams = useParams<{ entity?: string }>();
+  const router = useRouter();
+  const { entity, entities } = usePackagesEntity(routeParams.entity);
+  const { data, loading, error, refresh } = usePackagesCatalog(entity);
   const {
     data: corporateData,
     loading: corporateLoading,
     error: corporateError,
     refresh: refreshCorporate,
-  } = useCorporatePackages();
+  } = useCorporatePackages(entity);
   const api = useApi();
   const [activeTab, setActiveTab] = useState<MainTab>("group");
   const [classSubTab, setClassSubTab] = useState<ClassSubTab>("bundle");
@@ -251,6 +259,18 @@ export default function PackagesPage() {
     <>
       <BookingSurface>
           <PageHeader title="Packages" />
+
+          {/* On a phone the Entities are tabs at the top; on a wider screen they are the nav's dropdown. */}
+          {entities && entity && (
+            <SegmentedTabs
+              label="Entity"
+              centered
+              className="md:hidden"
+              tabs={entities.map((e) => ({ value: e.slug, label: e.name }))}
+              value={entity}
+              onChange={(slug) => router.push(packagesHref(slug))}
+            />
+          )}
 
           {loading && (
             <ContentLoading label="Loading packages" />
@@ -693,6 +713,8 @@ function BundleCard({
   disabledReason: string;
 }) {
   const credits = pkg.credits ?? 0;
+  // Signing in returns to this page, on this Entity.
+  const here = usePathname();
   return (
     <PackageCard
       name={pkg.name}
@@ -709,7 +731,7 @@ function BundleCard({
           target={{ kind: "package", packageKind: "class", packageId: pkg.id }}
           context="buy a package"
           itemName={pkg.name}
-          gateHref="/packages"
+          gateHref={here}
           priceSgd={pkg.effective_price_sgd}
           className={CARD_BUTTON}
         >
@@ -729,6 +751,7 @@ function UnlimitedCard({
   disabled: boolean;
   disabledReason: string;
 }) {
+  const here = usePathname();
   const months =
     pkg.duration_months != null
       ? formatDurationMonths(pkg.duration_months)
@@ -750,7 +773,7 @@ function UnlimitedCard({
           target={{ kind: "package", packageKind: "class", packageId: pkg.id }}
           context="buy a package"
           itemName={pkg.name}
-          gateHref="/packages"
+          gateHref={here}
           priceSgd={pkg.effective_price_sgd}
           // A plan has a Home studio to pick, at every price — including one a
           // Promotion took to zero.
@@ -779,6 +802,7 @@ function TrialCard({
 }) {
   const { isSignedIn } = useMemberSession();
   const { requireAuth, gate } = useAuthGate("buy a package");
+  const here = usePathname();
   const credits = pkg.credits ?? 1;
   const isFree = Number(pkg.effective_price_sgd) === 0;
   const onlinePayments = useOnlinePayments();
@@ -807,7 +831,7 @@ function TrialCard({
             disabled={isClaiming}
             onClick={() => {
               if (!isSignedIn) {
-                requireAuth("/packages#trial");
+                requireAuth(`${here}#trial`);
                 return;
               }
               if (!isClaiming) onRequestPurchase();
@@ -887,6 +911,7 @@ function TrialTermsModal({
 }
 
 function PtCard({ pkg }: { pkg: ApiPtPackage }) {
+  const here = usePathname();
   const perSession = Math.round(Number(pkg.effective_price_sgd) / pkg.num_sessions);
   return (
     <PackageCard
@@ -913,7 +938,7 @@ function PtCard({ pkg }: { pkg: ApiPtPackage }) {
         target={{ kind: "package", packageKind: "pt", packageId: pkg.id }}
         context="buy a package"
         itemName={pkg.name}
-        gateHref="/packages"
+        gateHref={here}
         priceSgd={pkg.effective_price_sgd}
         className={CARD_BUTTON}
       >
@@ -994,6 +1019,7 @@ function CorporateSection({
 // request. There is no request form — date, venue and headcount are settled with
 // the studio on WhatsApp, and the member lands on their corporate bookings.
 function CorporateCard({ pkg }: { pkg: ApiCorporatePackage }) {
+  const here = usePathname();
   return (
     <div className={cn(CARD, "flex flex-col p-5 sm:p-6")}>
       <p className="font-bold text-ink">{pkg.name}</p>
@@ -1006,7 +1032,7 @@ function CorporateCard({ pkg }: { pkg: ApiCorporatePackage }) {
         target={{ kind: "package", packageKind: "corporate", packageId: pkg.id }}
         context="buy a package"
         itemName={pkg.name}
-        gateHref="/packages#corporate"
+        gateHref={`${here}#corporate`}
         priceSgd={pkg.price_sgd}
         className={CARD_BUTTON}
       >

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMemberSession } from "./member-auth";
 import { ApiError, publicApi, useApi } from "./api";
 
@@ -19,6 +19,8 @@ export interface ApiCorporatePackage {
   description: string | null;
   price_sgd: string;
   status: ApiCorporatePackageStatus;
+  /** The Entity it is shown under. Optional: a backend not yet redeployed does not send it. */
+  entity?: { id: string; name: string; slug: string } | null;
 }
 
 export interface ApiCorporateSession {
@@ -49,8 +51,12 @@ export interface ApiCorporateRequest {
  *
  *   - signed in:  GET /me/corporate-packages
  *   - signed out: GET /public/corporate-packages
+ *
+ * `entity` is the Entity slug whose packages are shown (see `usePackagesCatalog`):
+ * a string narrows the read, `null` reads them all, `undefined` holds it. It is
+ * a dependency of the load, or the tab would keep the previous Entity's list.
  */
-export function useCorporatePackages(): {
+export function useCorporatePackages(entity: string | null | undefined): {
   data: ApiCorporatePackage[] | null;
   loading: boolean;
   error: ApiError | Error | null;
@@ -61,31 +67,40 @@ export function useCorporatePackages(): {
   const [data, setData] = useState<ApiCorporatePackage[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<ApiError | Error | null>(null);
+  // The newest load; an older one landing late is dropped, so a slow read for
+  // the Entity just left cannot overwrite the one now on screen.
+  const latest = useRef(0);
 
   async function load() {
-    if (!isLoaded) return;
+    if (!isLoaded || entity === undefined) return;
+    const mine = ++latest.current;
+    const query = entity ? `?entity=${encodeURIComponent(entity)}` : "";
     setLoading(true);
     setError(null);
     try {
       const res = isSignedIn
         ? await api.get<{ corporate_packages: ApiCorporatePackage[] }>(
-            "/me/corporate-packages",
+            `/me/corporate-packages${query}`,
           )
         : await publicApi.get<{ corporate_packages: ApiCorporatePackage[] }>(
-            "/public/corporate-packages",
+            `/public/corporate-packages${query}`,
           );
+      if (mine !== latest.current) return;
       setData(res.corporate_packages);
     } catch (err) {
+      if (mine !== latest.current) return;
       setError(err as Error);
     } finally {
-      setLoading(false);
+      if (mine === latest.current) setLoading(false);
     }
   }
 
   useEffect(() => {
+    // The previous Entity's list is not this one's: never drawn while it loads.
+    setData(null);
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLoaded, isSignedIn]);
+  }, [isLoaded, isSignedIn, entity]);
 
   return { data, loading, error, refresh: load };
 }

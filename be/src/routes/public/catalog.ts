@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { zValidator } from '@hono/zod-validator'
 import * as classCatalog from '../../services/schedule/client-catalog'
 import * as classTypesSvc from '../../services/catalog/class-types'
 import * as classSvc from '../../services/packages/class-packages'
@@ -14,7 +15,7 @@ import { listCorporatePackages } from '../../services/packages/corporate-package
 import { readCancellationPolicy } from '../../services/policy/evaluate-cancellation'
 import { readPtBookingWindow } from '../../services/pt-sessions/request'
 import { tenantId } from '../../middleware/tenant'
-import { entityFieldsFor, type EntityFields } from '../entity-fields'
+import { entityFieldsFor, entityFilter, entityQuery, explainEntityQuery, type EntityFields } from '../entity-fields'
 import { takesOnlinePayments } from '../../lib/stripe'
 
 function serializeClassPackage(
@@ -68,7 +69,8 @@ const app = new Hono()
     const locations = await classCatalog.listActiveLocations(tenantId(c))
     return c.json({ locations })
   })
-  // The studio's live Entities in its order: what the member schedule draws its buttons from.
+  // The studio's live Entities in its order, each with its slug and whether it has a
+  // package on sale: what the schedule draws its buttons and the Packages menu from.
   .get('/entities', async c => {
     return c.json({ entities: await listPublicEntities(tenantId(c)) })
   })
@@ -98,10 +100,14 @@ const app = new Hono()
     const rows = await classTypesSvc.listClassTypes(tenantId(c), { includeArchived: false })
     return c.json({ class_types: rows.map(r => ({ id: r.id, name: r.name, entity_id: r.entityId ?? null })) })
   })
-  .get('/packages', async c => {
+  // `?entity=<slug>` narrows to one Entity; a slug naming no live Entity of the
+  // studio answers with empty lists.
+  .get('/packages', zValidator('query', entityQuery, explainEntityQuery), async c => {
+    const scope = await entityFilter(tenantId(c), c.req.valid('query').entity)
+    if (!scope) return c.json({ class_packages: [], pt_packages: [] })
     const [classRows, ptRows] = await Promise.all([
-      classSvc.listClassPackages(tenantId(c), { status: 'active' }),
-      ptSvc.listPtPackages(tenantId(c), { status: 'active' }),
+      classSvc.listClassPackages(tenantId(c), { status: 'active', ...scope }),
+      ptSvc.listPtPackages(tenantId(c), { status: 'active', ...scope }),
     ])
 
     const [classPromos, ptPromos] = await Promise.all([
@@ -166,8 +172,10 @@ const app = new Hono()
     return c.json({ online_payments: await takesOnlinePayments(tenantId(c)) })
   })
   // Corporate catalogue for signed-out browsing (no promotions, no entitlements).
-  .get('/corporate-packages', async c => {
-    const rows = await listCorporatePackages(tenantId(c), { status: 'active' })
+  .get('/corporate-packages', zValidator('query', entityQuery, explainEntityQuery), async c => {
+    const scope = await entityFilter(tenantId(c), c.req.valid('query').entity)
+    if (!scope) return c.json({ corporate_packages: [] })
+    const rows = await listCorporatePackages(tenantId(c), { status: 'active', ...scope })
     const entities = await entityFieldsFor(tenantId(c), rows)
     return c.json({
       corporate_packages: rows.map((r, i) => ({

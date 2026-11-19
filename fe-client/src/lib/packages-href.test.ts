@@ -2,10 +2,10 @@ import assert from "node:assert";
 import { test } from "node:test";
 import { packagesHref } from "./packages-href.ts";
 
-// Until the member Packages page reads one Entity at a time, every Entity's
-// link is the one page, and a class with no Entity goes there too.
-test("PKR-25 a class's buy-a-package link goes to the Packages page, whatever its Entity", () => {
-  assert.equal(packagesHref({ slug: "pilates" }), "/packages");
+// A class's link goes to its own Entity's Packages page; a class with no
+// Entity goes to the Packages page, which opens on the first Entity.
+test("PKR-25 a class's buy-a-package link goes to its Entity's Packages page", () => {
+  assert.equal(packagesHref({ slug: "pilates" }), "/packages/pilates");
   assert.equal(packagesHref(null), "/packages");
   assert.equal(packagesHref(), "/packages");
 });

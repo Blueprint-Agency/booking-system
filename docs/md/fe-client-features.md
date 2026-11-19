@@ -440,6 +440,8 @@ The studio can write back on the request: when it schedules a time none of the p
 
 ### 6.1 Packages `/packages`
 
+**By Entity (#561).** A studio with two or more Entities that have packages on sale shows one Entity's packages at a time: the side rail's **Packages** item opens into one link per such Entity, in the studio's order, each at `/packages/<entity-slug>`; on a phone the same Entities are tabs at the top of the page (the bottom bar keeps its one Packages tab). An Entity with nothing on sale is left out. Each Entity page is the page below, showing only that Entity's packages (Group, Private and Corporate alike), and its hash deep links (`#trial`, `#unlimited`, `#1on1`, …) work on it. `/packages` and a slug naming no Entity with packages open on the first Entity, in place. A studio with one such Entity (or whose Entities cannot be read) sees exactly the page below, every package unfiltered, with no menu. Signing in from a card returns to the Entity's own page.
+
 **Business logic**
 - Four-section catalogue:
   1. **Trial Pass** — quota-based intro pack (e.g. 3 trial classes / 30 days / S$30). **One purchase per client per Entity, ever** — enforced server-side at purchase time. A trial is for a member new to its Entity: a previously-purchased trial in that Entity (active or expired) blocks further trial purchases there and the card's button renders disabled as "Not eligible"; any other package they hold or held in that Entity makes it "New members only". Each trial card reads its own Entity's standing from `entitlements.trial_by_entity[entity_id]` (`GET /me/class-packages`), so a Yoga regular may buy a Pilates trial once. The notes and refusals name the Entity when the page shows trials of more than one.

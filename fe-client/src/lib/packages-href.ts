@@ -11,12 +11,8 @@ export interface ApiEntityRef {
 }
 
 /**
- * Where "buy a package" goes for a class of this Entity. The member Packages
- * page is read one Entity at a time (`/packages/<slug>`), but until that page
- * exists the one `/packages` page is the whole catalogue, so every link a class
- * offers goes through here and switches over in this one place.
+ * Where "buy a package" goes for a class of this Entity: that Entity's own
+ * Packages page (`/packages/<slug>`), or `/packages` for a class with none.
+ * One helper, shared with the Packages menu, so every link agrees.
  */
-export function packagesHref(entity?: Pick<ApiEntityRef, "slug"> | null): string {
-  void entity;
-  return "/packages";
-}
+export { packagesHref } from "./entities.ts";

@@ -317,7 +317,8 @@ describe('member schedule by Entity over HTTP', { skip: integrationTestsEnabled 
     assert.equal(archived.status, 200, archived.text)
     const live = await read(s.studio)
     assert.deepEqual(live.map(e => e.slug), ['yoga', 'pilates'])
-    assert.deepEqual(Object.keys(live[0]).sort(), ['id', 'name', 'slug'])
+    // #561 adds has_live_packages, which the Packages menu reads.
+    assert.deepEqual(Object.keys(live[0]).sort(), ['has_live_packages', 'id', 'name', 'slug'])
     assert.ok(!live.some(e => [other.yoga, other.pilates].includes(e.id)))
   })
 })
