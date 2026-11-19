@@ -431,6 +431,9 @@ export const clientPackages = pgTable(
     }),
   },
   table => ({
+    // Migration 0148 dropped the one-trial index, which was the only index
+    // leading with `client_id`; this one keeps a delete of a client off a scan.
+    clientIdFkIdx: index('client_packages_client_id_fk_idx').on(table.clientId),
     appliedPromoCodeIdFkIdx: index('client_packages_applied_promo_code_id_fk_idx').on(table.appliedPromoCodeId),
     appliedPromotionIdFkIdx: index('client_packages_applied_promotion_id_fk_idx').on(table.appliedPromotionId),
     boundInstructorIdFkIdx: index('client_packages_bound_instructor_id_fk_idx').on(table.boundInstructorId),

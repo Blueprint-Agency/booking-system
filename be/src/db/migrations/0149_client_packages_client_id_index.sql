@@ -1,0 +1,1 @@
+CREATE INDEX "client_packages_client_id_fk_idx" ON "client_packages" USING btree ("client_id");
