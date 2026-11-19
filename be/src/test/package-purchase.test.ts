@@ -1662,7 +1662,7 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
     const answers = await Promise.all([buyClass(same, one.pilates.freeTrialId), buyClass(same, one.pilates.freeTrialId)])
     assert.deepEqual(answers.map(r => r.status).sort(), [201, 409], 'one grant and one refusal')
     assert.equal((await trialsOf(same)).length, 1, 'one trial')
-    for (const r of answers.filter(a => a.status === 409)) assert.equal((await r.json()).error, 'trial_already_used')
+    for (const r of answers.filter(a => a.status === 409)) assert.equal(((await r.json()) as { error?: string }).error, 'trial_already_used')
 
     const apart = await member(one)
     const both = await Promise.all([buyClass(apart, one.pilates.freeTrialId), buyClass(apart, one.yoga.freeTrialId)])
