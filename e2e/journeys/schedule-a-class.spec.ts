@@ -29,7 +29,7 @@ const memberLabel = (date: string) => {
   return `${day.format(new Date(`${date}T12:00:00Z`))} 10:00 am – 11:00 am`
 }
 
-test('TEN-137 an admin creates a class at 10:00, and the instructor and a member read it at 10:00 on the studio\'s clock, whatever zone the browser is in', async ({
+test('TEN-137, SCH-48 an admin creates a class at 10:00, and the instructor and a member read it at 10:00 on the studio\'s clock, whatever zone the browser is in', async ({
   browser,
   request,
 }) => {
