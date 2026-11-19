@@ -17,6 +17,9 @@ import {
   usePaged,
 } from "@/components/ui";
 import { PtPackageDialog } from "@/components/packages/pt-package-dialog";
+import { EntityBadge, EntityFilter } from "@/components/packages/entity-filter";
+import { filterByEntity, packageEntityFromApi } from "@/lib/entities";
+import { useEntities } from "@/lib/use-entities";
 import { formatSgd } from "@/lib/formatters";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
@@ -40,11 +43,15 @@ interface ApiPtPackage {
   status: "active" | "archived";
   archived_at: string | null;
   promotions?: ApiPromotion[];
+  // Optional: an API that predates Entities does not send them.
+  entity_id?: string | null;
+  entity?: { id: string; name: string; slug: string } | null;
 }
 
 function fromApi(r: ApiPtPackage): PtPackage {
   return {
     id: r.id,
+    ...packageEntityFromApi(r),
     name: r.name,
     sessionType: r.session_type,
     numSessions: r.num_sessions,
@@ -71,6 +78,9 @@ export default function PrivateSessionsPage() {
     { kind: "create" } | { kind: "edit"; pkg: PtPackage } | null
   >(null);
   const [view, setView] = useState<"active" | "archived">("active");
+  // The studio's Entities: for the filter, which is hidden at one. "" is every Entity.
+  const { entities, reload: reloadEntities } = useEntities();
+  const [entityFilter, setEntityFilter] = useState("");
 
   // `loading` starts true and is never set again: a reload after a save refreshes
   // the list in place, so the pager keeps the page the admin was on.
@@ -101,8 +111,9 @@ export default function PrivateSessionsPage() {
   }, [load]);
 
   const configDirty = draftAdvance !== advance || draftMinAdvance !== minAdvance;
-  const active = packages.filter((p) => p.status === "active");
-  const archived = packages.filter((p) => p.status === "archived");
+  const shown = filterByEntity(packages, entityFilter);
+  const active = shown.filter((p) => p.status === "active");
+  const archived = shown.filter((p) => p.status === "archived");
 
   async function handleSavePackage(pkg: PtPackage) {
     if (!api) return;
@@ -112,6 +123,7 @@ export default function PrivateSessionsPage() {
       if (isEdit) {
         await api.patch(`/portal/admin/pt-packages/${pkg.id}`, {
           name: pkg.name,
+          entity_id: pkg.entityId,
           num_sessions: pkg.numSessions,
           validity_days: pkg.validityDays,
           instructor_bound: pkg.instructorBound,
@@ -121,6 +133,7 @@ export default function PrivateSessionsPage() {
       } else {
         await api.post("/portal/admin/pt-packages", {
           name: pkg.name,
+          entity_id: pkg.entityId,
           session_type: pkg.sessionType,
           num_sessions: pkg.numSessions,
           validity_days: pkg.validityDays,
@@ -130,6 +143,7 @@ export default function PrivateSessionsPage() {
         });
       }
       setDialog(null);
+      reloadEntities();
       await load();
       toast.success("PT package saved.");
     } catch (err) {
@@ -300,7 +314,8 @@ export default function PrivateSessionsPage() {
           <EmptyState title="No PT packages yet" description="Add your first private session package." />
         ) : (
           <div>
-            {active.length + archived.length > 0 && (
+            <EntityFilter entities={entities} value={entityFilter} onChange={setEntityFilter} />
+            {packages.length > 0 && (
               <Tabs value={view} onValueChange={(v) => setView(v as "active" | "archived")} className="mb-6">
                 <TabsList>
                   <TabsTrigger value="active">Active ({active.length})</TabsTrigger>
@@ -384,6 +399,7 @@ function PackageGroup({
               <div className="min-w-0">
                 <h4 className="truncate text-base font-semibold text-ink">{pkg.name}</h4>
                 <div className="mt-1 flex flex-wrap gap-1.5">
+                  <EntityBadge name={pkg.entityName} />
                   <Badge tone={pkg.sessionType === "1on1" ? "accent" : "cyan"}>
                     {pkg.sessionType === "1on1" ? "1-on-1" : "2-on-1"}
                   </Badge>

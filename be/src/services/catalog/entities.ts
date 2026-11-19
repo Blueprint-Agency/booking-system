@@ -1,7 +1,8 @@
-import { and, asc, count, eq, isNull, max, ne, sql, type SQL } from 'drizzle-orm'
+import { and, asc, count, eq, inArray, isNull, max, ne, sql, type SQL } from 'drizzle-orm'
 import { db } from '../../db'
 import { slugForEntityName } from '../../db/seed/entities'
 import { classTypes, entities } from '../../db/schema/catalog'
+import { classPackages, corporatePackages, ptPackages } from '../../db/schema/packages'
 import { isUniqueViolation } from '../../db/unique-violation'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 import { assertEntityUnused, type EntityUsage } from './entities-usage'
@@ -9,8 +10,8 @@ import { assertEntityUnused, type EntityUsage } from './entities-usage'
 /**
  * Entities: the lines of practice a studio sells packages for (be/CONTEXT.md
  * § Entity). This is the studio-owned list an admin manages from settings.
- * Nothing is assigned to an Entity yet, so "still in use" counts are zero until
- * Class Types and catalogue packages carry an `entity_id`.
+ * Class Types and catalogue packages carry an `entity_id`; both count toward an
+ * Entity's "still in use".
  */
 
 export type EntityRow = typeof entities.$inferSelect
@@ -20,29 +21,91 @@ export type EntityWithUsage = EntityRow & { inUse: EntityUsage }
 /**
  * What still belongs to an Entity. Class Types count when they are live (not
  * archived, not deleted), sub-types too: they hold the Entity of their parent.
- * Packages are zero until they take an Entity; that change counts its own rows
- * here.
+ * A package counts while it is on sale: an archived or removed one has left the
+ * catalogue, so it does not hold its Entity open (and an archived one cannot be
+ * put back while the Entity is archived: `assertEntityAllowsPackage`).
  */
 async function usageOf(tenantId: string, entityId: string): Promise<EntityUsage> {
-  const [types] = await db
-    .select({ n: count() })
-    .from(classTypes)
-    .where(
-      and(
-        eq(classTypes.tenantId, tenantId),
-        eq(classTypes.entityId, entityId),
-        isNull(classTypes.archivedAt),
-        isNull(classTypes.deletedAt),
+  const [[typeRow], [classRow], [ptRow], [corporateRow]] = await Promise.all([
+    db
+      .select({ n: count() })
+      .from(classTypes)
+      .where(
+        and(
+          eq(classTypes.tenantId, tenantId),
+          eq(classTypes.entityId, entityId),
+          isNull(classTypes.archivedAt),
+          isNull(classTypes.deletedAt),
+        ),
       ),
-    )
-  return { class_types: Number(types?.n ?? 0), class_packages: 0, pt_packages: 0, corporate_packages: 0 }
+    db
+      .select({ n: count() })
+      .from(classPackages)
+      .where(
+        and(
+          eq(classPackages.tenantId, tenantId),
+          eq(classPackages.entityId, entityId),
+          eq(classPackages.status, 'active'),
+          isNull(classPackages.deletedAt),
+        ),
+      ),
+    db
+      .select({ n: count() })
+      .from(ptPackages)
+      .where(
+        and(
+          eq(ptPackages.tenantId, tenantId),
+          eq(ptPackages.entityId, entityId),
+          eq(ptPackages.status, 'active'),
+          isNull(ptPackages.deletedAt),
+        ),
+      ),
+    db
+      .select({ n: count() })
+      .from(corporatePackages)
+      .where(
+        and(
+          eq(corporatePackages.tenantId, tenantId),
+          eq(corporatePackages.entityId, entityId),
+          eq(corporatePackages.status, 'active'),
+          isNull(corporatePackages.deletedAt),
+        ),
+      ),
+  ])
+  return {
+    class_types: Number(typeRow?.n ?? 0),
+    class_packages: classRow?.n ?? 0,
+    pt_packages: ptRow?.n ?? 0,
+    corporate_packages: corporateRow?.n ?? 0,
+  }
+}
+
+export type EntityRef = { id: string; name: string; slug: string }
+
+/**
+ * The Entity a catalogue row names, to say who it belongs to: name and slug
+ * for the screens that draw it. Archived Entities are included, because a
+ * package left in one is still read.
+ */
+export async function entityRefsFor(
+  tenantId: string,
+  ids: ReadonlyArray<string | null>,
+): Promise<Map<string, EntityRef>> {
+  const wanted = [...new Set(ids.filter((id): id is string => id !== null))]
+  if (wanted.length === 0) return new Map()
+  const rows = await db
+    .select({ id: entities.id, name: entities.name, slug: entities.slug })
+    .from(entities)
+    .where(and(eq(entities.tenantId, tenantId), inArray(entities.id, wanted)))
+  return new Map(rows.map(row => [row.id, row]))
 }
 
 /**
  * The Entity a new Class Type or package gets when its caller names none: the
- * studio's first live one by order. Null only for a studio with no Entity at all
- * (a fixture, or one an archive is about to be restored into), which the caller
- * stores as "no Entity" rather than refusing.
+ * studio's first live one by display order. Null only for a studio with no
+ * Entity at all (a fixture, or one an archive is about to be restored into),
+ * which the caller stores as "no Entity" rather than refusing. The admin routes
+ * for packages never lean on this: they require the Entity to be named.
  */
 export async function defaultEntityId(tenantId: string): Promise<string | null> {
   const [first] = await db
@@ -68,7 +131,32 @@ export async function assertEntityUsable(tenantId: string, id: string): Promise<
     .where(and(eq(entities.tenantId, tenantId), eq(entities.id, id)))
     .limit(1)
   if (!row) throw new NotFoundError('entity_not_found')
-  if (row.archivedAt) throw new ConflictError('entity_archived')
+  if (row.archivedAt) throw new ConflictError('entity_archived', { entity_id: id })
+}
+
+/**
+ * The Entity to write on a package: the one named, checked to be this studio's
+ * and live; or the default when none is named.
+ */
+export async function entityForNewPackage(tenantId: string, named: string | undefined): Promise<string | null> {
+  if (named === undefined) return defaultEntityId(tenantId)
+  await assertEntityUsable(tenantId, named)
+  return named
+}
+
+/**
+ * A package that is archived and sits in an archived Entity cannot be put back
+ * on sale there: the Entity's archive only looked at packages on sale. An admin
+ * moves it to a live Entity first.
+ */
+export async function assertEntityAllowsPackage(tenantId: string, entityId: string | null): Promise<void> {
+  if (entityId === null) return
+  const [row] = await db
+    .select({ archivedAt: entities.archivedAt })
+    .from(entities)
+    .where(and(eq(entities.tenantId, tenantId), eq(entities.id, entityId)))
+    .limit(1)
+  if (row?.archivedAt) throw new ConflictError('entity_archived', { entity_id: entityId })
 }
 
 async function withUsage(tenantId: string, row: EntityRow): Promise<EntityWithUsage> {

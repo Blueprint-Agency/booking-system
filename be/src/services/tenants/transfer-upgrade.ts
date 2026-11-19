@@ -121,19 +121,22 @@ export function upgradeArchiveRows(rows: Readonly<Rows>, archived: { tenantName?
     ]
   }
 
-  // Migration 0145: every Class Type is in an Entity. A row with no `entity_id`
-  // key in the archive predates the column (taken before it, or before the
-  // table, in which case the Entity above is the one made for it) and goes to
-  // the studio's first live Entity, as the migration put the studio's own.
-  // Sub-types included, so one equals its parent. A row that has the key,
-  // null or not, is restored as it is.
-  const classTypes = rows.class_types
-  if (classTypes?.some(r => !('entity_id' in r))) {
-    const first = (out.entities ?? [])
-      .filter(e => e.archived_at == null)
-      .sort((a, b) => Number(a.position) - Number(b.position))[0]
-    if (first) {
-      out.class_types = classTypes.map(row => ('entity_id' in row ? row : { ...row, entity_id: first.id }))
+  // Migrations 0144 and 0146: every Class Type and every catalogue package
+  // belongs to an Entity. A row with no `entity_id` key in the archive predates
+  // the column (taken before it, whether or not the archive has Entities; with
+  // none, the Entity above is the one made for it) and goes to the studio's
+  // first live Entity by display order, as migrations 0145 and 0147 put the
+  // studio's own. Sub-types included, so one equals its parent. A row that has
+  // the key is the studio's own choice and is restored as it is, null included.
+  const live = (out.entities ?? [])
+    .filter(entity => entity.archived_at == null)
+    .sort((a, b) => Number(a.position) - Number(b.position))
+  const first = live[0]?.id
+  if (first !== undefined) {
+    for (const table of ['class_types', 'class_packages', 'pt_packages', 'corporate_packages']) {
+      const tableRows = rows[table]
+      if (!tableRows?.some(r => !('entity_id' in r))) continue
+      out[table] = tableRows.map(r => ('entity_id' in r ? r : { ...r, entity_id: first }))
     }
   }
 

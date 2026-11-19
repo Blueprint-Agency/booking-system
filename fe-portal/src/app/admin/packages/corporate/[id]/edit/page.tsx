@@ -7,9 +7,14 @@ import { Loader2, Check } from "lucide-react";
 import { Button, PageHeader, Input, Label, Textarea, Badge } from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
+import { EntityPicker } from "@/components/packages/entity-picker";
+import { entityRefusal } from "@/lib/entities";
 
 interface ApiCorporatePackage {
   id: string;
+  // Optional: an API that predates Entities does not send them.
+  entity_id?: string | null;
+  entity?: { id: string; name: string; slug: string } | null;
   name: string;
   description: string | null;
   price_sgd: string;
@@ -28,6 +33,8 @@ export default function EditCorporatePackagePage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  const [entityId, setEntityId] = useState("");
+  const [entityReady, setEntityReady] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [priceSgd, setPriceSgd] = useState("");
@@ -49,6 +56,7 @@ export default function EditCorporatePackagePage() {
         `/portal/admin/corporate-packages/${id}`,
       );
       setRow(res.corporatePackage);
+      setEntityId(res.corporatePackage.entity_id ?? "");
       setName(res.corporatePackage.name);
       setDescription(res.corporatePackage.description ?? "");
       setPriceSgd(res.corporatePackage.price_sgd);
@@ -73,6 +81,7 @@ export default function EditCorporatePackagePage() {
         `/portal/admin/corporate-packages/${row.id}`,
         {
           name: name.trim(),
+          entity_id: entityId,
           description: description.trim() ? description.trim() : null,
           price_sgd: priceSgd,
         },
@@ -81,8 +90,7 @@ export default function EditCorporatePackagePage() {
       setSavedAt(Date.now());
     } catch (err) {
       if (err instanceof ApiError) {
-        const body = err.body as { error?: string; message?: string } | null;
-        setSaveError(body?.message ?? body?.error ?? `Failed (HTTP ${err.status})`);
+        setSaveError(entityRefusal(err, `Failed (HTTP ${err.status})`));
       } else {
         setSaveError("Network error");
       }
@@ -104,8 +112,8 @@ export default function EditCorporatePackagePage() {
       setRow(res.corporatePackage);
     } catch (err) {
       if (err instanceof ApiError) {
-        const body = err.body as { error?: string; message?: string } | null;
-        setActionError(body?.message ?? body?.error ?? `Failed (HTTP ${err.status})`);
+        // `entity_archived`: it cannot come back on sale in an Entity that has been archived.
+        setActionError(entityRefusal(err, `Failed (HTTP ${err.status})`));
       } else {
         setActionError("Network error");
       }
@@ -205,6 +213,14 @@ export default function EditCorporatePackagePage() {
         onSubmit={onSave}
         className="space-y-5 rounded-xl border border-border bg-card p-4 shadow-soft sm:p-6"
       >
+        <EntityPicker
+          value={entityId}
+          onChange={setEntityId}
+          saved={row.entity_id ? { id: row.entity_id, name: row.entity?.name ?? null } : null}
+          previewPath={`/portal/admin/corporate-packages/${row.id}/entity-preview`}
+          onReady={setEntityReady}
+        />
+
         <div className="space-y-1.5">
           <Label htmlFor="cp-name">Name</Label>
           <Input
@@ -253,7 +269,7 @@ export default function EditCorporatePackagePage() {
               </span>
             )}
           </div>
-          <Button type="submit" disabled={saving || !name.trim() || !priceSgd}>
+          <Button type="submit" disabled={saving || !name.trim() || !priceSgd || !entityReady}>
             {saving && <Loader2 className="h-4 w-4 animate-spin" />}
             Save
           </Button>

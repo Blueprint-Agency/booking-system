@@ -14,15 +14,18 @@ import { listCorporatePackages } from '../../services/packages/corporate-package
 import { readCancellationPolicy } from '../../services/policy/evaluate-cancellation'
 import { readPtBookingWindow } from '../../services/pt-sessions/request'
 import { tenantId } from '../../middleware/tenant'
+import { entityFieldsFor, type EntityFields } from '../entity-fields'
 import { takesOnlinePayments } from '../../lib/stripe'
 
 function serializeClassPackage(
   r: classSvc.ClassPackageRow,
   promos: ReturnType<typeof serializePromotion>[] = [],
   effective: { effectivePriceSgd: string; appliedPromotionId: string | null },
+  entity: EntityFields,
 ) {
   return {
     id: r.id,
+    ...entity,
     name: r.name,
     description: r.description,
     kind: r.kind,
@@ -40,9 +43,11 @@ function serializePtPackage(
   r: ptSvc.PtPackageRow,
   promos: ReturnType<typeof serializePromotion>[] = [],
   effective: { effectivePriceSgd: string; appliedPromotionId: string | null },
+  entity: EntityFields,
 ) {
   return {
     id: r.id,
+    ...entity,
     name: r.name,
     description: r.description,
     session_type: r.sessionType,
@@ -112,14 +117,19 @@ const app = new Hono()
       ),
     ])
 
+    const [classEntities, ptEntities] = await Promise.all([
+      entityFieldsFor(tenantId(c), classRows),
+      entityFieldsFor(tenantId(c), ptRows),
+    ])
+
     return c.json({
-      class_packages: classRows.map(r => {
+      class_packages: classRows.map((r, i) => {
         const ps = classPromos[r.id] ?? []
-        return serializeClassPackage(r, ps.map(serializePromotion), bestPrice(r.priceSgd, ps))
+        return serializeClassPackage(r, ps.map(serializePromotion), bestPrice(r.priceSgd, ps), classEntities[i]!)
       }),
-      pt_packages: ptRows.map(r => {
+      pt_packages: ptRows.map((r, i) => {
         const ps = ptPromos[r.id] ?? []
-        return serializePtPackage(r, ps.map(serializePromotion), bestPrice(r.priceSgd, ps))
+        return serializePtPackage(r, ps.map(serializePromotion), bestPrice(r.priceSgd, ps), ptEntities[i]!)
       }),
     })
   })
@@ -158,9 +168,11 @@ const app = new Hono()
   // Corporate catalogue for signed-out browsing (no promotions, no entitlements).
   .get('/corporate-packages', async c => {
     const rows = await listCorporatePackages(tenantId(c), { status: 'active' })
+    const entities = await entityFieldsFor(tenantId(c), rows)
     return c.json({
-      corporate_packages: rows.map(r => ({
+      corporate_packages: rows.map((r, i) => ({
         id: r.id,
+        ...entities[i]!,
         name: r.name,
         description: r.description,
         price_sgd: r.priceSgd,

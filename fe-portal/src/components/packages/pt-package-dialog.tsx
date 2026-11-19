@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { Dialog, DialogFooter, Button, Input, Label } from "@/components/ui";
 import { PromotionsEditor } from "./promotions-editor";
+import { EntityPicker } from "./entity-picker";
 import { hasPromotionOverlap } from "@/lib/promotions";
 import type { PtPackage, PtSessionType, Promotion } from "@/types";
 
@@ -21,13 +22,17 @@ export function PtPackageDialog({
   const [instructorBound, setInstructorBound] = useState<boolean>(pkg?.instructorBound ?? false);
   const [priceSgd, setPriceSgd] = useState<string>(pkg?.priceSgd.toString() ?? "");
   const [promotions, setPromotions] = useState<Promotion[]>(pkg?.promotions ?? []);
+  // The Entity it is sold under; a new package starts in the studio's first.
+  const [entityId, setEntityId] = useState<string>(pkg?.entityId ?? "");
+  const [entityReady, setEntityReady] = useState(false);
   const promosOverlap = hasPromotionOverlap(promotions);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (promosOverlap) return;
+    if (promosOverlap || !entityReady) return;
     onSave({
       id: pkg?.id ?? `pt-${Date.now().toString(36)}`,
+      entityId,
       name: name.trim(),
       sessionType,
       numSessions: Number(numSessions),
@@ -65,6 +70,14 @@ export function PtPackageDialog({
             ))}
           </div>
         </div>
+
+        <EntityPicker
+          value={entityId}
+          onChange={setEntityId}
+          saved={pkg?.entityId ? { id: pkg.entityId, name: pkg.entityName ?? null } : null}
+          previewPath={pkg ? `/portal/admin/pt-packages/${pkg.id}/entity-preview` : undefined}
+          onReady={setEntityReady}
+        />
 
         <div className="space-y-1.5">
           <Label htmlFor="pt-name">Name</Label>
@@ -146,7 +159,7 @@ export function PtPackageDialog({
           <Button type="button" variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" disabled={promosOverlap}>
+          <Button type="submit" disabled={promosOverlap || !entityReady}>
             {pkg ? "Save" : "Create"}
           </Button>
         </DialogFooter>

@@ -208,8 +208,9 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
   // this export can tell, so everything it creates (Class Types, and the packages
   // that name this id too) lands in the studio's first Entity: "All classes", the
   // generic default every studio starts with, which the studio renames and splits
-  // from settings. Carried in the archive, because a studio an archive is restored
-  // into has none of its own.
+  // from settings. Carried in the archive, because the archive is built offline,
+  // the importer refuses a studio that already has rows, and so the studio it is
+  // restored into arrives with no Entity of its own.
   const entityId = id('entity', 'all-classes')
   const entities: Row[] = [
     { id: entityId, tenant_id: tenantId, name: 'All classes', slug: 'all-classes', position: 0, archived_at: null },
@@ -473,6 +474,7 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     balances: reports.balances,
     config,
     tenantId,
+    entityId,
     id,
     ids,
     memberNames,
