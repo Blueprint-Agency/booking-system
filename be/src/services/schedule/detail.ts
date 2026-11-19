@@ -219,6 +219,7 @@ export async function getClassDetail(tenantId: string, id: string): Promise<Clas
     locationId: row.locationId,
     startsAt: row.startsAt,
     creditCost: row.creditCost,
+    entityId: row.entityId ?? null,
     rule,
   })
 
