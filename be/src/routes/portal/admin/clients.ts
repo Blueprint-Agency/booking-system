@@ -89,6 +89,9 @@ const listQuery = z.object({
   // The Customers page's pills. Absent is "all".
   filter: z.enum(['active', 'trials', 'blocked', 'no_email']).optional(),
   sort: z.enum(['joined', 'name']).optional(),
+  // An Entity id: the Trials filter and its funnel read for that Entity. Ignored
+  // under any other filter.
+  entity: z.string().uuid().optional(),
   page: z.coerce.number().int().min(1).max(100000).default(1),
   page_size: z.coerce
     .number()
@@ -434,6 +437,7 @@ const app = new Hono()
       includeDeleted,
       filter: q.filter,
       sort: q.sort,
+      entity: q.entity,
       page: q.page,
       pageSize: q.page_size,
     })
