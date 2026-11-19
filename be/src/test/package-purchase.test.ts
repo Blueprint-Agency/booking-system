@@ -54,6 +54,17 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
     freeTrialId: string
     ptId: string
     rateSgd: string
+    /** Two Entities of its own, and what is sold in each (the trial rules are per Entity). */
+    yoga: EntityKit
+    pilates: EntityKit
+  }
+  type EntityKit = {
+    id: string
+    /** Priced 20.00 and free. */
+    trialId: string
+    freeTrialId: string
+    bundleId: string
+    ptId: string
   }
   type Member = { clientId: string; email: string; headers: Record<string, string> }
 
@@ -119,8 +130,31 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
       .values({ tenantId: tenant.id, name: `${NAME} pt`, sessionType: '1on1', numSessions: 5, validityDays: 90, priceSgd: '400.00' })
       .returning({ id: schema.ptPackages.id })
 
+    // Positions well after the studio's own Entity, so a package made with none
+    // named still goes in that one.
+    const entityKit = async (name: string, position: number): Promise<EntityKit> => {
+      const [entity] = await harness.db
+        .insert(schema.entities)
+        .values({ tenantId: tenant.id, name: `${NAME} ${name}`, slug: `${name.toLowerCase()}-${run}`, position })
+        .returning({ id: schema.entities.id })
+      const entityId = entity!.id
+      const [ptRow] = await harness.db
+        .insert(schema.ptPackages)
+        .values({ tenantId: tenant.id, entityId, name: `${NAME} ${name} pt`, sessionType: '1on1', numSessions: 5, validityDays: 90, priceSgd: '400.00' })
+        .returning({ id: schema.ptPackages.id })
+      return {
+        id: entityId,
+        trialId: await catalogue(tenant.id, { kind: 'trial', entityId, credits: 1, validityDays: 14, priceSgd: '20.00', name: `${NAME} ${name} trial` }),
+        freeTrialId: await catalogue(tenant.id, { kind: 'trial', entityId, credits: 1, validityDays: 14, priceSgd: '0.00', name: `${NAME} ${name} free trial` }),
+        bundleId: await catalogue(tenant.id, { kind: 'credit_bundle', entityId, credits: 10, validityDays: 90, name: `${NAME} ${name} bundle` }),
+        ptId: ptRow!.id,
+      }
+    }
+
     return {
       ...tenant,
+      yoga: await entityKit('Yoga', 100),
+      pilates: await entityKit('Pilates', 101),
       timezone: row!.timezone,
       locationId: location.id,
       roomId: room.id,
@@ -156,17 +190,27 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
     at: Studio,
     who: Member,
     kind: HeldKind,
-    options: { expiresAt?: Date | null; active?: boolean; locationId?: string; durationMonths?: number; crossLocation?: string | null } = {},
+    options: {
+      expiresAt?: Date | null
+      active?: boolean
+      locationId?: string
+      durationMonths?: number
+      crossLocation?: string | null
+      /** The catalogue package behind it, when not the studio's own; `null` for one imported with none. */
+      source?: { class: string } | { pt: string } | null
+    } = {},
   ): Promise<string> {
     const unlimited = kind === 'unlimited'
+    const own = kind === 'pt' ? { pt: at.ptId } : { class: { credit_bundle: at.bundleId, unlimited: at.unlimitedId, trial: at.trialId }[kind] }
+    const source = options.source === undefined ? own : options.source
     const [row] = await harness.db
       .insert(schema.clientPackages)
       .values({
         tenantId: at.id,
         clientId: who.clientId,
         kind,
-        sourceClassPackageId: kind === 'pt' ? null : { credit_bundle: at.bundleId, unlimited: at.unlimitedId, trial: at.trialId }[kind],
-        sourcePtPackageId: kind === 'pt' ? at.ptId : null,
+        sourceClassPackageId: source && 'class' in source ? source.class : null,
+        sourcePtPackageId: source && 'pt' in source ? source.pt : null,
         locationId: unlimited ? (options.locationId ?? at.locationId) : null,
         durationMonths: unlimited ? (options.durationMonths ?? 3) : null,
         validityDays: unlimited ? null : 90,
@@ -408,6 +452,7 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
     await harness.db.execute(sql`DELETE FROM promotions WHERE created_by_staff_id IN (${staff})`)
     await harness.db.execute(sql`DELETE FROM class_packages WHERE name LIKE ${`${NAME}%`}`)
     await harness.db.execute(sql`DELETE FROM pt_packages WHERE name LIKE ${`${NAME}%`}`)
+    await harness.db.execute(sql`DELETE FROM entities WHERE name LIKE ${`${NAME}%`}`)
     await harness.db.execute(sql`DELETE FROM classes WHERE created_by_staff_id IN (${staff})`)
     await harness.db.execute(sql`DELETE FROM rooms WHERE location_id IN (SELECT id FROM locations WHERE name = ${SECOND_LOCATION_NAME})`)
     await harness.db.execute(sql`DELETE FROM locations WHERE name = ${SECOND_LOCATION_NAME}`)
@@ -1544,6 +1589,221 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
     assert.equal((await paymentsOf(kai)).find(p => p.paymentIntentId === secondIntent)!.status, 'refunded')
     assert.equal((await paymentsOf(kai)).find(p => p.paymentIntentId === firstIntent)!.status, 'succeeded')
     await assertFirstTrialStands()
+  })
+
+  /* ── trials, one per member per Entity ──────────────────────────────── */
+
+  const trialsOf = async (who: Member) => (await packagesOf(who)).filter(p => p.kind === 'trial')
+  const trialStandingsOf = async (who: Member) => (await get(who, '/api/v1/me/class-packages')).entitlements
+
+  test('PKG-69 a member who has ever held a trial in an Entity is refused another there 409 trial_already_used before any charge, and the catalogue reads it used for that Entity alone', async () => {
+    const running = await member(one)
+    await holds(one, running, 'trial', { source: { class: one.pilates.trialId } })
+    const lapsed = await member(one)
+    await holds(one, lapsed, 'trial', { source: { class: one.pilates.trialId }, expiresAt: new Date(Date.now() - DAY), active: false })
+
+    for (const who of [running, lapsed]) {
+      const asked = sessionsAsked()
+      await expectStatus(await buyClass(who, one.pilates.trialId), 409, 'trial_already_used')
+      await expectStatus(await buyClass(who, one.pilates.freeTrialId), 409, 'trial_already_used')
+      await assertNothingSold(who, asked, 1)
+      const { trial_by_entity: byEntity } = await trialStandingsOf(who)
+      assert.deepEqual(byEntity[one.pilates.id], { trial_used: true, trial_eligible: false })
+      assert.deepEqual(byEntity[one.yoga.id], { trial_used: false, trial_eligible: true })
+    }
+  })
+
+  test('PKG-70 a member who used a trial in one Entity may buy one in another, once, priced or free', async () => {
+    const free = await member(one)
+    await holds(one, free, 'trial', { source: { class: one.yoga.trialId } })
+    await expectStatus(await buyClass(free, one.pilates.freeTrialId), 201)
+    assert.deepEqual((await trialsOf(free)).map(t => t.sourceClassPackageId).sort(), [one.yoga.trialId, one.pilates.freeTrialId].sort())
+
+    const priced = await member(one)
+    await holds(one, priced, 'trial', { source: { class: one.yoga.trialId } })
+    const granted = await purchase(priced, { package_kind: 'class', package_id: one.pilates.trialId })
+    assert.equal(granted.kind, 'trial')
+    assert.equal((await trialsOf(priced)).length, 2)
+
+    // A second one in the Entity they have now used is refused, whichever they bought.
+    for (const who of [free, priced]) {
+      const asked = sessionsAsked()
+      await expectStatus(await buyClass(who, one.pilates.trialId), 409, 'trial_already_used')
+      await expectStatus(await buyClass(who, one.pilates.freeTrialId), 409, 'trial_already_used')
+      assert.equal(sessionsAsked(), asked, 'the provider was asked for a session')
+      assert.equal((await trialsOf(who)).length, 2, 'a trial was granted')
+    }
+  })
+
+  test('PKG-71 a trial is for a member new to its Entity: any package they hold or held there refuses it 409 trial_not_eligible, and any held in another Entity does not', async () => {
+    for (const [kind, held] of [
+      ['credit_bundle', { source: { class: one.pilates.bundleId } }],
+      ['pt', { source: { pt: one.pilates.ptId } }],
+      ['credit_bundle', { source: { class: one.pilates.bundleId }, expiresAt: new Date(Date.now() - DAY), active: false }],
+    ] as const) {
+      const sam = await member(one)
+      await holds(one, sam, kind, held)
+      const asked = sessionsAsked()
+      await expectStatus(await buyClass(sam, one.pilates.trialId), 409, 'trial_not_eligible')
+      await expectStatus(await buyClass(sam, one.pilates.freeTrialId), 409, 'trial_not_eligible')
+      await assertNothingSold(sam, asked, 1)
+      const { trial_by_entity: byEntity } = await trialStandingsOf(sam)
+      assert.deepEqual(byEntity[one.pilates.id], { trial_used: false, trial_eligible: false })
+      assert.deepEqual(byEntity[one.yoga.id], { trial_used: false, trial_eligible: true })
+
+      // Their regular studio is another Entity's: the trial there is theirs to take.
+      await expectStatus(await buyClass(sam, one.yoga.freeTrialId), 201)
+      assert.equal((await trialsOf(sam)).length, 1)
+    }
+  })
+
+  test('PKG-72 two free trial checkouts racing in one Entity grant one, and in two Entities grant both', async () => {
+    const same = await member(one)
+    const answers = await Promise.all([buyClass(same, one.pilates.freeTrialId), buyClass(same, one.pilates.freeTrialId)])
+    assert.deepEqual(answers.map(r => r.status).sort(), [201, 409], 'one grant and one refusal')
+    assert.equal((await trialsOf(same)).length, 1, 'one trial')
+    for (const r of answers.filter(a => a.status === 409)) assert.equal(((await r.json()) as { error?: string }).error, 'trial_already_used')
+
+    const apart = await member(one)
+    const both = await Promise.all([buyClass(apart, one.pilates.freeTrialId), buyClass(apart, one.yoga.freeTrialId)])
+    assert.deepEqual(both.map(r => r.status), [201, 201])
+    assert.equal((await trialsOf(apart)).length, 2, 'one in each Entity')
+
+    // The two requests above may not overlap at all, so this is the race held
+    // open: a second grant begins while the first one's transaction is still
+    // uncommitted. With no index to decide it, only the member's row lock makes
+    // it wait, then read the first's trial.
+    const { withTenant } = await import('../db')
+    const { grantPackage } = await import('../services/packages/purchase')
+    const rival = await member(one)
+    const grant = () =>
+      grantPackage(one.id, { clientId: rival.clientId, purchaseId: null, amountSgd: '0.00', packageKind: 'class', packageId: one.pilates.freeTrialId })
+    let release!: () => void
+    const open = new Promise<void>(resolve => (release = resolve))
+    let firstGranted!: () => void
+    const granted = new Promise<void>(resolve => (firstGranted = resolve))
+    const first = withTenant(one.id, async () => {
+      await grant()
+      firstGranted()
+      await open
+    })
+    await granted
+    const second = withTenant(one.id, grant).then(
+      () => 'granted',
+      (err: { code?: string }) => err.code ?? String(err),
+    )
+    await new Promise(resolve => setTimeout(resolve, 300))
+    release()
+    await first
+    assert.equal(await second, 'trial_already_used')
+    assert.equal((await trialsOf(rival)).length, 1)
+  })
+
+  test('PKG-73 a member who pays for trials in two Entities opened side by side keeps both, and nothing is given back', async () => {
+    const lee = await member(one)
+    await expectStatus(await buyClass(lee, one.yoga.trialId), 200)
+    const yoga = lastSession().params.metadata
+    await expectStatus(await buyClass(lee, one.pilates.trialId), 200)
+    const pilates = lastSession().params.metadata
+
+    const asked = fake.callsTo('refunds.create').length
+    await expectStatus(await deliver({ metadata: yoga }), 200)
+    await expectStatus(await deliver({ metadata: pilates }), 200)
+
+    assert.deepEqual((await trialsOf(lee)).map(t => t.sourceClassPackageId).sort(), [one.yoga.trialId, one.pilates.trialId].sort())
+    assert.equal(fake.callsTo('refunds.create').length, asked, 'a payment was given back')
+    assert.deepEqual((await purchasesOf(lee)).map(p => p.status), ['paid', 'paid'])
+  })
+
+  test('PAY-85 a member who pays two trial checkouts for one Entity opened side by side keeps the first, and the second payment is given back and its Purchase closed Abandoned', async () => {
+    const ned = await member(one)
+    await expectStatus(await buyClass(ned, one.pilates.trialId), 200)
+    const first = lastSession().params.metadata
+    await expectStatus(await buyClass(ned, one.pilates.trialId), 200)
+    const second = lastSession().params.metadata
+
+    const secondIntent = `pi_${randomUUID()}`
+    await expectStatus(await deliver({ metadata: first }), 200)
+    const asked = fake.callsTo('refunds.create').length
+    await expectStatus(await deliver({ intent: secondIntent, metadata: second }), 200)
+
+    const [trial, ...more] = await packagesOf(ned)
+    assert.equal(more.length, 0, 'a second package was granted')
+    assert.equal(trial!.purchaseId, first.purchase_id)
+    const sales = await purchasesOf(ned)
+    assert.equal(sales.find(s => s.id === second.purchase_id)!.status, 'abandoned')
+    assert.deepEqual(
+      fake.callsTo('refunds.create').slice(asked).map(c => (c.args[0] as { payment_intent: string }).payment_intent),
+      [secondIntent],
+      'the second payment, and only it, is given back',
+    )
+  })
+
+  test('PKG-74 a Complimentary trial follows the same rule: refused where the member already holds one, granted in another Entity, and a sale then follows the comp', async () => {
+    const comp = (who: Member, packageId: string) =>
+      asAdmin('POST', `/clients/${who.clientId}/packages/issue`, { package_kind: 'class', package_id: packageId, reason: 'welcome gift' })
+
+    const dee = await member(one)
+    await holds(one, dee, 'trial', { source: { class: one.yoga.trialId } })
+    await expectStatus(await comp(dee, one.yoga.trialId), 409, 'trial_already_used')
+    assert.equal((await trialsOf(dee)).length, 1, 'a second Yoga trial was given')
+    const given = await expectStatus(await comp(dee, one.pilates.trialId), 201)
+    assert.ok(given.client_package_id)
+    assert.equal((await trialsOf(dee)).length, 2)
+
+    await expectStatus(await comp(dee, one.pilates.freeTrialId), 409, 'trial_already_used')
+    const asked = sessionsAsked()
+    await expectStatus(await buyClass(dee, one.pilates.freeTrialId), 409, 'trial_already_used')
+    assert.equal(sessionsAsked(), asked)
+
+    // Being new to the Entity is a condition of buying: an Admin may still give a trial to a member who holds a package there.
+    const guest = await member(one)
+    await holds(one, guest, 'credit_bundle', { source: { class: one.pilates.bundleId } })
+    await expectStatus(await comp(guest, one.pilates.trialId), 201)
+    assert.equal((await trialsOf(guest)).length, 1)
+  })
+
+  test('PKG-75 a package held with no catalogue package behind it counts against every Entity: a legacy trial refuses any trial, a legacy bundle makes the member not new', async () => {
+    const imported = await member(one)
+    await holds(one, imported, 'trial', { source: null })
+    for (const id of [one.yoga.trialId, one.pilates.trialId, one.pilates.freeTrialId, one.yoga.freeTrialId]) {
+      const asked = sessionsAsked()
+      await expectStatus(await buyClass(imported, id), 409, 'trial_already_used')
+      assert.equal(sessionsAsked(), asked)
+    }
+    assert.equal((await trialsOf(imported)).length, 1)
+    const { trial_by_entity: usedEverywhere } = await trialStandingsOf(imported)
+    for (const entity of [one.yoga.id, one.pilates.id]) assert.deepEqual(usedEverywhere[entity], { trial_used: true, trial_eligible: false })
+
+    const legacy = await member(one)
+    await holds(one, legacy, 'credit_bundle', { source: null })
+    for (const id of [one.yoga.trialId, one.pilates.freeTrialId]) {
+      await expectStatus(await buyClass(legacy, id), 409, 'trial_not_eligible')
+    }
+    assert.equal((await trialsOf(legacy)).length, 0)
+    const { trial_by_entity: heldEverywhere } = await trialStandingsOf(legacy)
+    for (const entity of [one.yoga.id, one.pilates.id]) assert.deepEqual(heldEverywhere[entity], { trial_used: false, trial_eligible: false })
+  })
+
+  test('PKG-76 the catalogue reads trial_used and trial_eligible for each live Entity, none for an archived one, beside the studio-wide pair', async () => {
+    const [archived] = await harness.db
+      .insert(schema.entities)
+      .values({ tenantId: one.id, name: `${NAME} Barre`, slug: `barre-${run}`, position: 102, archivedAt: new Date() })
+      .returning({ id: schema.entities.id })
+
+    const fresh = await member(one)
+    const before = await trialStandingsOf(fresh)
+    assert.equal(before.trial_used, false)
+    assert.equal(before.trial_eligible, true)
+    for (const entity of [one.yoga.id, one.pilates.id]) assert.deepEqual(before.trial_by_entity[entity], { trial_used: false, trial_eligible: true })
+    assert.equal(before.trial_by_entity[archived!.id], undefined, 'an archived Entity has no page to read it on')
+
+    await expectStatus(await buyClass(fresh, one.pilates.freeTrialId), 201)
+    const after = await trialStandingsOf(fresh)
+    assert.equal(after.trial_used, true, 'studio-wide: a trial held anywhere')
+    assert.equal(after.trial_eligible, false, 'studio-wide: a package held anywhere')
+    assert.deepEqual(after.trial_by_entity[one.pilates.id], { trial_used: true, trial_eligible: false })
+    assert.deepEqual(after.trial_by_entity[one.yoga.id], { trial_used: false, trial_eligible: true })
   })
 
   /* ── prices: Promotions and Promo Codes ─────────────────────────────── */

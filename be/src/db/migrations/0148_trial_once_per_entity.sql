@@ -1,0 +1,12 @@
+-- One trial per member per Entity (#560, spec #554). The index allowed one trial
+-- per client, ever; a member who used a Yoga trial may now buy a Pilates one, and
+-- a held package has no Entity of its own for an index to key on (it is its
+-- catalogue source's), so the rule moves to the purchase service
+-- (`assertNoTrialInEntity`, under the member's row lock).
+--
+-- README rule 0 ("migrations only add") is waived here on purpose, in the same
+-- deploy as the feature, because the index contradicts it. The build still
+-- running while this migrates, and the one a rollback returns to, loses only its
+-- race backstop: its own `assertTrialEligible` still refuses a second trial,
+-- and a member's only extra trial can come from the new build.
+DROP INDEX "client_packages_trial_unique_per_client";
