@@ -97,6 +97,11 @@ export type E2eStudio = {
      * holds every other class type here), so the member schedule has Entity buttons.
      */
     pilatesClassType: string
+    /**
+     * A class package in the second Entity: the Packages menu offers an Entity
+     * only once it has one on sale, and every other package here is Yoga's.
+     */
+    pilatesPackageName: string
     /** A free workshop, one day, the holder holding a place on it. */
     workshopName: string
     /** A one-on-one PT package; the holder's session is scheduled from it. */
@@ -323,6 +328,7 @@ export async function createE2eStudio({
     staffWaitlistClassType: 'E2E staff waitlist class',
     myBookingsClassType: 'E2E my bookings class',
     pilatesClassType: 'E2E pilates class',
+    pilatesPackageName: 'E2E pilates pack',
     workshopName: 'E2E workshop',
     ptPackageName: 'E2E private pack',
     corporatePackageName: 'E2E team session',
@@ -336,6 +342,14 @@ export async function createE2eStudio({
       credits: PACKAGE_CREDITS,
       validityDays: 30,
       priceSgd: catalogue.packagePriceSgd,
+    }),
+    pilatesPackage: await createClassPackage(tenant.id, {
+      name: catalogue.pilatesPackageName,
+      kind: 'credit_bundle',
+      credits: 8,
+      validityDays: 60,
+      priceSgd: '120.00',
+      entityId: entityIds.pilates,
     }),
     classTypes: {
       buy: await createClassType(tenant.id, { name: catalogue.buyClassType }),
