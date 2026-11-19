@@ -241,6 +241,7 @@ const EXPECTATIONS: Record<string, Expectation> = {
   'GET /api/v1/public/classes/:id': { gate: ANYONE_NAMING_A_STUDIO },
   'GET /api/v1/public/class-types': { gate: ANYONE_NAMING_A_STUDIO },
   'GET /api/v1/public/corporate-packages': { gate: ANYONE_NAMING_A_STUDIO },
+  'GET /api/v1/public/entities': { gate: ANYONE_NAMING_A_STUDIO },
   'GET /api/v1/public/instructors': { gate: ANYONE_NAMING_A_STUDIO },
   'GET /api/v1/public/locations': { gate: ANYONE_NAMING_A_STUDIO },
   'GET /api/v1/public/maintenance': { gate: ANYONE_NAMING_A_STUDIO },

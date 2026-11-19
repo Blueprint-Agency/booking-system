@@ -41,6 +41,8 @@ import {
 } from "@/components/schedule/schedule-toolbar";
 import { slotHref, type Slot } from "@/lib/schedule";
 import { useSchedule, type ScheduleEntry } from "@/lib/use-schedule";
+import { useScheduleEntities } from "@/lib/use-schedule-entities";
+import { entityFilterOptions, entityFilterQuery, showEntityFilter } from "@/lib/schedule-entity-filter";
 import { useSchedulePosition } from "@/lib/use-schedule-position";
 import { myCalendarHref, myScheduleRow } from "@/lib/my-schedule";
 
@@ -109,6 +111,8 @@ export default function InstructorSchedulePage() {
   const [type, setType] = useState<FilterType>("all");
   const [instructorId, setInstructorId] = useState("all");
   const [locationId, setLocationId] = useState("all");
+  // An Entity id, or "all"; on both My schedule and the Full studio schedule.
+  const [entityPick, setEntityPick] = useState("all");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [addMode, setAddMode] = useState<AddKind | null>(null);
   const [pickedSlot, setPickedSlot] = useState<Slot | null>(null);
@@ -119,8 +123,11 @@ export default function InstructorSchedulePage() {
     () => ({ ...gridDays(view, cursor), ...gridWindow(timezone, view, cursor) }),
     [view, cursor, timezone],
   );
+  const entityChoices = useScheduleEntities("instructor");
+  const entityId = entityFilterQuery(entityPick, entityChoices);
   const { entries, loading, error, reload } = useSchedule(
-    { from: range.from, to: range.to },
+    // The Entity narrows classes on the server, in both scopes; workshops stay in view.
+    { from: range.from, to: range.to, entityId },
     { surface: studio ? "instructorStudio" : "instructor", enabled: ready && scopeReady },
   );
 
@@ -183,13 +190,17 @@ export default function InstructorSchedulePage() {
     }),
     [studio, instructorById, instructors.length, instructorsFailed, locationById, staffId],
   );
-  const activeFilters = [type !== "all", studio && instructorId !== "all", studio && locationId !== "all"].filter(
-    Boolean,
-  ).length;
+  const activeFilters = [
+    type !== "all",
+    studio && instructorId !== "all",
+    studio && locationId !== "all",
+    entityId !== undefined,
+  ].filter(Boolean).length;
   const clearFilters = () => {
     setType("all");
     setInstructorId("all");
     setLocationId("all");
+    setEntityPick("all");
   };
   const viewer = { staffId, canScheduleClasses: canSchedule };
 
@@ -295,6 +306,14 @@ export default function InstructorSchedulePage() {
                   ...accessibleLocations.map((l) => ({ val: l.id, label: l.name })),
                 ]}
                 onChange={setLocationId}
+              />
+            )}
+            {showEntityFilter(entityChoices) && (
+              <FilterPill
+                label="Entity"
+                value={entityId ?? "all"}
+                options={entityFilterOptions(entityChoices)}
+                onChange={setEntityPick}
               />
             )}
           </FiltersRow>
