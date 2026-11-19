@@ -49,7 +49,8 @@ Unauthenticated. Cache-friendly (HTTP `Cache-Control: public, max-age=60` where 
 | Method | Path | Effect |
 |---|---|---|
 | GET | `/locations` | List active locations |
-| GET | `/classes` | List `classes` rows where `lifecycle='active'` AND `starts_at >= now()`. Filters: `?location_id`, `?class_type_id`, `?level` (the class type's difficulty: `general`, `beginner`, `intermediate`, `advanced`), `?from`, `?to`, `?instructor_id`. Each card's `class_type` carries its `difficulty`. Includes `event_state` and `has_seats` (an online seat is free), computed at read. **No seat count is sent**: not `capacity_online`, not a booked count, not seats left — they are the studio's (`fe-client-features.md` §3.1). |
+| GET | `/entities` | The studio's live (non-archived) Entities in its order: `{ entities: [{ id, name, slug }] }`. The member schedule's Entity buttons read it (#562). |
+| GET | `/classes` | List `classes` rows where `lifecycle='active'` AND `starts_at >= now()`. Filters: `?location_id`, `?class_type_id`, `?level` (the class type's difficulty: `general`, `beginner`, `intermediate`, `advanced`), `?from`, `?to`, `?instructor_id`, `?entity=<slug>` (an Entity's slug, any casing; a slug that names no live Entity of the studio, another studio's or an archived one's lists nothing; max 60 characters). Each card's `class_type` carries its `difficulty`, and the card carries `entity: { id, name, slug }` (the Entity of its Class Type, `null` only for a type with none). `/classes/:id` and `/me/classes`, `/me/classes/:id` carry the same `entity`. Workshops are not filtered by an Entity: `/me/workshops` ignores one (#562). Includes `event_state` and `has_seats` (an online seat is free), computed at read. **No seat count is sent**: not `capacity_online`, not a booked count, not seats left — they are the studio's (`fe-client-features.md` §3.1). |
 | GET | `/classes/:id` | Detail incl. instructor mini-profile, location, `has_seats` (no counts) |
 | — | ~~`/workshops`~~, ~~`/workshops/:id`~~ | **No public workshop read.** Workshops are members-only so a studio's programme, pricing and instructors can't be scraped without an account: signed out they `404`, and a member reads them from `/me/workshops` and `/me/workshops/:id` (same shapes as below). |
 | GET | `/packages` | List active class_packages + pt_packages. Each row carries resolved promotion fields. **Trial Pass first, then credit bundles, then unlimited, then PT** (matches fe-client `/packages` ordering per `fe-client-features.md` §6.1). |
@@ -433,6 +434,11 @@ tx start
    one is, 404 class_type_not_found / location_not_found, and so is an existing partner's
    co_client_id that is not a member here, 404 partner_client_not_found. Nothing is written or
    debited. (A foreign key cannot say this: its reference check skips Row-Level Security.)
+   Then the class type must be in the paying package's Entity (be/CONTEXT.md § Entity): 409
+   class_type_not_in_entity when both have one and they differ. A request naming no class type, a
+   package with no Entity and a class type with no Entity are all accepted. The member app picks the
+   class type first and greys PT packages of other Entities in its Pay with list; `/me/packages`
+   carries each package's `entity_id` and `/public/class-types` each type's.
 2. Validate slots[]: 1..N rows; end_time, where sent, > start_time; each proposed_date in
    [today + min_book_in_advance_days, today + book_in_advance_days] (the studio's calendar
    days on its own clock, `pt_booking_config`, read on the app clock). Sooner is refused 400

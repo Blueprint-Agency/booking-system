@@ -217,6 +217,11 @@ export interface ClientPackageWithSource {
   /** '1on1' | '2on1' for PT packages; null otherwise. */
   sessionType: '1on1' | '2on1' | null
   /**
+   * The Entity of the catalogue package this one was bought from (be/CONTEXT.md
+   * § Entity). Null when it has no source, or its source has no Entity yet.
+   */
+  entityId: string | null
+  /**
    * The **Bound Instructor** this PT package's sessions are with; null
    * on an open package and on every other kind. Named here rather than left as
    * a bare id, because every surface that shows a binding shows the person.
@@ -306,6 +311,8 @@ export async function listClientPackages(
       ptPackageSessions: ptPackages.numSessions,
       active: clientPackages.active,
       ptSessionType: ptPackages.sessionType,
+      classPackageEntityId: classPackages.entityId,
+      ptPackageEntityId: ptPackages.entityId,
       promoCode: promoCodes.code,
       complimentary: clientPackages.complimentary,
       purchaseId: clientPackages.purchaseId,
@@ -340,6 +347,7 @@ export async function listClientPackages(
     validityDays: r.validityDays,
     crossLocationPaidSgd: r.crossLocationPaidSgd,
     sessionType: (r.ptSessionType ?? null) as '1on1' | '2on1' | null,
+    entityId: r.classPackageEntityId ?? r.ptPackageEntityId ?? null,
     boundInstructor: r.boundInstructorId
       ? {
           id: r.boundInstructorId,

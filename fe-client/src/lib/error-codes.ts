@@ -69,6 +69,7 @@ export const ERROR_CODES = {
   class_type_in_use: "class_type_in_use",
   class_type_not_archived: "class_type_not_archived",
   class_type_not_found: "class_type_not_found",
+  class_type_not_in_entity: "class_type_not_in_entity",
   classpass_booking_cancel_on_classpass: "classpass_booking_cancel_on_classpass",
   classpass_client_deleted: "classpass_client_deleted",
   classpass_location_name_required: "classpass_location_name_required",

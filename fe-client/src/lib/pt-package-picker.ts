@@ -18,7 +18,19 @@ export interface PtPickable {
   dormant: boolean;
   validityDays: number | null;
   sessionType: "1on1" | "2on1" | null;
+  /** The Entity the package was sold under; null or absent when it has none. */
+  entityId?: string | null;
   boundInstructor: { id: string; name: string } | null;
+}
+
+/**
+ * Whether a package of `packageEntityId` can pay for a request whose class type
+ * is in `classTypeEntityId`: a private session's class type is in its paying
+ * package's Entity. Either side with no Entity (an unspecific request, a package
+ * from before Entities) rules nothing out, as the server judges it.
+ */
+export function ptPackageFitsEntity(packageEntityId: string | null | undefined, classTypeEntityId: string | null | undefined): boolean {
+  return !packageEntityId || !classTypeEntityId || packageEntityId === classTypeEntityId;
 }
 
 /** A proposed time is a wall time at the studio: the date and `HH:MM` the member picked, on its clock. */
@@ -77,6 +89,8 @@ export interface PtPickRow<P extends PtPickable = PtPickable> {
   reason: string | null;
   /** Its balance and where its clock stands. */
   meta: string;
+  /** Ruled out because it is in another Entity than the class type picked. */
+  entityMismatch: boolean;
 }
 
 export const sessionTypeLabel = (t: "1on1" | "2on1") => (t === "2on1" ? "2-on-1" : "1-on-1");
@@ -91,6 +105,8 @@ export function ptPickRows<P extends PtPickable>(
   timezone: string,
   latestStart: number | null = null,
   now: number = Date.now(),
+  /** The Entity of the class type the member picked first; null for "Any" or one with none. */
+  classTypeEntityId: string | null = null,
 ): PtPickRow<P>[] {
   return packages
     .filter((p) => p.kind === "pt" && p.sessionType === sessionType)
@@ -103,13 +119,15 @@ export function ptPickRows<P extends PtPickable>(
           : null;
       const meta = clock ? `${sessionsWord(left)} left · ${clock}` : `${sessionsWord(left)} left`;
       const end = ptPackageEnd(pkg, now);
-      const reason =
-        left < cost
+      const entityMismatch = !ptPackageFitsEntity(pkg.entityId, classTypeEntityId);
+      const reason = entityMismatch
+        ?"Not for the class type you picked — choose another class type, or Any"
+        : left < cost
           ? `Only ${sessionsWord(left)} left — this request needs ${cost}`
           : latestStart !== null && end !== null && latestStart > end
             ? `Runs until ${ptEndLabel(end, timezone)}, before one of your times`
             : null;
-      return { pkg, eligible: reason === null, reason, meta };
+      return { pkg, eligible: reason === null, reason, meta, entityMismatch };
     });
 }
 

@@ -27,6 +27,8 @@ export interface ApiInstructorRef {
 export interface ApiClassCard {
   id: string;
   class_type: { id: string; name: string };
+  /** The Entity the class is under, through its Class Type. Optional: a backend from before Entities omits it. */
+  entity?: { id: string; name: string; slug: string } | null;
   /** Main instructor — kept for back-compat alongside `main_instructor_id`. */
   instructor: ApiInstructorRef;
   main_instructor_id: string;
@@ -80,6 +82,8 @@ export interface ClassFilters {
   location_id?: string;
   instructor_id?: string;
   class_type_id?: string;
+  /** An Entity's slug. Part of the cache key with the rest, so one Entity's list is never drawn under another. */
+  entity?: string;
   from?: string;
   to?: string;
 }
@@ -189,6 +193,8 @@ export function useLocations(options?: { optional?: boolean }): {
 export interface ApiClassType {
   id: string;
   name: string;
+  /** The Entity it belongs to; null or absent on one with none (or an older backend). */
+  entity_id?: string | null;
 }
 
 /** Active class types for the PT request form's dropdown. Public (no auth). */
