@@ -441,7 +441,7 @@ The studio can write back on the request: when it schedules a time none of the p
 
 **Business logic**
 - Four-section catalogue:
-  1. **Trial Pass** — quota-based intro pack (e.g. 3 trial classes / 30 days / S$30). **One purchase per client, ever** — enforced server-side at purchase time. A previously-purchased trial (active or expired) blocks further trial purchases and the card's button renders disabled as "Not eligible" ("New members only" for a member who holds other packages).
+  1. **Trial Pass** — quota-based intro pack (e.g. 3 trial classes / 30 days / S$30). **One purchase per client per Entity, ever** — enforced server-side at purchase time. A trial is for a member new to its Entity: a previously-purchased trial in that Entity (active or expired) blocks further trial purchases there and the card's button renders disabled as "Not eligible"; any other package they hold or held in that Entity makes it "New members only". Each trial card reads its own Entity's standing from `entitlements.trial_by_entity[entity_id]` (`GET /me/class-packages`), so a Yoga regular may buy a Pilates trial once. The notes and refusals name the Entity when the page shows trials of more than one.
   2. **Credit Bundles** — N credits, validity in days, fixed SGD price. Examples: Bundle of 10 (S$300 / 90d), Bundle of 20 (S$550 / 180d), Bundle of 30/50/100.
   3. **Unlimited** — duration-based (1 / 3 / 6 months) at a fixed price; lets the holder book unlimited group classes **at one Home Location, chosen at checkout** (§7) — never both, unless the plan also carries a paid Cross-Location Add-On. The card reads "Covers one studio — you choose at checkout," not "Valid across both locations."
   4. **VIP Private Sessions** — 1-on-1 or 2-on-1 packs with a session count.
@@ -467,7 +467,7 @@ The studio can write back on the request: when it schedules a time none of the p
 **Where admin comes in**
 - Admin manages the **Products catalogue** — trial pass, bundle definitions, unlimited durations, VIP packs, pricing, validity, highlight flags, archive/un-archive.
 - Admin (superadmin) configures **promotions** nested inside each package (percent or special-price, with windows).
-- The server enforces the **one-trial-per-client** rule at the purchase endpoint.
+- The server enforces the **one-trial-per-client-per-Entity** rule at the purchase endpoint.
 - Admin needs reporting on package sales (revenue mix, conversion).
 - Admin (superadmin) can grant/issue a package manually (e.g., promo, refund replacement) and can edit expiry / set balance on a client's active packages via the kebab menu.
 
@@ -888,7 +888,7 @@ A studio may switch some of these emails off (§11.3); a member of that studio t
 
 - **Credits vs sessions are different currencies** — never let admin tooling accidentally let a private-session pack pay for a group class, or vice versa.
 - **Bundle and Unlimited are mutually exclusive at the user level** — admin issuance flow must enforce this.
-- **Trial Pass is one-per-client, ever** — server-enforced at purchase. A previous trial (active or expired) blocks new purchases.
+- **Trial Pass is one-per-client per Entity, ever** — server-enforced at purchase. A previous trial in the same Entity (active or expired) blocks new purchases there; a trial in another Entity is still open.
 - **PT bookings are request-driven** — clients submit preferred slots, the studio schedules. No public instructor availability calendar in v1. Session deduction happens when the studio schedules, not on submit. Invariant: no `PtSession` exists without a backing `PtRequest`.
 - **Workshop tier capacity is derived** — `min(day capacity for day in tier.day_ids)`. Never store or trust a tier-level capacity number on the client; ask the server.
 - **Promotions use best-price-wins** — when multiple promotions are active on a package or workshop, the lowest effective price wins (deterministic tie-break on lowest id).
