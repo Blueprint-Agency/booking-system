@@ -13,6 +13,7 @@ import { BookingSurface } from "@/components/booking/booking-surface";
 import { PageHeader } from "@/components/booking/page-header";
 import { SegmentedTabs } from "@/components/account/segmented-tabs";
 import { SubTabs } from "@/components/ui/sub-tabs";
+import { Select } from "@/components/ui/select";
 import { StickyFilters } from "@/components/ui/sticky-filters";
 import { Portal } from "@/components/ui/portal";
 import { ContentLoading } from "@/components/ui/content-loading";
@@ -83,6 +84,8 @@ export default function PackagesPage() {
   const routeParams = useParams<{ entity?: string }>();
   const router = useRouter();
   const { entity, entities } = usePackagesEntity(routeParams.entity);
+  // Set only for a studio with two or more Entities selling packages.
+  const currentEntity = entities?.find((e) => e.slug === entity);
   const { data, loading, error, refresh } = usePackagesCatalog(entity);
   const {
     data: corporateData,
@@ -258,19 +261,24 @@ export default function PackagesPage() {
   return (
     <>
       <BookingSurface>
-          <PageHeader title="Packages" />
-
-          {/* On a phone the Entities are tabs at the top; on a wider screen they are the nav's dropdown. */}
-          {entities && entity && (
-            <SegmentedTabs
-              label="Entity"
-              centered
-              className="md:hidden"
-              tabs={entities.map((e) => ({ value: e.slug, label: e.name }))}
-              value={entity}
-              onChange={(slug) => router.push(packagesHref(slug))}
-            />
-          )}
+          {/* A studio selling under several Entities titles the page with the one shown. On a
+              phone the title is itself the switcher, a dropdown that holds any number of
+              Entities; from `md` up the side rail switches and the title is plain. */}
+          <PageHeader
+            title={currentEntity?.name ?? "Packages"}
+            phoneSwitcher={
+              entities && currentEntity ? (
+                <Select
+                  ariaLabel="Packages for"
+                  value={currentEntity.slug}
+                  options={entities.map((e) => ({ value: e.slug, label: e.name }))}
+                  onChange={(slug) => router.push(packagesHref(slug))}
+                  className="inline-block max-w-full"
+                  triggerClassName="w-auto max-w-full min-h-[44px] gap-1.5 rounded-lg border-0 bg-transparent px-0 text-2xl font-extrabold tracking-tight focus:outline-none focus-visible:ring-2 focus-visible:ring-accent [&>svg]:size-5 [&>svg]:text-ink"
+                />
+              ) : undefined
+            }
+          />
 
           {loading && (
             <ContentLoading label="Loading packages" />

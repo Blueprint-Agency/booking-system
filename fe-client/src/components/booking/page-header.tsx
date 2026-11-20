@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 /**
  * The title of a browse page, sized like an account section's
@@ -10,12 +11,20 @@ export function PageHeader({
   description,
   back,
   action,
+  phoneSwitcher,
 }: {
   title: string;
   description?: React.ReactNode;
   /** A way up to the list this page came from, e.g. all workshops. */
   back?: { href: string; label: string };
   action?: React.ReactNode;
+  /**
+   * On a phone, drawn where the title is: a dropdown that names what the page
+   * shows and switches it (one Entity's packages). The title stays the page's
+   * heading for screen readers; from `md` up it is the visible title again, and
+   * the side rail does the switching.
+   */
+  phoneSwitcher?: React.ReactNode;
 }) {
   return (
     <header className="mb-5 md:mb-6">
@@ -30,9 +39,15 @@ export function PageHeader({
       )}
       <div className="flex items-end justify-between gap-4">
         <div className="min-w-0">
-          <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-ink break-words">
+          <h1
+            className={cn(
+              "text-2xl md:text-3xl font-extrabold tracking-tight text-ink break-words",
+              phoneSwitcher && "sr-only md:not-sr-only",
+            )}
+          >
             {title}
           </h1>
+          {phoneSwitcher && <div className="md:hidden">{phoneSwitcher}</div>}
           {description && <p className="mt-1.5 text-sm text-muted max-w-xl">{description}</p>}
         </div>
         {action && <div className="shrink-0">{action}</div>}
