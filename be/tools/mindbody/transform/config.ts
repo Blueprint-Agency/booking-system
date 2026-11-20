@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import { z } from 'zod'
 import { instructorPermissionEnum, offlinePaymentMethodEnum, type InstructorPermission } from '../../../src/db/enums'
+import { DEFAULT_ENTITY_NAME, ENTITY_SLUG_MAX, slugForEntityName } from '../../../src/services/catalog/entity-rules'
 import { proposeCatalogue } from './catalogue'
 import type { MindbodyReports } from './mapper'
 import { proposeSchedule } from './schedule-proposal'
@@ -312,6 +313,14 @@ const studioConfigSchema = z.object({
   ptAppointmentNames: z.array(z.string()).default([]),
   /** The Class Type an imported PT appointment's focus is. Created if `classTypes` does not already list it. */
   ptClassType: z.string().min(1).default('Personal Training'),
+  /**
+   * The name of the one Entity the studio arrives with (be/CONTEXT.md § Entity).
+   * Every Class Type and every class and PT package the transform writes is in
+   * it. Left out, the generic default every new studio gets; a studio that
+   * already calls its line of practice something names it here (answers.json
+   * `entityName`), so nobody has to rename it in the portal after launch.
+   */
+  entityName: z.string().trim().min(1).max(80).default(DEFAULT_ENTITY_NAME),
   series: z.array(seriesSchema).default([]),
   /** How far back to bring the studio's past, or `null` for none. */
   history: historySchema.nullable().default(null),
@@ -411,6 +420,7 @@ export type StudioConfig = {
   }[]
   ptAppointmentNames: string[]
   ptClassType: string
+  entityName: string
   series: {
     className: string
     weekday: 1 | 2 | 3 | 4 | 5 | 6 | 7
@@ -494,6 +504,14 @@ export function validateConfig(raw: unknown): StudioConfig {
   need(c.asOf, 'asOf')
   need(c.secret, 'secret')
   need(c.defaultLocation, 'defaultLocation')
+  // The portal refuses an Entity whose name gives no slug (its link on the
+  // member app), so the import must not bring one in.
+  if (c.entityName) {
+    const slug = slugForEntityName(c.entityName)
+    if (!slug || slug.length > ENTITY_SLUG_MAX) {
+      problems.push(`entityName "${c.entityName}" gives no usable link (needs letters or digits; at most ${ENTITY_SLUG_MAX} in its slug)`)
+    }
+  }
   if (c.studio.timezone) {
     try {
       new Intl.DateTimeFormat('en-US', { timeZone: c.studio.timezone })

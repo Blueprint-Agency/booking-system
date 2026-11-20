@@ -213,6 +213,17 @@ async function decided(notes?: string[]) {
   return fillConfigs(starterConfig(reports, AS_OF), DECIDED, facts, staffFacts(reports, asOf), notes).local!
 }
 
+test('SUP-46 the Entity the answers name reaches every filled config; answers that name none leave the default', async () => {
+  const reports = await readReports(path.join(FIXTURES, 'reports'))
+  const asOf = dateOfIso(AS_OF.slice(0, 10))
+  const facts = reportFacts(reports, asOf, { offSiteVenues: ANSWERS.offSiteVenues })
+  const configs = fillConfigs(starterConfig(reports, AS_OF), { ...ANSWERS, entityName: 'Yoga' }, facts, staffFacts(reports, asOf))
+  for (const c of Object.values(configs)) assert.equal(c.entityName, 'Yoga')
+
+  const { configs: plain } = await filled()
+  assert.equal(plain.local!.entityName, undefined, 'left to the config\'s default')
+})
+
 test('the policy the answers decide wins over the window the reports suggest and over the defaults', async () => {
   const c = await decided()
   assert.equal(c.policy.classWindowHours, 24, 'the answer, not the report\'s 2-hour cut-off')

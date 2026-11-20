@@ -67,6 +67,27 @@ test('SUP-42 every Class Type the transform makes, the PT focus included, is in 
   for (const type of types) assert.equal(type.entity_id, entity!.id, `${type.name} is in the Entity`)
 })
 
+test('SUP-45 a config that names its Entity gets that one Entity, and every Class Type and package the transform makes is in it', async () => {
+  const { archive } = await run({ ...fixtureConfig(), entityName: '  Yoga ' })
+  assert.equal(archive.rows.entities!.length, 1)
+  const [entity] = archive.rows.entities!
+  assert.equal(entity!.name, 'Yoga', 'trimmed as the portal trims it')
+  assert.equal(entity!.slug, 'yoga')
+  assert.equal(entity!.position, 0)
+  for (const table of ['class_types', 'class_packages', 'pt_packages']) {
+    const rows = archive.rows[table]!
+    assert.ok(rows.length > 0, `${table} has rows to check`)
+    for (const row of rows) assert.equal(row.entity_id, entity!.id, `${table} ${row.name} is in the Entity`)
+  }
+
+  // Left out, the generic default every new studio gets.
+  const { archive: plain } = await run()
+  assert.equal(plain.rows.entities![0]!.name, 'All classes')
+
+  // A name that gives no link is refused, as the portal refuses it.
+  await assert.rejects(run({ ...fixtureConfig(), entityName: '!!!' }), (e: unknown) => e instanceof ConfigError && e.problems.some(p => p.startsWith('entityName')))
+})
+
 test('members: every profile, lower-cased email, join date in the studio timezone, placeholders gone', async () => {
   const { archive, ids } = await run()
   const byId = (barcode: string) => archive.rows.clients!.find(r => r.id === ids.clients![barcode])!

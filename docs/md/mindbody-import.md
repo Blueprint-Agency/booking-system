@@ -305,9 +305,11 @@ npm run mindbody -- verify --expected <studio.expected.json> --export-zip <expor
   as a lost booking does), and — for a studio that brought its past — classes held, visits attended and
   no-shows per calendar year. It lists every difference by member, by class, by workshop or by
   year, and exits non-zero on any. Run it straight after the import, before anybody books.
-- **Entities.** The archive carries the studio's one Entity, "All classes" (`entities` row, position
-  0), because the studio it is restored into is provisioned with no admin and so has none; every
-  class package and PT package, sold or legacy, is in it. The studio renames it, or adds a second
+- **Entities.** The archive carries the studio's one Entity (`entities` row, position 0), because
+  the studio it is restored into is provisioned with no admin and so has none; every Class Type
+  (the PT focus too) and every class package and PT package, sold or legacy, is in it. It is named
+  by the config's `entityName` (`answers.json` `entityName`, filled in by `fill`) where the studio
+  already calls its line of practice something, and is "All classes" where that is left out. The studio renames it, or adds a second
   Entity and moves packages, from the portal afterwards (be/CONTEXT.md § Entity).
 - **The catalogue** (`catalogue` in the config) is one entry per Mindbody pricing option, proposed
   by `starter` from what was sold: the commonest sessions bought, activation-to-expiry spread and

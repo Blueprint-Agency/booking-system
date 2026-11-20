@@ -1,6 +1,7 @@
 import { buildEmailTemplates } from '../../../src/db/seed/email-copy'
 import { parseOriginPatterns, tenantOriginFor } from '../../../src/lib/origin'
 import { joinName, splitName } from '../../../src/lib/name'
+import { slugForEntityName } from '../../../src/services/catalog/entity-rules'
 import { ARCHIVE_VERSION, type TenantArchive } from '../../../src/services/tenants/transfer-shape'
 import type { StudioConfig } from './config'
 import { idsFor, secretToken } from './ids'
@@ -204,16 +205,18 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     return row
   })
 
-  // The studio's one Entity. A Mindbody studio is one Entity as far as
-  // this export can tell, so everything it creates (Class Types, and the packages
-  // that name this id too) lands in the studio's first Entity: "All classes", the
-  // generic default every studio starts with, which the studio renames and splits
-  // from settings. Carried in the archive, because the archive is built offline,
-  // the importer refuses a studio that already has rows, and so the studio it is
+  // The studio's one Entity. A Mindbody studio is one Entity as far as this
+  // export can tell, so everything it creates (Class Types, and the packages
+  // that name this id too) lands in it. Its name is the config's `entityName`:
+  // the generic default every studio starts with, unless the studio already
+  // calls its line of practice something. The studio renames and splits it from
+  // settings. Carried in the archive, because the archive is built offline, the
+  // importer refuses a studio that already has rows, and so the studio it is
   // restored into arrives with no Entity of its own.
-  const entityId = id('entity', 'all-classes')
+  const entitySlug = slugForEntityName(config.entityName)
+  const entityId = id('entity', entitySlug)
   const entities: Row[] = [
-    { id: entityId, tenant_id: tenantId, name: 'All classes', slug: 'all-classes', position: 0, archived_at: null },
+    { id: entityId, tenant_id: tenantId, name: config.entityName, slug: entitySlug, position: 0, archived_at: null },
   ]
 
   const classTypes: Row[] = config.classTypes.map(t => {

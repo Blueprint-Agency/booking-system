@@ -49,6 +49,12 @@ export type StudioAnswers = {
   notWorkshopCategories: string
   /** Decision 15, until settled: whether a proposed workshop is migrated. */
   workshopsMigrate: boolean
+  /**
+   * The name of the one Entity everything imported is in: every Class Type, the
+   * PT focus too, and every class and PT package. Left out, the generic default
+   * every new studio gets ("All classes").
+   */
+  entityName?: string
   /** What a PT appointment is called (case-insensitive pattern). Default: "PT" or "personal training". */
   ptPattern?: string
   /** How active staff get in: `active` (no invitation) or `invite`. */
@@ -415,6 +421,8 @@ function fillConfig(starter: Json, answers: StudioAnswers, facts: ReportFacts, s
 
   // 17. History.
   c.history = answers.history
+  // The Entity everything imported is in, where the studio has named it.
+  if (answers.entityName !== undefined) c.entityName = answers.entityName
   // 21. Waitlists.
   c.waitlist = { ...DEFAULT_WAITLIST, ...answers.waitlist, classTypes: { ...answers.waitlist?.classTypes } }
   // How each Mindbody payment method is filed: the answers' table, as it is.
