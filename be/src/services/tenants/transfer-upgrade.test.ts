@@ -189,6 +189,26 @@ test('SUP-44 an archive whose packages name no Entity puts them in the first liv
   assert.deepEqual(upgradeArchiveRows(current), current)
 })
 
+test('TEN-144 an archive from before migration 0151 restores a package of kind trial as a Credit Bundle trial, and leaves every other package as it is', () => {
+  const archive = {
+    class_packages: [
+      { id: 'c1', kind: 'trial' },
+      { id: 'c2', kind: 'trial', is_trial: true },
+      { id: 'c3', kind: 'credit_bundle', is_trial: false },
+      { id: 'c4', kind: 'unlimited', is_trial: true },
+    ],
+    client_packages: [{ id: 'h1', kind: 'trial' }, { id: 'h2', kind: 'pt', is_trial: true }],
+  }
+  const out = upgradeArchiveRows(archive)
+  assert.deepEqual(out.class_packages, [
+    { id: 'c1', kind: 'credit_bundle', is_trial: true },
+    { id: 'c2', kind: 'credit_bundle', is_trial: true },
+    { id: 'c3', kind: 'credit_bundle', is_trial: false },
+    { id: 'c4', kind: 'unlimited', is_trial: true },
+  ])
+  assert.deepEqual(out.client_packages, [{ id: 'h1', kind: 'credit_bundle', is_trial: true }, { id: 'h2', kind: 'pt', is_trial: true }])
+})
+
 test("the caller's archive is not changed", () => {
   const archive = { leave_pools: [{ instructor_id: ADA }] }
   upgradeArchiveRows(archive)

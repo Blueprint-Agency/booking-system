@@ -234,7 +234,10 @@ export function figuresOf(archive: TenantArchive): Figures {
 
   for (const p of archive.rows.client_packages ?? []) {
     if (p.active !== true || p.client_id == null) continue
-    const kind = String(p.kind)
+    // A Credit Bundle trial is tallied as a trial, whichever way the archive
+    // stores it (kind `trial` before migration 0151, the trial box after), so
+    // a figure written before then still compares with an export after it.
+    const kind = p.kind === 'credit_bundle' && p.is_trial === true ? 'trial' : String(p.kind)
     const left = Number(p.credits_or_sessions_remaining ?? 0)
     const clientId = String(p.client_id)
     const mine = member(clientId)

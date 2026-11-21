@@ -4,6 +4,7 @@ import { joinName, splitName } from '../../../src/lib/name'
 import { slugForEntityName } from '../../../src/services/catalog/entity-rules'
 import { ARCHIVE_VERSION, type TenantArchive } from '../../../src/services/tenants/transfer-shape'
 import type { StudioConfig } from './config'
+import { mapOtherEntities } from './entities'
 import { idsFor, secretToken } from './ids'
 import { mapHistory, type MappedHistory } from './history'
 import { configLookups } from './lookups'
@@ -497,6 +498,8 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
 
   // `validateConfig` has already refused a config whose owner is not among the staff.
   if (!ownerId) throw new Error('the owner is not among the staff coming across')
+  // The studio's other Entities, after the first: new, with nothing of the export in them.
+  const others = mapOtherEntities({ config, tenantId, id, ownerId })
   // One coder for the whole archive: a booking reference is unique within a
   // studio, and a class seat, a workshop place and a visit years ago all share
   // that one namespace.
@@ -645,18 +648,20 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
   // Parents first, as an export writes them — the importer orders by the
   // schema, but a person reading the zip reads it in this order.
   const rows: Record<string, Row[]> = {
-    entities,
+    entities: [...entities, ...others.entities],
     locations,
     rooms,
-    class_types: [...classTypes, ...ptClassTypes],
+    class_types: [...classTypes, ...ptClassTypes, ...others.classTypes],
     staff_users: staffUsers,
     instructors: [...instructors, ...extraInstructors.values()],
     staff_invitations: invitations,
     clients,
     // Provider-less, and only a past sale that was returned: the Refund hangs from it.
     purchases: history.purchases,
-    class_packages: packages.classPackages,
-    pt_packages: packages.ptPackages,
+    class_packages: [...packages.classPackages, ...others.classPackages],
+    pt_packages: [...packages.ptPackages, ...others.ptPackages],
+    // A launch price on another Entity's package: after the packages it names.
+    promotions: others.promotions,
     client_packages: [...packages.clientPackages, ...history.clientPackages],
     class_series: schedule.classSeries,
     classes: [...history.classes, ...schedule.classes],

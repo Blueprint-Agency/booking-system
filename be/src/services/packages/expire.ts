@@ -6,7 +6,7 @@ import { now } from '../../lib/clock'
 import { zoneFormat } from '../../lib/studio-time'
 import { tenantTimezone } from '../tenants/tenants'
 import { reportError } from '../../shared/logger'
-import { contentsLine } from '../notifications/purchase-email'
+import { contentsLine, presentedKind } from '../notifications/purchase-email'
 import { sendTemplatedEmail } from '../notifications/send'
 import { recordExpired } from './ledger'
 
@@ -62,6 +62,7 @@ export async function sendLapsingAlerts(): Promise<void> {
     .select({
       id: clientPackages.id,
       kind: clientPackages.kind,
+      isTrial: clientPackages.isTrial,
       remaining: clientPackages.creditsOrSessionsRemaining,
       expiresAt: clientPackages.expiresAt,
       clientId: clients.id,
@@ -102,7 +103,7 @@ export async function sendLapsingAlerts(): Promise<void> {
           client_name: row.clientName,
           package_name: row.packageName ?? 'Your package',
           expires_at: date.format(row.expiresAt!),
-          remaining_line: contentsLine(row.kind, row.remaining),
+          remaining_line: contentsLine(presentedKind(row.kind, row.isTrial), row.remaining),
         },
       })
     } catch (err) {

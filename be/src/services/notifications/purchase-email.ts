@@ -17,7 +17,17 @@ import { zoneFormat } from '../../lib/studio-time'
 import { sgdText, toCents } from '../../shared/money'
 import { isDormant } from '../packages/validity'
 
+/**
+ * A package as the member is told of it. `trial` is a Credit Bundle trial,
+ * which counts classes: a first-timer has never heard of a credit. Read it off
+ * the stored row with `presentedKind`; it is no stored kind.
+ */
 export type PurchasedKind = 'credit_bundle' | 'unlimited' | 'trial' | 'pt'
+
+/** The kind a held package is told as: a Credit Bundle with the trial box ticked is a `trial`. */
+export function presentedKind(kind: 'credit_bundle' | 'unlimited' | 'trial' | 'pt', isTrial: boolean): PurchasedKind {
+  return kind === 'credit_bundle' && isTrial ? 'trial' : kind
+}
 
 /** "14 Feb 2027" — a date a member reads, on the studio's clock. */
 const studioDate = (timezone: string) =>
@@ -165,18 +175,19 @@ export function composePurchaseEmail(input: PurchaseEmailInput): {
   slug: ReturnType<typeof purchaseSlug>
   variables: Record<string, string>
 } {
+  const kind = presentedKind(input.kind, input.isTrial)
   return {
-    slug: purchaseSlug(input.isTrial, input.kind),
+    slug: purchaseSlug(input.isTrial, kind),
     variables: {
       client_name: input.clientName,
       package_name: input.packageName,
       contents_line: contentsLine(
-        input.kind,
+        kind,
         input.creditsOrSessions,
         input.boundInstructorName ?? null,
       ),
       validity_line: validityLine(
-        input.kind,
+        kind,
         input.expiresAt,
         input.durationMonths,
         input.validityDays,

@@ -9,6 +9,7 @@ import {
   money,
   normaliseOptionName,
   paymentMethodKey,
+  storedKind,
   zonedToInstant,
   type CalendarDate,
 } from './values'
@@ -368,7 +369,7 @@ export function pastPackages(input: {
       id: id('client-package', key),
       tenant_id: tenantId,
       client_id: ids.clients![sale.clientId],
-      kind: entry.kind,
+      ...storedKind(entry.kind),
       source_class_package_id: entry.kind === 'pt' ? null : catalogueId,
       source_pt_package_id: entry.kind === 'pt' ? catalogueId : null,
       // Only a plan holds a Location here, and it must: its Home Location is

@@ -13,17 +13,16 @@ import { replacePromotionsForParent, type PromotionWriteInput } from './promotio
 export type ClassPackageRow = typeof classPackages.$inferSelect
 /** What a class package is, as the API speaks: a trial is a tick on one of these (`isTrial`). */
 export type ClassPackageKind = 'credit_bundle' | 'unlimited'
-/** The stored kind: a Credit Bundle trial is still written `trial` until the contract migration (see the schema). */
+/**
+ * The stored kind. Nothing writes `trial` any more and migration 0151 folded
+ * every row into `credit_bundle`, but the build before it still writes one, so
+ * it is read until the enum loses the value.
+ */
 type StoredClassPackageKind = ClassPackageKind | 'trial'
 
 /** The kind a stored row is, as the API speaks: a stored `trial` is a Credit Bundle trial. */
 export function catalogueKind(row: { kind: StoredClassPackageKind }): ClassPackageKind {
   return row.kind === 'trial' ? 'credit_bundle' : row.kind
-}
-
-/** The kind to store: a Credit Bundle trial stays `trial`, so a build from before `is_trial` still reads it as one. */
-function storedKind(kind: ClassPackageKind, isTrial: boolean): StoredClassPackageKind {
-  return kind === 'credit_bundle' && isTrial ? 'trial' : kind
 }
 
 /**
@@ -131,7 +130,7 @@ export async function createClassPackage(
       entityId,
       name: input.name,
       description: input.description ?? null,
-      kind: storedKind(input.kind, input.isTrial ?? false),
+      kind: input.kind,
       isTrial: input.isTrial ?? false,
       credits: input.credits ?? null,
       validityDays: input.validityDays ?? null,

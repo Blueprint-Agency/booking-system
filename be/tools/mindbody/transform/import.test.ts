@@ -499,7 +499,7 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
     const [trial] = await harness.db
       .select({ id: schema.classPackages.id })
       .from(schema.classPackages)
-      .where(and(eq(schema.classPackages.tenantId, studio.tenantId), eq(schema.classPackages.kind, 'trial')))
+      .where(and(eq(schema.classPackages.tenantId, studio.tenantId), eq(schema.classPackages.isTrial, true)))
 
     await assert.rejects(
       comp.giveComplimentaryPackage(studio.tenantId, {

@@ -237,6 +237,46 @@ const catalogueSchema = z.object({
   location: z.string().nullable().default(null),
 })
 
+/**
+ * A package another Entity sells from launch (`entities`). Mindbody never sold
+ * it, so it has no spellings and no holders: it is a catalogue row and nothing
+ * more, on sale at `priceSgd`.
+ */
+const entityPackageSchema = z.object({
+  name: z.string().trim().min(1),
+  description: z.string().trim().min(1).nullable().default(null),
+  kind: z.enum(['credit_bundle', 'unlimited', 'pt']),
+  /** A first taste of its type in its Entity (be/CONTEXT.md § Trial). */
+  trial: z.boolean().default(false),
+  /** Credits, or sessions for PT. */
+  credits: z.number().int().positive().nullable().default(null),
+  validityDays: z.number().int().positive().nullable().default(null),
+  durationMonths: z.number().int().positive().nullable().default(null),
+  priceSgd: z.number().min(0),
+  sessionType: z.enum(['1on1', '2on1']).nullable().default(null),
+  instructorBound: z.boolean().default(false),
+  /** A Promotion live from `asOf`: a special price until `endsAt` (an ISO instant with its offset). */
+  promotion: z
+    .object({
+      label: z.string().trim().min(1),
+      specialPriceSgd: z.number().min(0),
+      endsAt: z.string().min(1),
+    })
+    .nullable()
+    .default(null),
+})
+
+/**
+ * An Entity after the first (`entityName`): a line of practice the studio
+ * started that Mindbody never knew, so it has none of the export's history.
+ * Its Class Types and packages are made new, live, in it.
+ */
+const entitySchema = z.object({
+  name: z.string().trim().min(1).max(80),
+  classTypes: z.array(z.string().trim().min(1)).default([]),
+  packages: z.array(entityPackageSchema).default([]),
+})
+
 const studioConfigSchema = z.object({
   studio: z.object({
     slug: open(z.string().min(1)),
@@ -321,6 +361,11 @@ const studioConfigSchema = z.object({
    * `entityName`), so nobody has to rename it in the portal after launch.
    */
   entityName: z.string().trim().min(1).max(80).default(DEFAULT_ENTITY_NAME),
+  /**
+   * The studio's other Entities, after the one everything imported is in, in
+   * the order the member app lists them (answers.json `entities`).
+   */
+  entities: z.array(entitySchema).default([]),
   series: z.array(seriesSchema).default([]),
   /** How far back to bring the studio's past, or `null` for none. */
   history: historySchema.nullable().default(null),
@@ -421,6 +466,7 @@ export type StudioConfig = {
   ptAppointmentNames: string[]
   ptClassType: string
   entityName: string
+  entities: OtherEntity[]
   series: {
     className: string
     weekday: 1 | 2 | 3 | 4 | 5 | 6 | 7
@@ -459,6 +505,23 @@ export type StudioConfig = {
   sharedEmailKeepers: Record<string, string>
   catalogue: CatalogueEntry[]
   paymentMethods: Record<string, OfflineMethod>
+}
+
+/** An Entity after the first, with what it sells from launch (`entities`). */
+export type OtherEntity = {
+  name: string
+  classTypes: string[]
+  packages: ({
+    name: string
+    description: string | null
+    trial: boolean
+    priceSgd: number
+    promotion: { label: string; specialPriceSgd: number; endsAt: string } | null
+  } & (
+    | { kind: 'credit_bundle'; credits: number; validityDays: number }
+    | { kind: 'pt'; credits: number; validityDays: number; sessionType: '1on1' | '2on1'; instructorBound: boolean }
+    | { kind: 'unlimited'; durationMonths: number }
+  ))[]
 }
 
 type CatalogueCommon = { name: string; mindbodyNames: string[]; priceSgd: number | null }
@@ -512,6 +575,41 @@ export function validateConfig(raw: unknown): StudioConfig {
       problems.push(`entityName "${c.entityName}" gives no usable link (needs letters or digits; at most ${ENTITY_SLUG_MAX} in its slug)`)
     }
   }
+  // The other Entities: each a link of its own, named once, selling what its
+  // kind needs, as the portal would refuse otherwise.
+  const entitySlugs = new Set([slugForEntityName(c.entityName)])
+  c.entities.forEach((e, i) => {
+    const label = `entities[${i}] (${e.name})`
+    const slug = slugForEntityName(e.name)
+    if (!slug || slug.length > ENTITY_SLUG_MAX) problems.push(`${label} gives no usable link`)
+    else if (entitySlugs.has(slug)) problems.push(`${label} has the link "${slug}" another Entity has`)
+    entitySlugs.add(slug)
+    const typeNames = new Set<string>()
+    for (const t of e.classTypes) {
+      if (typeNames.has(t.toLowerCase())) problems.push(`${label}.classTypes lists "${t}" twice`)
+      typeNames.add(t.toLowerCase())
+    }
+    const packageNames = new Set<string>()
+    e.packages.forEach((p, j) => {
+      const pl = `${label}.packages[${j}] (${p.name})`
+      if (packageNames.has(p.name.toLowerCase())) problems.push(`${pl} is listed twice`)
+      packageNames.add(p.name.toLowerCase())
+      if (p.kind === 'unlimited') {
+        need(p.durationMonths, `${pl}.durationMonths`)
+        if (p.credits !== null || p.validityDays !== null) problems.push(`${pl}: an Unlimited Plan has no credits or validityDays`)
+      } else {
+        need(p.credits, `${pl}.credits`)
+        need(p.validityDays, `${pl}.validityDays`)
+        if (p.durationMonths !== null) problems.push(`${pl}: only an Unlimited Plan has durationMonths`)
+      }
+      if (p.kind === 'pt') need(p.sessionType, `${pl}.sessionType`)
+      else if (p.sessionType !== null || p.instructorBound) problems.push(`${pl}: only a PT package has a sessionType or is Instructor-Bound`)
+      if (p.promotion && Number.isNaN(Date.parse(p.promotion.endsAt))) problems.push(`${pl}.promotion.endsAt "${p.promotion.endsAt}" is no instant`)
+      else if (p.promotion && c.asOf && Date.parse(p.promotion.endsAt) <= Date.parse(c.asOf)) {
+        problems.push(`${pl}.promotion ends before the download (${c.asOf})`)
+      }
+    })
+  })
   if (c.studio.timezone) {
     try {
       new Intl.DateTimeFormat('en-US', { timeZone: c.studio.timezone })

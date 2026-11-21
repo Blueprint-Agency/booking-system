@@ -55,9 +55,9 @@ export const classPackages = pgTable(
     kind: classPackageKindEnum('kind').notNull(),
     // **Trial** (be/CONTEXT.md § Trial): a package of its kind, for members new
     // to that type in its Entity, once each. Set when the package is made and
-    // never edited. A Credit Bundle trial is still stored as kind `trial` too, so
-    // a build from before this column treats it as a trial; a later contract
-    // migration folds `trial` into `credit_bundle` (migrations/README.md rule 0).
+    // never edited. A Credit Bundle trial is a `credit_bundle` with this ticked;
+    // kind `trial` is retired (0151 folded every row into `credit_bundle`, and a
+    // later migration drops the enum value: migrations/README.md rule 0).
     // Read trial-ness from this column, and the shape from `kind`.
     isTrial: boolean('is_trial').notNull().default(false),
     credits: integer('credits'),

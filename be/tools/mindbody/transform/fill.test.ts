@@ -224,6 +224,18 @@ test('SUP-46 the Entity the answers name reaches every filled config; answers th
   assert.equal(plain.local!.entityName, undefined, 'left to the config\'s default')
 })
 
+test('SUP-48 the other Entities the answers name reach every filled config as they are; answers that name none leave the default', async () => {
+  const reports = await readReports(path.join(FIXTURES, 'reports'))
+  const asOf = dateOfIso(AS_OF.slice(0, 10))
+  const facts = reportFacts(reports, asOf, { offSiteVenues: ANSWERS.offSiteVenues })
+  const entities = [{ name: 'Pilates', classTypes: ['Pilates'], packages: [{ name: 'Intro Duet', kind: 'pt', trial: true, sessionType: '2on1', credits: 3, validityDays: 60, priceSgd: 480 }] }]
+  const configs = fillConfigs(starterConfig(reports, AS_OF), { ...ANSWERS, entityName: 'Yoga', entities }, facts, staffFacts(reports, asOf))
+  for (const c of Object.values(configs)) assert.deepEqual(c.entities, entities)
+
+  const { configs: plain } = await filled()
+  assert.equal(plain.local!.entities, undefined, 'left to the config\'s default')
+})
+
 test('the policy the answers decide wins over the window the reports suggest and over the defaults', async () => {
   const c = await decided()
   assert.equal(c.policy.classWindowHours, 24, 'the answer, not the report\'s 2-hour cut-off')

@@ -126,6 +126,17 @@ export function isoWeekday(d: CalendarDate): 1 | 2 | 3 | 4 | 5 | 6 | 7 {
   return (js === 0 ? 7 : js) as 1 | 2 | 3 | 4 | 5 | 6 | 7
 }
 
+/**
+ * A package row's kind and trial flag from a catalogue entry's kind. `trial` is
+ * the config's word for a pricing option sold as a first taste; it is stored as
+ * a Credit Bundle with the trial box ticked (be/CONTEXT.md § Trial).
+ */
+export function storedKind(
+  kind: 'credit_bundle' | 'unlimited' | 'trial' | 'pt',
+): { kind: 'credit_bundle' | 'unlimited' | 'pt'; is_trial: boolean } {
+  return { kind: kind === 'trial' ? 'credit_bundle' : kind, is_trial: kind === 'trial' }
+}
+
 /** An amount as a `numeric(…, 2)` column holds it. */
 export function money(n: number): string {
   return n.toFixed(2)

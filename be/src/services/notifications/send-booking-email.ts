@@ -16,7 +16,7 @@ import { bookings } from '../../db/schema/bookings'
 import { classes, ptSessions, workshops } from '../../db/schema/schedule'
 import { purchases } from '../../db/schema/ledger'
 import { toCents, toSgd } from '../../shared/money'
-import { amountPaid } from './purchase-email'
+import { amountPaid, presentedKind } from './purchase-email'
 import { classTypes, locations } from '../../db/schema/catalog'
 import { clients, staffUsers } from '../../db/schema/identity'
 import { classPackages, clientPackages } from '../../db/schema/packages'
@@ -79,6 +79,7 @@ export async function sendClassBookingEmail(tenantId: string, bookingId: string,
         locationName: locations.name,
         instructorName: staffUsers.name,
         kind: clientPackages.kind,
+        isTrial: clientPackages.isTrial,
         remaining: clientPackages.creditsOrSessionsRemaining,
         packageName: classPackages.name,
       })
@@ -94,7 +95,7 @@ export async function sendClassBookingEmail(tenantId: string, bookingId: string,
       .limit(1)
     if (!row) throw new NotFoundError('booking_not_found', { bookingId })
 
-    const kind = (row.kind ?? 'credit_bundle') as PurchasedKind
+    const kind: PurchasedKind = presentedKind(row.kind ?? 'credit_bundle', row.isTrial ?? false)
     const used = row.used ?? 0
     const date = (await sessionTimeFormat(tenantId)).format(row.startsAt)
     await sendTemplatedEmail({

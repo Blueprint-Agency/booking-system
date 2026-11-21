@@ -52,6 +52,13 @@ export const CHECKS: Record<string, Record<string, Rule>> = {
   pt_packages: {
     pt_packages_validity_days_positive: r => num(r.validity_days, n => n > 0),
   },
+  promotions: {
+    promotions_ends_after_starts: r => after(r.ends_at, r.starts_at),
+    promotions_kind_fields: r =>
+      r.kind === 'percent'
+        ? num(r.percent_off, n => n >= 1 && n <= 99) && set(r.percent_off) && isNull(r.special_price_sgd)
+        : r.kind === 'special_price' && set(r.special_price_sgd) && isNull(r.percent_off),
+  },
   classes: {
     classes_ends_after_starts: r => after(r.ends_at, r.starts_at),
     classes_capacity_online_non_negative: r => num(r.capacity_online, n => n >= 0),

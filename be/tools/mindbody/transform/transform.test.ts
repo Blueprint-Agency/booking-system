@@ -88,6 +88,63 @@ test('SUP-45 a config that names its Entity gets that one Entity, and every Clas
   await assert.rejects(run({ ...fixtureConfig(), entityName: '!!!' }), (e: unknown) => e instanceof ConfigError && e.problems.some(p => p.startsWith('entityName')))
 })
 
+const PILATES = {
+  name: 'Pilates',
+  classTypes: ['Pilates', 'Pilates Private'],
+  packages: [
+    { name: 'Intro Group Package', description: '3 group classes. One per client.', kind: 'credit_bundle', trial: true, credits: 3, validityDays: 30, priceSgd: 130, promotion: { label: 'Launch price', specialPriceSgd: 99, endsAt: '2090-02-28T23:59:59+08:00' } },
+    { name: 'Monthly', kind: 'unlimited', durationMonths: 1, priceSgd: 300 },
+    { name: 'Intro Duet', kind: 'pt', trial: true, sessionType: '2on1', credits: 3, validityDays: 60, priceSgd: 480, instructorBound: true },
+  ],
+}
+
+test('SUP-47 a config naming other Entities gets each after the first, with its Class Types, its packages on sale (trials ticked) and their launch Promotions', async () => {
+  const { archive } = await run({ ...fixtureConfig(), entityName: 'Yoga', entities: [PILATES] })
+  const [yoga, pilates] = archive.rows.entities!
+  assert.deepEqual([pilates!.name, pilates!.slug, pilates!.position, pilates!.archived_at], ['Pilates', 'pilates', 1, null])
+  assert.equal(yoga!.position, 0)
+
+  const types = archive.rows.class_types!.filter(t => t.entity_id === pilates!.id)
+  assert.deepEqual(types.map(t => [t.name, t.archived_at]), [['Pilates', null], ['Pilates Private', null]])
+  // Its own rows, whatever an imported type in the first Entity is called.
+  assert.equal(new Set(archive.rows.class_types!.map(t => t.id)).size, archive.rows.class_types!.length)
+
+  const classPkgs = archive.rows.class_packages!.filter(p => p.entity_id === pilates!.id)
+  assert.deepEqual(
+    classPkgs.map(p => [p.name, p.kind, p.is_trial, p.credits, p.validity_days, p.duration_months, p.price_sgd, p.status]),
+    [
+      ['Intro Group Package', 'credit_bundle', true, 3, 30, null, '130.00', 'active'],
+      ['Monthly', 'unlimited', false, null, null, 1, '300.00', 'active'],
+    ],
+  )
+  const [duet] = archive.rows.pt_packages!.filter(p => p.entity_id === pilates!.id)
+  assert.deepEqual(
+    [duet!.name, duet!.session_type, duet!.is_trial, duet!.num_sessions, duet!.validity_days, duet!.instructor_bound, duet!.price_sgd],
+    ['Intro Duet', '2on1', true, 3, 60, true, '480.00'],
+  )
+
+  const [launch] = archive.rows.promotions!
+  assert.equal(archive.rows.promotions!.length, 1)
+  assert.deepEqual(
+    [launch!.parent_type, launch!.parent_id, launch!.kind, launch!.special_price_sgd, launch!.label, launch!.ends_at],
+    ['class_package', classPkgs[0]!.id, 'special_price', '99.00', 'Launch price', '2090-02-28T15:59:59.000Z'],
+  )
+  assert.ok(archive.rows.staff_users!.some(s => s.id === launch!.created_by_staff_id), 'made by a member of staff coming across')
+
+  // Nothing of the export lands in it.
+  assert.equal(archive.rows.client_packages!.filter(p => classPkgs.some(c => c.id === p.source_class_package_id)).length, 0)
+})
+
+test('SUP-47 another Entity that clashes with the first, or sells a package without what its kind needs, is refused', async () => {
+  const refused = async (entities: unknown[], starts: string) =>
+    assert.rejects(run({ ...fixtureConfig(), entityName: 'Yoga', entities } as never), (e: unknown) =>
+      e instanceof ConfigError && e.problems.some(p => p.startsWith(starts)),
+    )
+  await refused([{ name: 'yoga' }], 'entities[0] (yoga) has the link')
+  await refused([{ name: 'Pilates', packages: [{ name: 'Ten', kind: 'credit_bundle', priceSgd: 1 }] }], 'entities[0] (Pilates).packages[0] (Ten).credits')
+  await refused([{ name: 'Pilates', packages: [{ name: 'Duet', kind: 'pt', credits: 1, validityDays: 1, priceSgd: 1 }] }], 'entities[0] (Pilates).packages[0] (Duet).sessionType')
+})
+
 test('members: every profile, lower-cased email, join date in the studio timezone, placeholders gone', async () => {
   const { archive, ids } = await run()
   const byId = (barcode: string) => archive.rows.clients!.find(r => r.id === ids.clients![barcode])!
@@ -328,8 +385,13 @@ test('an Unlimited Plan keeps its expiry, is homed where its member is, and a pa
 
 test('a trial held under two spellings is one trial, and a trial used up years ago is still a trial used', async () => {
   const { archive, ids } = await run()
-  const trials = archive.rows.client_packages!.filter(r => r.kind === 'trial')
+  const trials = archive.rows.client_packages!.filter(r => r.is_trial === true)
   assert.equal(new Set(trials.map(r => r.client_id)).size, trials.length, 'one trial per member, ever')
+  // A trial option is stored as a Credit Bundle with the trial box ticked, never as kind `trial`.
+  assert.ok(trials.length > 0 && trials.every(r => r.kind === 'credit_bundle'))
+  assert.equal(archive.rows.client_packages!.filter(r => r.kind === 'trial').length, 0)
+  assert.equal(archive.rows.class_packages!.filter(r => r.kind === 'trial').length, 0)
+  assert.equal(archive.rows.class_packages!.filter(r => r.is_trial === true).length, 1, 'the trial option is one Credit Bundle trial')
 
   const live = trials.find(r => r.client_id === ids.clients!['100000004'])!
   assert.deepEqual([live.active, live.credits_or_sessions_remaining, live.expires_at, live.amount_paid_sgd], [true, 2, '2090-01-02T15:59:59.000Z', '20.00'])
@@ -1133,7 +1195,8 @@ test('past purchases are a separate opt-in, one per sale line, on the member who
 
   const { archive, ids } = await run(withHistory(true))
   const who = new Map(Object.entries(ids.clients!).map(([barcode, id]) => [id as string, barcode]))
-  const past = archive.rows.client_packages!.filter(p => p.active === false && p.kind === 'credit_bundle')
+  // Packs, not the trial (a Credit Bundle with the trial box ticked) used up years ago.
+  const past = archive.rows.client_packages!.filter(p => p.active === false && p.kind === 'credit_bundle' && p.is_trial !== true)
   assert.deepEqual(
     past
       .map(p => `${who.get(String(p.client_id))} ${p.amount_paid_sgd} ${p.list_price_sgd} ${p.purchased_at} ${p.expires_at} ${p.complimentary}`)
@@ -1294,7 +1357,7 @@ test('history reaching back to a member s trial does not write them a second one
   // A trial bought in 2023, in the window and long used up. A member has one
   // trial ever — the platform holds them to it — and it came across already.
   const { archive, ids, preflight } = await run(withHistory(true, '2023-01-01'))
-  const trials = archive.rows.client_packages!.filter(p => p.kind === 'trial')
+  const trials = archive.rows.client_packages!.filter(p => p.is_trial === true)
   assert.equal(new Set(trials.map(p => p.client_id)).size, trials.length, 'no member holds two trials')
   assert.equal(trials.filter(p => p.client_id === ids.clients!['100000001']).length, 1)
   // The money it took is named, so it is not simply missing from Finance.

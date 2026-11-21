@@ -311,6 +311,18 @@ npm run mindbody -- verify --expected <studio.expected.json> --export-zip <expor
   by the config's `entityName` (`answers.json` `entityName`, filled in by `fill`) where the studio
   already calls its line of practice something, and is "All classes" where that is left out. The studio renames it, or adds a second
   Entity and moves packages, from the portal afterwards (be/CONTEXT.md § Entity).
+- **Other Entities.** A line of practice the studio started that Mindbody never knew (a Pilates
+  side opened on the platform) is the config's `entities` (`answers.json` `entities`, copied by
+  `fill`): each an Entity after the first, in order, with its Class Types (`classTypes`, names) and
+  the packages it sells from launch (`packages`: `name`, `description`, `kind` `credit_bundle`,
+  `unlimited` or `pt`, `trial`, `credits`, `validityDays`, `durationMonths`, `priceSgd`,
+  `sessionType`, `instructorBound`, and an optional launch `promotion` with `label`,
+  `specialPriceSgd` and `endsAt`). They come across live and new: nobody holds them and nothing
+  in the export is theirs; a promotion runs from the download, made by the owner. Keep the
+  answers in step with what the studio set up in the portal, so a re-import brings it back.
+- **Trials.** A catalogue entry of kind `trial` (the config's word for a pricing option sold as a
+  first taste) is written as a Credit Bundle with the trial box ticked (`is_trial`), and so is
+  every holding of it (be/CONTEXT.md § Trial).
 - **The catalogue** (`catalogue` in the config) is one entry per Mindbody pricing option, proposed
   by `starter` from what was sold: the commonest sessions bought, activation-to-expiry spread and
   sale price. A person sets `migrate` on each — `sell` (active, at `priceSgd`), `legacy`

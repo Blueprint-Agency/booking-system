@@ -141,5 +141,15 @@ export function upgradeArchiveRows(rows: Readonly<Rows>, archived: { tenantName?
     }
   }
 
+  // Migrations 0150 and 0151: a trial is a tick on its parent package, and a
+  // Credit Bundle trial, once stored as kind `trial`, is a `credit_bundle` with
+  // `is_trial`. An archive taken before then (with no `is_trial` at all) or
+  // between them (with both) is brought to what 0151 made of it.
+  for (const table of ['class_packages', 'client_packages']) {
+    const tableRows = rows[table]
+    if (!tableRows?.some(r => r.kind === 'trial')) continue
+    out[table] = tableRows.map(r => (r.kind === 'trial' ? { ...r, kind: 'credit_bundle', is_trial: true } : r))
+  }
+
   return out
 }

@@ -223,7 +223,7 @@ export function mapHistory(input: {
       lookups,
       workshopOptions: input.workshopOptions,
       onWorkshops: input.workshopSales ?? new Set(),
-      hasTrial: new Set(input.clientPackages.filter(p => p.kind === 'trial').map(p => barcodeOf.get(String(p.client_id))!)),
+      hasTrial: new Set(input.clientPackages.filter(p => p.is_trial === true).map(p => barcodeOf.get(String(p.client_id))!)),
     })
     clientPackages.push(...past.clientPackages)
     purchases.push(...past.purchases)

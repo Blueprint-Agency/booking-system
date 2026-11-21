@@ -55,6 +55,13 @@ export type StudioAnswers = {
    * every new studio gets ("All classes").
    */
   entityName?: string
+  /**
+   * The studio's other Entities, after that one: lines of practice it started
+   * that Mindbody never knew, each with its Class Types and the packages (and
+   * any launch Promotion) it sells from launch. Copied into the config as they
+   * are (`entities` in `config.ts` documents each field).
+   */
+  entities?: unknown[]
   /** What a PT appointment is called (case-insensitive pattern). Default: "PT" or "personal training". */
   ptPattern?: string
   /** How active staff get in: `active` (no invitation) or `invite`. */
@@ -423,6 +430,8 @@ function fillConfig(starter: Json, answers: StudioAnswers, facts: ReportFacts, s
   c.history = answers.history
   // The Entity everything imported is in, where the studio has named it.
   if (answers.entityName !== undefined) c.entityName = answers.entityName
+  // The studio's other Entities, with what each sells: `validateConfig` checks them.
+  if (answers.entities !== undefined) c.entities = answers.entities
   // 21. Waitlists.
   c.waitlist = { ...DEFAULT_WAITLIST, ...answers.waitlist, classTypes: { ...answers.waitlist?.classTypes } }
   // How each Mindbody payment method is filed: the answers' table, as it is.

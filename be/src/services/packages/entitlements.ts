@@ -134,9 +134,7 @@ export async function getClientEntitlements(
       else classFamilyRunning = true
     }
     if (r.isTrial) trialUsed = true // any trial ever (active or expired) counts as used
-    if (r.kind === 'trial') {
-      if (consumable && balance > 0) hasActiveBundleCredits = true
-    } else if (r.kind === 'unlimited') {
+    if (r.kind === 'unlimited') {
       if (consumable) {
         hasActiveUnlimited = true
         if (isDormant({ kind: 'unlimited', expiresAt: r.expiresAt })) dormant = true
@@ -157,7 +155,7 @@ export async function getClientEntitlements(
           locationIsDormant = r.expiresAt === null
         }
       }
-    } else if (r.kind === 'credit_bundle') {
+    } else if (r.kind === 'credit_bundle' || r.kind === 'trial') {
       if (consumable && balance > 0) hasActiveBundleCredits = true
     } else if (r.kind === 'pt') {
       if (consumable && balance > 0) {
