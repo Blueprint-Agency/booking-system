@@ -70,7 +70,7 @@ describe('a Purchase freezes its lines at checkout', { skip: integrationTestsEna
   let products = 0
   /** A class package in the catalogue. */
   async function classPackage(
-    values: Partial<typeof schema.classPackages.$inferInsert> & { kind: 'credit_bundle' | 'unlimited' | 'trial'; priceSgd: string },
+    values: Partial<typeof schema.classPackages.$inferInsert> & { kind: 'credit_bundle' | 'unlimited'; priceSgd: string },
   ): Promise<{ id: string; name: string }> {
     const name = `${NAME} ${values.kind} ${products++}`
     const [row] = await harness.db
@@ -368,7 +368,7 @@ describe('a Purchase freezes its lines at checkout', { skip: integrationTestsEna
       '300.00',
     )
 
-    const trial = await classPackage({ kind: 'trial', credits: 1, validityDays: 14, priceSgd: '25.00' })
+    const trial = await classPackage({ kind: 'credit_bundle', isTrial: true, credits: 1, validityDays: 14, priceSgd: '25.00' })
     const ivy = await member()
     await assertPaidSale(ivy, await buyPackage(ivy, { package_kind: 'class', package_id: trial.id }), 'class_package', [plain(trial.name, '25.00')], '25.00')
 
@@ -546,12 +546,12 @@ describe('a Purchase freezes its lines at checkout', { skip: integrationTestsEna
       },
     ])
 
-    const trial = await classPackage({ kind: 'trial', credits: 1, validityDays: 14, priceSgd: '0.00' })
+    const trial = await classPackage({ kind: 'credit_bundle', isTrial: true, credits: 1, validityDays: 14, priceSgd: '0.00' })
     const ivy = await member()
     await assertFreeSale(ivy, await buyPackage(ivy, { package_kind: 'class', package_id: trial.id }), 'class_package', [plain(trial.name, '0.00')])
 
     // A priced trial a Promotion makes free is free the same way, and says what came off.
-    const offered = await classPackage({ kind: 'trial', credits: 1, validityDays: 14, priceSgd: '25.00' })
+    const offered = await classPackage({ kind: 'credit_bundle', isTrial: true, credits: 1, validityDays: 14, priceSgd: '25.00' })
     const promotionId = await promotion('class_package', offered.id, { label: 'First class free', specialPriceSgd: '0.00' })
     const uma = await member()
     await assertFreeSale(uma, await buyPackage(uma, { package_kind: 'class', package_id: offered.id }), 'class_package', [

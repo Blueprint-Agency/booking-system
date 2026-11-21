@@ -119,7 +119,8 @@ describe('trial funnel by entity', { skip: integrationTestsEnabled ? false : SKI
 
   const heldTrial = (clientId: string, catalogId: string | null, daysAgo: number) =>
     hold(clientId, {
-      kind: 'trial',
+      kind: 'credit_bundle',
+      isTrial: true,
       sourceClassPackageId: catalogId,
       amountPaidSgd: '0.00',
       listPriceSgd: '20.00',

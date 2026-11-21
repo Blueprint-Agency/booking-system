@@ -80,7 +80,7 @@ describe('purchase confirmation carries the amount paid', { skip: integrationTes
 
   async function catalogue(
     tenantId: string,
-    values: Partial<typeof schema.classPackages.$inferInsert> & { kind: 'credit_bundle' | 'unlimited' | 'trial' },
+    values: Partial<typeof schema.classPackages.$inferInsert> & { kind: 'credit_bundle' | 'unlimited' },
   ): Promise<string> {
     const [row] = await harness.db
       .insert(schema.classPackages)
@@ -116,7 +116,7 @@ describe('purchase confirmation carries the amount paid', { skip: integrationTes
       instructor: await staffAt(tenant, 'instructor', 'instructor'),
       bundleId: await catalogue(tenant.id, { kind: 'credit_bundle', credits: 10, validityDays: 90, priceSgd: '150.00' }),
       unlimitedId: await catalogue(tenant.id, { kind: 'unlimited', durationMonths: 3, priceSgd: '300.00' }),
-      freeTrialId: await catalogue(tenant.id, { kind: 'trial', credits: 1, validityDays: 14, priceSgd: '0.00' }),
+      freeTrialId: await catalogue(tenant.id, { kind: 'credit_bundle', isTrial: true, credits: 1, validityDays: 14, priceSgd: '0.00' }),
       ptId: pt!.id,
       corporateId: corporate!.id,
     }
@@ -349,7 +349,8 @@ describe('purchase confirmation carries the amount paid', { skip: integrationTes
 
       const [held] = await packagesOf(ivy)
       assert.equal(held?.id, granted.client_package_id)
-      assert.equal(held?.kind, 'trial')
+      assert.equal(held?.kind, 'credit_bundle')
+      assert.equal(held?.isTrial, true)
       assert.equal(held?.amountPaidSgd, '0.00')
 
       await oneConfirmation(ivy, at, 'trial_pass_purchase_confirmed', 'S$0.00')

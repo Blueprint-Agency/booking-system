@@ -100,10 +100,9 @@ const PAYROLL_TYPE: Record<PayrollRow['kind'], MoneyEventType> = {
 }
 
 /** What a package purchase was, in the type column's vocabulary. */
-const PACKAGE_TYPE: Record<'credit_bundle' | 'unlimited' | 'trial' | 'pt', MoneyEventType> = {
+const PACKAGE_TYPE: Record<'credit_bundle' | 'unlimited' | 'pt', MoneyEventType> = {
   credit_bundle: 'credit',
   unlimited: 'unlimited',
-  trial: 'trial',
   pt: 'pt_package',
 }
 

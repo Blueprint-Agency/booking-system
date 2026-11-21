@@ -45,7 +45,7 @@ export const CHECKS: Record<string, Record<string, Rule>> = {
   },
   class_packages: {
     class_packages_kind_fields: r =>
-      (r.kind === 'credit_bundle' || r.kind === 'trial')
+      r.kind === 'credit_bundle'
         ? set(r.credits) && set(r.validity_days) && isNull(r.duration_months)
         : r.kind === 'unlimited' && isNull(r.credits) && isNull(r.validity_days) && set(r.duration_months),
   },

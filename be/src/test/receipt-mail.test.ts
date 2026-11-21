@@ -105,7 +105,7 @@ describe('the purchase confirmations carry the Receipt', { skip: integrationTest
       .returning({ id: schema.classPackages.id })
     const [trial] = await harness.db
       .insert(schema.classPackages)
-      .values({ tenantId: tenant.id, name: `${NAME} first class`, kind: 'trial', credits: 1, validityDays: 14, priceSgd: '0.00' })
+      .values({ tenantId: tenant.id, name: `${NAME} first class`, kind: 'credit_bundle', isTrial: true, credits: 1, validityDays: 14, priceSgd: '0.00' })
       .returning({ id: schema.classPackages.id })
     const admin = await staffAt(tenant, 'admin', 'admin')
     const [corporate] = await harness.db

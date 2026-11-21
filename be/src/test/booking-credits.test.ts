@@ -55,7 +55,7 @@ describe('class booking and the credit ledger over HTTP', { skip: integrationTes
     instructor: Staff
   }
   type Member = { clientId: string; headers: Record<string, string> }
-  type PackageKind = 'credit_bundle' | 'trial' | 'unlimited' | 'pt'
+  type PackageKind = 'credit_bundle' | 'unlimited' | 'pt'
 
   let one!: Studio
   let two!: Studio
@@ -187,6 +187,8 @@ describe('class booking and the credit ledger over HTTP', { skip: integrationTes
 
   type PackageOptions = {
     credits?: number
+    /** A Credit Bundle ticked as a trial (no catalogue source, as a held trial was before). */
+    trial?: boolean
     /** Null (the default) is Dormant: bought, clock not started. */
     expiresAt?: Date | null
     /** An Unlimited Plan's Home Location. */
@@ -205,7 +207,8 @@ describe('class booking and the credit ledger over HTTP', { skip: integrationTes
         tenantId: at.id,
         clientId: who.clientId,
         kind,
-        sourceClassPackageId: kind === 'credit_bundle' ? at.classPackageId : null,
+        isTrial: options.trial ?? false,
+        sourceClassPackageId: kind === 'credit_bundle' && !options.trial ? at.classPackageId : null,
         sourcePtPackageId: kind === 'pt' ? at.pt1on1PackageId : null,
         locationId: unlimited ? (options.locationId ?? at.locationId) : null,
         durationMonths: unlimited ? 1 : null,
@@ -474,7 +477,7 @@ describe('class booking and the credit ledger over HTTP', { skip: integrationTes
 
   test('BKG-02 a trial pays like a Credit Bundle', async () => {
     const bo = await member(one, 'bo')
-    const trial = await give(one, bo, 'trial', { credits: 1 })
+    const trial = await give(one, bo, 'credit_bundle', { credits: 1, trial: true })
     const bookingId = await bookOk(bo, await addClass(one))
 
     const row = await bookingRow(bookingId)
@@ -1035,8 +1038,8 @@ describe('class booking and the credit ledger over HTTP', { skip: integrationTes
 
   test('CRD-14 setting a balance of 3 to 5 records a delta of +2', async () => {
     const jan = await member(one, 'jan')
-    for (const kind of ['credit_bundle', 'trial'] as const) {
-      const p = await give(one, jan, kind, { credits: 3 })
+    for (const trial of [false, true]) {
+      const p = await give(one, jan, 'credit_bundle', { credits: 3, trial })
       const res = await expectStatus(await setBalance(one.admin.headers, jan, p, { balance: 5, reason: 'Corrected' }), 200)
       assert.equal(res.credits_or_sessions_remaining, 5)
       assert.equal(await balanceOf(p), 5)

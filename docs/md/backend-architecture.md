@@ -449,7 +449,7 @@ updated_at, updated_by_staff_id (FK).
 | status | enum `package_status` | `active`, `archived` |
 | archived_at | timestamptz | nullable |
 
-**Indexes:** `(status, kind)`. Partial unique index `(kind) WHERE kind='trial' AND status='active'` is **not** applied — multiple active Trial Pass definitions are allowed at the catalogue level; the one-per-client gate is enforced on `client_packages`, not here.
+**Indexes:** `(status, kind)`. A trial is `is_trial` on a row of either kind, not a kind (migration 0152 took `trial` out of the enum); several active trials are allowed at the catalogue level, and the once-per-type-per-Entity gate is enforced at purchase, not here.
 
 **CHECK:** kind-specific column requirements (Postgres CHECK constraint):
 - `credit_bundle` → credits NOT NULL, validity_days NOT NULL, duration_months NULL
@@ -1282,7 +1282,7 @@ Run idempotently on fresh deployment:
 - All cron handlers in §5 (run via `node-cron`), including the new **`pt-request-expiry`** hourly sweep.
 - Referral chain populated AND reward-grant logic wired (see §7 Referral conversion crediting).
 - **Promotions** (admin-published, best-price-wins resolved at purchase) — see §4d `promotions`. **Promo Codes** (typed by the member, crossing products, capped) ship separately in migration `0016` — see `spec-pre-launch-batch.md` §9–§11.
-- **Trial Pass** as a first-class `class_packages.kind` with server-enforced one-per-client.
+- **Trials** as the `is_trial` tick on a class or PT package, with server-enforced once-per-type-per-Entity.
 - **Multi-day workshops** with derived tier capacity and per-day waitlist scaffolding (workshop waitlist *promotion* remains deferred — `spec-waitlist.md` §12).
 - **Class waitlist** (`spec-waitlist.md`, #152): `waitlist_entries`, join / leave / list under `/me/waitlist`, the catalogue's `waitlist` object, automatic promotion on an online-seat cancel outside the Cancellation Window with the `class_waitlist_promoted` email, the `expireWaitlists` sweep, and the studio switch `feature_flags.waitlist_enabled` (unset = off; joins refused, existing lines still promote).
 - **Workspace scoping** — selected-location filter on all workspace-scoped portal reads.

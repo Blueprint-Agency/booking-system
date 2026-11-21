@@ -55,10 +55,9 @@ export const classPackages = pgTable(
     kind: classPackageKindEnum('kind').notNull(),
     // **Trial** (be/CONTEXT.md § Trial): a package of its kind, for members new
     // to that type in its Entity, once each. Set when the package is made and
-    // never edited. A Credit Bundle trial is a `credit_bundle` with this ticked;
-    // kind `trial` is retired (0151 folded every row into `credit_bundle`, and a
-    // later migration drops the enum value: migrations/README.md rule 0).
-    // Read trial-ness from this column, and the shape from `kind`.
+    // never edited. A Credit Bundle trial is a `credit_bundle` with this ticked
+    // (kind `trial` was retired by migrations 0151 and 0152). Read trial-ness
+    // from this column, and the shape from `kind`.
     isTrial: boolean('is_trial').notNull().default(false),
     credits: integer('credits'),
     validityDays: integer('validity_days'),
@@ -77,9 +76,8 @@ export const classPackages = pgTable(
     // Kind-specific column requirements per §4d:
     //  - credit_bundle → credits NOT NULL, validity_days NOT NULL, duration_months NULL
     //  - unlimited     → credits NULL, validity_days NULL, duration_months NOT NULL
-    //  - trial         → credits NOT NULL, validity_days NOT NULL, duration_months NULL
-    // Trial validity is REQUIRED (spec §3): "never expires" leaves the domain —
-    // a null expiry now means Dormant, which only an Unlimited Plan can be.
+    // A Credit Bundle trial is a credit_bundle, so its validity is REQUIRED too
+    // (spec §3): a null expiry means Dormant, which only an Unlimited Plan can be.
     kindFields: check(
       'class_packages_kind_fields',
       sql`
@@ -92,11 +90,6 @@ export const classPackages = pgTable(
           AND ${table.credits} IS NULL
           AND ${table.validityDays} IS NULL
           AND ${table.durationMonths} IS NOT NULL)
-        OR
-        (${table.kind} = 'trial'
-          AND ${table.credits} IS NOT NULL
-          AND ${table.validityDays} IS NOT NULL
-          AND ${table.durationMonths} IS NULL)
       `,
     ),
   }),

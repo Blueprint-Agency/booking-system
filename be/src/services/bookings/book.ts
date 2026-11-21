@@ -346,7 +346,6 @@ type CandidateKind = CandidatePackage['kind']
 const KIND_NAME: Record<CandidateKind, string> = {
   credit_bundle: 'Credit bundle',
   unlimited: 'Unlimited',
-  trial: 'Trial pass',
   pt: 'PT package',
 }
 

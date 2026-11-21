@@ -765,7 +765,8 @@ describe('admin catalogue over HTTP', { skip: integrationTestsEnabled ? false : 
     const res = await send('POST', '/class-packages', one.admin, {
       name: `${NAME} Trial`,
       entity_id: one.entityId,
-      kind: 'trial',
+      kind: 'credit_bundle',
+      is_trial: true,
       credits: 1,
       price_sgd: '20.00',
     })
@@ -773,13 +774,23 @@ describe('admin catalogue over HTTP', { skip: integrationTestsEnabled ? false : 
     const trial = created(await send('POST', '/class-packages', one.admin, {
       name: `${NAME} Trial`,
       entity_id: one.entityId,
-      kind: 'trial',
+      kind: 'credit_bundle',
+      is_trial: true,
       credits: 1,
       validity_days: 14,
       price_sgd: '20.00',
     }))
+    assert.equal(trial.is_trial, true)
     const cleared = await send('PATCH', `/class-packages/${trial.id}`, one.admin, { validity_days: null })
     assert.equal(cleared.status, 400, `nor cleared later: ${JSON.stringify(cleared.body)}`)
+  })
+
+  test('PKG-85 a Class Package of kind trial is refused: a trial is a Credit Bundle with is_trial true', async () => {
+    const res = await send('POST', '/class-packages', one.admin, bundleBody('Legacy trial kind', { kind: 'trial' }))
+    assert.equal(res.status, 400, JSON.stringify(res.body))
+    const trial = created(await send('POST', '/class-packages', one.admin, bundleBody('Ticked trial', { is_trial: true })))
+    assert.equal(trial.kind, 'credit_bundle')
+    assert.equal(trial.is_trial, true)
   })
 
   test('PKG-23 a PT package with validity days missing, 0 or above 3650 is refused', async () => {
@@ -796,7 +807,7 @@ describe('admin catalogue over HTTP', { skip: integrationTestsEnabled ? false : 
     const refused = [
       ['POST', '/class-packages', bundleBody('x', { name: '   ' })],
       ['POST', '/class-packages', bundleBody('Eternal bundle', { validity_days: 3651 })],
-      ['POST', '/class-packages', { ...bundleBody('Eternal trial', { kind: 'trial' }), validity_days: 2_000_000_000 }],
+      ['POST', '/class-packages', { ...bundleBody('Eternal trial', { is_trial: true }), validity_days: 2_000_000_000 }],
       ['POST', '/class-packages', bundleBody('Eternal plan', { kind: 'unlimited', credits: null, validity_days: null, duration_months: 121 })],
       ['POST', '/pt-packages', ptBody('x', { name: '   ' })],
     ] as const

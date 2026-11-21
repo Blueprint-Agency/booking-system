@@ -36,7 +36,9 @@ describe('client package kind fields in the database', { skip: integrationTestsE
   let locationId!: string
 
   type Fields = {
-    kind: 'credit_bundle' | 'unlimited' | 'trial' | 'pt'
+    kind: 'credit_bundle' | 'unlimited' | 'pt'
+    /** A Credit Bundle ticked as a trial. */
+    isTrial?: boolean
     locationId?: string | null
     durationMonths?: number | null
     validityDays?: number | null
@@ -48,9 +50,9 @@ describe('client package kind fields in the database', { skip: integrationTestsE
       await tx`select set_config('app.tenant_id', ${tenantId}, true)`
       const [row] = await tx<{ id: string }[]>`
         INSERT INTO client_packages
-          (tenant_id, client_id, kind, location_id, duration_months, validity_days, credits_or_sessions_remaining, amount_paid_sgd, list_price_sgd)
+          (tenant_id, client_id, kind, is_trial, location_id, duration_months, validity_days, credits_or_sessions_remaining, amount_paid_sgd, list_price_sgd)
         VALUES
-          (${tenantId}, ${clientId}, ${f.kind}, ${f.locationId ?? null}, ${f.durationMonths ?? null},
+          (${tenantId}, ${clientId}, ${f.kind}, ${f.isTrial ?? false}, ${f.locationId ?? null}, ${f.durationMonths ?? null},
            ${f.validityDays ?? null}, ${f.kind === 'unlimited' ? null : 5}, '120.00', '120.00')
         RETURNING id`
       return row!.id
@@ -120,22 +122,27 @@ describe('client package kind fields in the database', { skip: integrationTestsE
 
   test('LOC-15 a package that is not unlimited written with a location_id or a duration_months is refused by the database', async () => {
     const before = await held()
-    for (const kind of ['credit_bundle', 'trial', 'pt'] as const) {
-      await refused({ kind, validityDays: 30, locationId })
-      await refused({ kind, validityDays: 30, durationMonths: 3 })
-      await refused({ kind, validityDays: 30, locationId, durationMonths: 3 })
+    const shapes = [
+      { kind: 'credit_bundle', isTrial: false },
+      { kind: 'credit_bundle', isTrial: true },
+      { kind: 'pt', isTrial: false },
+    ] as const
+    for (const shape of shapes) {
+      await refused({ ...shape, validityDays: 30, locationId })
+      await refused({ ...shape, validityDays: 30, durationMonths: 3 })
+      await refused({ ...shape, validityDays: 30, locationId, durationMonths: 3 })
     }
     assert.deepEqual(await held(), before, 'no refused package was written')
 
     // Each kind with neither is a row the database keeps.
-    for (const kind of ['credit_bundle', 'trial', 'pt'] as const) await write({ kind, validityDays: 30 })
+    for (const shape of shapes) await write({ ...shape, validityDays: 30 })
     const kept = (await held()).filter(p => p.kind !== 'unlimited')
     assert.deepEqual(
       kept.map(p => [p.kind, p.locationId, p.durationMonths, p.validityDays]).sort(),
       [
         ['credit_bundle', null, null, 30],
+        ['credit_bundle', null, null, 30],
         ['pt', null, null, 30],
-        ['trial', null, null, 30],
       ],
     )
   })

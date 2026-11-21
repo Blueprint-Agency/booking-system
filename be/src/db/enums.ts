@@ -51,14 +51,15 @@ export type AuthPool = (typeof authPoolEnum.enumValues)[number]
 export type AuthEventKind =(typeof authEventKindEnum.enumValues)[number]
 
 // Packages
-export const classPackageKindEnum = pgEnum('class_package_kind', ['credit_bundle', 'unlimited', 'trial'])
+// A trial is no kind: it is the `is_trial` box on a package of one of these (be/CONTEXT.md § Trial).
+export const classPackageKindEnum = pgEnum('class_package_kind', ['credit_bundle', 'unlimited'])
 export const ptSessionTypeEnum = pgEnum('pt_session_type', ['1on1', '2on1'])
 export const packageStatusEnum = pgEnum('package_status', ['active', 'archived'])
 // Corporate purchases deliberately do NOT create a client_packages row: they carry no
 // credits and the corporate_request IS the entitlement. (A 'corporate' kind here would
 // pollute listClientPackages, which renders the class/PT wallet.) The purchase record is
 // the corporate_request + a stripe_payments row (kind='corporate_package').
-export const clientPackageKindEnum = pgEnum('client_package_kind', ['credit_bundle', 'unlimited', 'trial', 'pt'])
+export const clientPackageKindEnum = pgEnum('client_package_kind', ['credit_bundle', 'unlimited', 'pt'])
 
 // Promotions (§4d)
 export const promotionParentEnum = pgEnum('promotion_parent', ['class_package', 'pt_package', 'workshop'])

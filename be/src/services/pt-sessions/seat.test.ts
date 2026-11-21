@@ -43,7 +43,7 @@ assert.deepStrictEqual(
 
 // --- refusals: nothing staff can say makes these pay ---
 
-for (const kind of ['credit_bundle', 'unlimited', 'trial'] as const) {
+for (const kind of ['credit_bundle', 'unlimited'] as const) {
   assert.deepStrictEqual(
     mayPayForSeat({ pkg: pkg({ kind, sessionType: null }), session: oneOnOne, ...asAdmin }),
     { ok: false, refusal: 'not_a_pt_package' },

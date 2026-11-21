@@ -118,7 +118,6 @@ type CountField = 'creditsOrSessions' | 'validityDays' | 'durationMonths'
 
 const FIELDS_OF_KIND: Record<PackageKind, { needs: CountField[]; never: CountField[] }> = {
   credit_bundle: { needs: ['creditsOrSessions', 'validityDays'], never: ['durationMonths'] },
-  trial: { needs: ['creditsOrSessions', 'validityDays'], never: ['durationMonths'] },
   pt: { needs: ['creditsOrSessions', 'validityDays'], never: ['durationMonths'] },
   unlimited: { needs: ['durationMonths'], never: ['creditsOrSessions', 'validityDays'] },
 }

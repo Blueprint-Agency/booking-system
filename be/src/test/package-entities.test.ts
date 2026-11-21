@@ -80,7 +80,7 @@ describe('every package belongs to an Entity', { skip: integrationTestsEnabled ?
       list: 'class_packages',
       one: null,
       table: 'class_packages',
-      body: { kind: 'trial', credits: 2, validity_days: 14, price_sgd: '10.00' },
+      body: { kind: 'credit_bundle', is_trial: true, credits: 2, validity_days: 14, price_sgd: '10.00' },
     },
     pt: {
       path: 'pt-packages',

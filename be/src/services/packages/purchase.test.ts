@@ -26,7 +26,7 @@ assert.strictEqual(
   'a first Unlimited Plan takes the Location the member picked',
 )
 
-for (const kind of ['credit_bundle', 'trial', 'pt'] as const) {
+for (const kind of ['credit_bundle', 'pt'] as const) {
   assert.throws(
     () => locationForPurchase(kind, LOC_A),
     /location_only_applies_to_unlimited/,
@@ -76,7 +76,7 @@ assert.deepStrictEqual(
   'a member holding one plan moves that one',
 )
 
-for (const kind of ['credit_bundle', 'trial', 'pt'] as const) {
+for (const kind of ['credit_bundle', 'pt'] as const) {
   assert.deepStrictEqual(
     homeLocationMove(kind, PKG_ACTIVATED, bothAtA, LOC_B),
     { ok: false, refusal: 'home_location_requires_unlimited' },
@@ -163,7 +163,7 @@ assert.throws(
   'a choice on an unbound PT package is a mistake, not a preference to honour',
 )
 
-for (const kind of ['credit_bundle', 'unlimited', 'trial'] as const) {
+for (const kind of ['credit_bundle', 'unlimited'] as const) {
   assert.strictEqual(
     instructorForPurchase(kind, false, null, ROSTER),
     null,
@@ -235,7 +235,7 @@ assert.deepStrictEqual(
   'clearing a package that is already open writes nothing and says so',
 )
 
-for (const kind of ['credit_bundle', 'unlimited', 'trial'] as const) {
+for (const kind of ['credit_bundle', 'unlimited'] as const) {
   assert.deepStrictEqual(
     boundInstructorChange(kind, null, COACH_A, ROSTER),
     { ok: false, refusal: 'bound_instructor_requires_pt' },

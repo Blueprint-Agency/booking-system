@@ -61,7 +61,7 @@ function serializeClassPackage(
     ...entity,
     name: r.name,
     description: r.description,
-    kind: classSvc.catalogueKind(r),
+    kind: r.kind,
     is_trial: r.isTrial,
     credits: r.credits,
     validity_days: r.validityDays,

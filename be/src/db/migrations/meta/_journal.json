@@ -1065,6 +1065,13 @@
       "when": 1795252456097,
       "tag": "0151_fold_trial_kind",
       "breakpoints": true
+    },
+    {
+      "idx": 152,
+      "version": "7",
+      "when": 1795253926880,
+      "tag": "0152_retire_trial_kind",
+      "breakpoints": true
     }
   ]
 }

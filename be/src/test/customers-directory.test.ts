@@ -192,7 +192,8 @@ describe('customers directory and detail', { skip: integrationTestsEnabled ? fal
     const converted = memberIds[1]!
     for (const id of [trialOnly, converted]) {
       await pkg(id, {
-        kind: 'trial',
+        kind: 'credit_bundle',
+        isTrial: true,
         sourceClassPackageId: trialCatalogId,
         validityDays: 7,
         creditsOrSessionsRemaining: 0,

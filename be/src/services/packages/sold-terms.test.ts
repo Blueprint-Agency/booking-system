@@ -39,7 +39,6 @@ const written = (terms: SoldTerms, override: Record<string, string | null> = {})
 test('PAY-74 terms that are complete for the package kind they were sold as read back, whether the empty values are kept or dropped', () => {
   const sold: Array<[Parameters<typeof soldTermsForKind>[1], SoldTerms]> = [
     ['credit_bundle', bundle],
-    ['trial', { ...bundle, listPriceSgd: '0.00' }],
     ['unlimited', plan],
     ['pt', pt],
   ]
@@ -50,7 +49,7 @@ test('PAY-74 terms that are complete for the package kind they were sold as read
 })
 
 test('PAY-74 a sale none of whose credits, validity or Duration carries a value is an old sale, whatever its kind', () => {
-  for (const kind of ['credit_bundle', 'trial', 'unlimited', 'pt'] as const) {
+  for (const kind of ['credit_bundle', 'unlimited', 'pt'] as const) {
     assert.equal(soldTermsForKind({ list_price_sgd: '150.00' }, kind), null, kind)
     assert.equal(soldTermsForKind({ credits_or_sessions: '', validity_days: '', duration_months: '' }, kind), null, kind)
     assert.equal(soldTermsForKind({}, kind), null, kind)
@@ -61,7 +60,6 @@ test('PAY-74 terms incomplete or malformed for the kind they were sold as are co
   const corrupt: Array<[string, Parameters<typeof soldTermsForKind>[1], SoldTerms, Record<string, string | null>, string]> = [
     ['a length but no credits', 'credit_bundle', bundle, { credits_or_sessions: null }, 'credits_or_sessions'],
     ['credits but no length', 'credit_bundle', bundle, { validity_days: null }, 'validity_days'],
-    ['a trial with a length but no credits', 'trial', bundle, { credits_or_sessions: '' }, 'credits_or_sessions'],
     ['a Duration on a Credit Bundle', 'credit_bundle', bundle, { duration_months: '3' }, 'duration_months'],
     ['a Duration on a PT package', 'pt', pt, { duration_months: '3' }, 'duration_months'],
     ['a PT package with no sessions', 'pt', pt, { credits_or_sessions: null }, 'credits_or_sessions'],

@@ -355,7 +355,7 @@ describe('after-commit work', { skip: integrationTestsEnabled ? false : SKIP_REA
       .returning({ id: schema.clients.id })
     const [trial] = await harness.db
       .insert(schema.classPackages)
-      .values({ tenantId: one.id, name: `${NAME} first class`, kind: 'trial', credits: 1, validityDays: 14, priceSgd: '0.00', status: 'active' })
+      .values({ tenantId: one.id, name: `${NAME} first class`, kind: 'credit_bundle', isTrial: true, credits: 1, validityDays: 14, priceSgd: '0.00', status: 'active' })
       .returning({ id: schema.classPackages.id })
     const held = async () =>
       (await harness.db.select({ id: schema.clientPackages.id }).from(schema.clientPackages).where(eq(schema.clientPackages.clientId, client!.id))).length

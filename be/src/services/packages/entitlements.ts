@@ -155,7 +155,7 @@ export async function getClientEntitlements(
           locationIsDormant = r.expiresAt === null
         }
       }
-    } else if (r.kind === 'credit_bundle' || r.kind === 'trial') {
+    } else if (r.kind === 'credit_bundle') {
       if (consumable && balance > 0) hasActiveBundleCredits = true
     } else if (r.kind === 'pt') {
       if (consumable && balance > 0) {
@@ -194,7 +194,7 @@ export async function getClientEntitlements(
 
 export interface ClientPackageWithSource {
   id: string
-  kind: 'credit_bundle' | 'unlimited' | 'trial' | 'pt'
+  kind: 'credit_bundle' | 'unlimited' | 'pt'
   /** Sold as a trial (be/CONTEXT.md § Trial), whatever its kind. */
   isTrial: boolean
   sourcePackageId: string | null

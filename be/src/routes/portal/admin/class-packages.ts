@@ -22,9 +22,8 @@ import {
   validityDaysField,
 } from './package-fields'
 
-// `trial` is still accepted from a portal built before the trial tick, and read
-// as a Credit Bundle trial (be/CONTEXT.md § Trial).
-const kindEnum = z.enum(['credit_bundle', 'unlimited', 'trial'], {
+// A trial is the `is_trial` tick on one of these, not a kind (be/CONTEXT.md § Trial).
+const kindEnum = z.enum(['credit_bundle', 'unlimited'], {
   message: 'A class package is a credit bundle or an unlimited plan.',
 })
 const isTrialField = z.boolean({ message: 'Trial is true or false.' })
@@ -85,7 +84,7 @@ function serialize(
     ...entity,
     name: r.name,
     description: r.description,
-    kind: svc.catalogueKind(r),
+    kind: r.kind,
     is_trial: r.isTrial,
     credits: r.credits,
     validity_days: r.validityDays,
@@ -144,7 +143,8 @@ const app = new Hono()
         name: body.name,
         entityId: body.entity_id,
         description: body.description ?? null,
-        ...svc.requestedKind(body.kind, body.is_trial),
+        kind: body.kind,
+        isTrial: body.is_trial,
         credits: body.credits ?? null,
         validityDays: body.validity_days ?? null,
         durationMonths: body.duration_months ?? null,

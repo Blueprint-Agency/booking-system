@@ -47,7 +47,7 @@ describe('purchase confirmation email over HTTP', { skip: integrationTestsEnable
       .returning({ id: schema.classPackages.id })
     const [trial] = await harness.db
       .insert(schema.classPackages)
-      .values({ tenantId: tenant.id, name: `${NAME} first class`, kind: 'trial', credits: 1, validityDays: 14, priceSgd: '0.00' })
+      .values({ tenantId: tenant.id, name: `${NAME} first class`, kind: 'credit_bundle', isTrial: true, credits: 1, validityDays: 14, priceSgd: '0.00' })
       .returning({ id: schema.classPackages.id })
     return { ...tenant, paidPackageId: paid!.id, freeTrialId: trial!.id }
   }
@@ -212,7 +212,8 @@ describe('purchase confirmation email over HTTP', { skip: integrationTestsEnable
 
       const [held] = await packagesOf(ivy)
       assert.equal(held?.id, granted.client_package_id)
-      assert.equal(held?.kind, 'trial')
+      assert.equal(held?.kind, 'credit_bundle')
+      assert.equal(held?.isTrial, true)
       assert.equal(held?.creditsOrSessionsRemaining, 1)
       assert.equal(held?.active, true)
     } finally {

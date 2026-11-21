@@ -70,7 +70,7 @@ describe('a Receipt for every kind of Purchase, over HTTP', { skip: integrationT
 
   let products = 0
   async function classPackage(
-    values: Partial<typeof schema.classPackages.$inferInsert> & { kind: 'credit_bundle' | 'unlimited' | 'trial'; priceSgd: string },
+    values: Partial<typeof schema.classPackages.$inferInsert> & { kind: 'credit_bundle' | 'unlimited'; priceSgd: string },
   ): Promise<{ id: string; name: string }> {
     const name = `${NAME} ${values.kind} ${products++}`
     const [row] = await harness.db
@@ -427,7 +427,7 @@ describe('a Receipt for every kind of Purchase, over HTTP', { skip: integrationT
   })
 
   test('INV-21 a paid Trial Pass gives the member one Receipt, and its redelivery issues no second one and skips no number', async () => {
-    const trial = await classPackage({ kind: 'trial', credits: 1, validityDays: 14, priceSgd: '25.00' })
+    const trial = await classPackage({ kind: 'credit_bundle', isTrial: true, credits: 1, validityDays: 14, priceSgd: '25.00' })
     const ivy = await member()
     const event = await pay(await buyPackage(ivy, { package_kind: 'class', package_id: trial.id }))
     const receipt = await assertPaidReceipt(ivy, {
@@ -516,7 +516,7 @@ describe('a Receipt for every kind of Purchase, over HTTP', { skip: integrationT
   /* ── free, opened as an already-paid Purchase ───────────────────────── */
 
   test('INV-27 a free Trial Pass gives the member one S$0.00 Receipt with no payments', async () => {
-    const trial = await classPackage({ kind: 'trial', credits: 1, validityDays: 14, priceSgd: '0.00' })
+    const trial = await classPackage({ kind: 'credit_bundle', isTrial: true, credits: 1, validityDays: 14, priceSgd: '0.00' })
     const ivy = await member()
     await assertFreeReceipt(ivy, await buyPackage(ivy, { package_kind: 'class', package_id: trial.id }), {
       kind: 'class_package',

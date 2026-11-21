@@ -114,7 +114,7 @@ describe('the Receipt backfill', { skip: integrationTestsEnabled ? false : SKIP_
   async function freeTrial(at: Studio): Promise<string> {
     const [row] = await harness.db
       .insert(schema.classPackages)
-      .values({ tenantId: at.id, name: `Free trial ${trials++}`, kind: 'trial', status: 'active', credits: 1, validityDays: 14, priceSgd: '0.00' })
+      .values({ tenantId: at.id, name: `Free trial ${trials++}`, kind: 'credit_bundle', isTrial: true, status: 'active', credits: 1, validityDays: 14, priceSgd: '0.00' })
       .returning({ id: schema.classPackages.id })
     return row!.id
   }

@@ -52,7 +52,7 @@ export function acceptsPackage(rule: PackageRule, sourceClassPackageId: string |
 
 export interface CandidatePackage {
   id: string
-  kind: 'credit_bundle' | 'unlimited' | 'trial' | 'pt'
+  kind: 'credit_bundle' | 'unlimited' | 'pt'
   /** The catalogue package it was bought as — what a class's Package rule names. */
   sourceClassPackageId: string | null
   /**
@@ -154,7 +154,7 @@ type SelectionResult =
   | { ok: false; refusal: 'client_package_not_found' }
 
 function isCreditKind(p: CandidatePackage): boolean {
-  return p.kind === 'credit_bundle' || p.kind === 'trial'
+  return p.kind === 'credit_bundle'
 }
 
 /**

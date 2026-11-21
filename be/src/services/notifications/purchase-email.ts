@@ -89,7 +89,7 @@ export function validityLine(
   validityDays: number | null,
   timezone: string,
 ): string {
-  if (isDormant({ kind, expiresAt })) {
+  if (isDormant({ kind: kind === 'trial' ? 'credit_bundle' : kind, expiresAt })) {
     const length =
       kind === 'unlimited'
         ? plural(durationMonths ?? 0, 'month', 'months')

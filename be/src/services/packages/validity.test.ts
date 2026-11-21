@@ -247,7 +247,6 @@ assert.strictEqual(
 // Every kind is Dormant until its first booking, not only an Unlimited Plan.
 assert.strictEqual(isDormant({ kind: 'credit_bundle', expiresAt: null }), true)
 assert.strictEqual(isDormant({ kind: 'pt', expiresAt: null }), true)
-assert.strictEqual(isDormant({ kind: 'trial', expiresAt: null }), true)
 
 // Activated: the clock is running and has not run out. An expired package is
 // neither Dormant nor Activated — it is over.
@@ -270,7 +269,6 @@ assert.strictEqual(computeActive(bundle(0, null), NOW), false, 'a Dormant bundle
 // One Activated package per family: classes are one family, PT the other.
 assert.strictEqual(familyOf('credit_bundle'), 'class')
 assert.strictEqual(familyOf('unlimited'), 'class')
-assert.strictEqual(familyOf('trial'), 'class')
 assert.strictEqual(familyOf('pt'), 'pt')
 
 // --- the Cross-Location Add-On's months and price ---------------------------

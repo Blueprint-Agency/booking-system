@@ -77,7 +77,7 @@ export async function sendLapsingAlerts(): Promise<void> {
       and(
         eq(clientPackages.tenantId, tenantId),
         eq(clientPackages.active, true),
-        inArray(clientPackages.kind, ['credit_bundle', 'trial']),
+        eq(clientPackages.kind, 'credit_bundle'),
         gt(clientPackages.creditsOrSessionsRemaining, 0),
         gte(clientPackages.expiresAt, new Date(at.getTime() + 6.5 * DAY_MS)),
         lt(clientPackages.expiresAt, new Date(at.getTime() + 7.5 * DAY_MS)),

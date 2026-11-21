@@ -99,7 +99,7 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
     return { id: row!.id, headers }
   }
 
-  async function catalogue(tenantId: string, values: Partial<typeof schema.classPackages.$inferInsert> & { kind: 'credit_bundle' | 'unlimited' | 'trial' }): Promise<string> {
+  async function catalogue(tenantId: string, values: Partial<typeof schema.classPackages.$inferInsert> & { kind: 'credit_bundle' | 'unlimited' }): Promise<string> {
     const [row] = await harness.db
       .insert(schema.classPackages)
       .values({ tenantId, name: `${NAME} ${values.kind}`, priceSgd: '150.00', status: 'active', ...values })
@@ -151,8 +151,8 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
       }
       return {
         id: entityId,
-        trialId: await catalogue(tenant.id, { kind: 'trial', entityId, credits: 1, validityDays: 14, priceSgd: '20.00', name: `${NAME} ${name} trial` }),
-        freeTrialId: await catalogue(tenant.id, { kind: 'trial', entityId, credits: 1, validityDays: 14, priceSgd: '0.00', name: `${NAME} ${name} free trial` }),
+        trialId: await catalogue(tenant.id, { kind: 'credit_bundle', isTrial: true, entityId, credits: 1, validityDays: 14, priceSgd: '20.00', name: `${NAME} ${name} trial` }),
+        freeTrialId: await catalogue(tenant.id, { kind: 'credit_bundle', isTrial: true, entityId, credits: 1, validityDays: 14, priceSgd: '0.00', name: `${NAME} ${name} free trial` }),
         bundleId: await catalogue(tenant.id, { kind: 'credit_bundle', entityId, credits: 10, validityDays: 90, name: `${NAME} ${name} bundle` }),
         ptId: await ptAt({ name: 'pt' }),
         ptTrialId: await ptAt({ name: 'pt trial', isTrial: true, numSessions: 1, validityDays: 30, priceSgd: '90.00' }),
@@ -175,8 +175,8 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
       instructor,
       bundleId: await catalogue(tenant.id, { kind: 'credit_bundle', credits: 10, validityDays: 90 }),
       unlimitedId: await catalogue(tenant.id, { kind: 'unlimited', durationMonths: 3, priceSgd: '300.00' }),
-      trialId: await catalogue(tenant.id, { kind: 'trial', credits: 1, validityDays: 14, priceSgd: '20.00' }),
-      freeTrialId: await catalogue(tenant.id, { kind: 'trial', credits: 1, validityDays: 14, priceSgd: '0.00', name: `${NAME} free trial` }),
+      trialId: await catalogue(tenant.id, { kind: 'credit_bundle', isTrial: true, credits: 1, validityDays: 14, priceSgd: '20.00' }),
+      freeTrialId: await catalogue(tenant.id, { kind: 'credit_bundle', isTrial: true, credits: 1, validityDays: 14, priceSgd: '0.00', name: `${NAME} free trial` }),
       ptId: pt!.id,
       rateSgd: policy.crossLocationRateSgd,
     }
@@ -194,7 +194,7 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
     return { clientId: client!.id, email, headers }
   }
 
-  type HeldKind = 'credit_bundle' | 'unlimited' | 'trial' | 'pt'
+  type HeldKind = 'credit_bundle' | 'unlimited' | 'pt'
   /** A package the member already holds, as an earlier purchase would have left it. */
   async function holds(
     at: Studio,
@@ -206,12 +206,14 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
       locationId?: string
       durationMonths?: number
       crossLocation?: string | null
+      /** A Credit Bundle ticked as a trial; its default source is the studio's trial catalogue package. */
+      trial?: boolean
       /** The catalogue package behind it, when not the studio's own; `null` for one imported with none. */
       source?: { class: string } | { pt: string } | null
     } = {},
   ): Promise<string> {
     const unlimited = kind === 'unlimited'
-    const own = kind === 'pt' ? { pt: at.ptId } : { class: { credit_bundle: at.bundleId, unlimited: at.unlimitedId, trial: at.trialId }[kind] }
+    const own = kind === 'pt' ? { pt: at.ptId } : { class: options.trial ? at.trialId : { credit_bundle: at.bundleId, unlimited: at.unlimitedId }[kind] }
     const source = options.source === undefined ? own : options.source
     const [row] = await harness.db
       .insert(schema.clientPackages)
@@ -219,6 +221,7 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
         tenantId: at.id,
         clientId: who.clientId,
         kind,
+        isTrial: options.trial ?? false,
         sourceClassPackageId: source && 'class' in source ? source.class : null,
         sourcePtPackageId: source && 'pt' in source ? source.pt : null,
         locationId: unlimited ? (options.locationId ?? at.locationId) : null,
@@ -544,7 +547,8 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
 
     const ivy = await member(one)
     const trial = await purchase(ivy, { package_kind: 'class', package_id: one.trialId })
-    assert.equal(trial.kind, 'trial')
+    assert.equal(trial.kind, 'credit_bundle')
+    assert.equal(trial.isTrial, true)
     assert.equal(trial.creditsOrSessionsRemaining, 1)
     assert.equal(trial.validityDays, 14)
     assert.equal(trial.expiresAt, null)
@@ -1497,9 +1501,9 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
   })
 
   test('PKG-06 a member holding a Trial Pass or a PT package may buy a Credit Bundle, an Unlimited Plan or a PT package alongside it', async () => {
-    for (const held of ['trial', 'pt'] as const) {
+    for (const [held, trial] of [['credit_bundle', true], ['pt', false]] as const) {
       const bea = await member(one)
-      await holds(one, bea, held)
+      await holds(one, bea, held, { trial })
       const bundle = await purchase(bea, { package_kind: 'class', package_id: one.bundleId })
       assert.equal(bundle.kind, 'credit_bundle')
       const plan = await purchase(bea, { package_kind: 'class', package_id: one.unlimitedId, location_id: one.locationId })
@@ -1513,9 +1517,9 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
 
   test('PKG-07 a member who has ever held a Trial Pass is refused another 409 trial_already_used before any charge, and the catalogue shows it used', async () => {
     const running = await member(one)
-    await holds(one, running, 'trial')
+    await holds(one, running, 'credit_bundle', { trial: true })
     const lapsed = await member(one)
-    await holds(one, lapsed, 'trial', { expiresAt: new Date(Date.now() - DAY), active: false })
+    await holds(one, lapsed, 'credit_bundle', { trial: true, expiresAt: new Date(Date.now() - DAY), active: false })
 
     for (const who of [running, lapsed]) {
       const asked = sessionsAsked()
@@ -1548,7 +1552,7 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
     const answers = await Promise.all([buyClass(tia, one.freeTrialId), buyClass(tia, one.freeTrialId)])
     const statuses = answers.map(r => r.status).sort()
     assert.deepEqual(statuses, [201, 409], `expected one grant and one refusal, got ${statuses}`)
-    const trials = (await packagesOf(tia)).filter(p => p.kind === 'trial')
+    const trials = (await packagesOf(tia)).filter(p => p.isTrial)
     assert.equal(trials.length, 1, 'one trial')
   })
 
@@ -1569,7 +1573,8 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
     const assertFirstTrialStands = async () => {
       const [trial, ...more] = await packagesOf(kai)
       assert.equal(more.length, 0, 'a second package was granted')
-      assert.equal(trial!.kind, 'trial')
+      assert.equal(trial!.kind, 'credit_bundle')
+      assert.equal(trial!.isTrial, true)
       assert.equal(trial!.purchaseId, first.purchase_id)
       assert.equal(trial!.active, true)
       const sales = await purchasesOf(kai)
@@ -1602,14 +1607,14 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
 
   /* ── trials, one per member per Entity ──────────────────────────────── */
 
-  const trialsOf = async (who: Member) => (await packagesOf(who)).filter(p => p.kind === 'trial')
+  const trialsOf = async (who: Member) => (await packagesOf(who)).filter(p => p.isTrial)
   const trialStandingsOf = async (who: Member) => (await get(who, '/api/v1/me/class-packages')).entitlements
 
   test('PKG-69 a member who has ever held a trial in an Entity is refused another there 409 trial_already_used before any charge, and the catalogue reads it used for that Entity alone', async () => {
     const running = await member(one)
-    await holds(one, running, 'trial', { source: { class: one.pilates.trialId } })
+    await holds(one, running, 'credit_bundle', { trial: true, source: { class: one.pilates.trialId } })
     const lapsed = await member(one)
-    await holds(one, lapsed, 'trial', { source: { class: one.pilates.trialId }, expiresAt: new Date(Date.now() - DAY), active: false })
+    await holds(one, lapsed, 'credit_bundle', { trial: true, source: { class: one.pilates.trialId }, expiresAt: new Date(Date.now() - DAY), active: false })
 
     for (const who of [running, lapsed]) {
       const asked = sessionsAsked()
@@ -1624,14 +1629,15 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
 
   test('PKG-70 a member who used a trial in one Entity may buy one in another, once, priced or free', async () => {
     const free = await member(one)
-    await holds(one, free, 'trial', { source: { class: one.yoga.trialId } })
+    await holds(one, free, 'credit_bundle', { trial: true, source: { class: one.yoga.trialId } })
     await expectStatus(await buyClass(free, one.pilates.freeTrialId), 201)
     assert.deepEqual((await trialsOf(free)).map(t => t.sourceClassPackageId).sort(), [one.yoga.trialId, one.pilates.freeTrialId].sort())
 
     const priced = await member(one)
-    await holds(one, priced, 'trial', { source: { class: one.yoga.trialId } })
+    await holds(one, priced, 'credit_bundle', { trial: true, source: { class: one.yoga.trialId } })
     const granted = await purchase(priced, { package_kind: 'class', package_id: one.pilates.trialId })
-    assert.equal(granted.kind, 'trial')
+    assert.equal(granted.kind, 'credit_bundle')
+    assert.equal(granted.isTrial, true)
     assert.equal((await trialsOf(priced)).length, 2)
 
     // A second one in the Entity they have now used is refused, whichever they bought.
@@ -1752,7 +1758,7 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
       asAdmin('POST', `/clients/${who.clientId}/packages/issue`, { package_kind: 'class', package_id: packageId, reason: 'welcome gift' })
 
     const dee = await member(one)
-    await holds(one, dee, 'trial', { source: { class: one.yoga.trialId } })
+    await holds(one, dee, 'credit_bundle', { trial: true, source: { class: one.yoga.trialId } })
     await expectStatus(await comp(dee, one.yoga.trialId), 409, 'trial_already_used')
     assert.equal((await trialsOf(dee)).length, 1, 'a second Yoga trial was given')
     const given = await expectStatus(await comp(dee, one.pilates.trialId), 201)
@@ -1773,7 +1779,7 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
 
   test('PKG-75 a package held with no catalogue package behind it counts against every Entity: a legacy trial refuses any trial, a legacy bundle makes the member not new', async () => {
     const imported = await member(one)
-    await holds(one, imported, 'trial', { source: null })
+    await holds(one, imported, 'credit_bundle', { trial: true, source: null })
     for (const id of [one.yoga.trialId, one.pilates.trialId, one.pilates.freeTrialId, one.yoga.freeTrialId]) {
       const asked = sessionsAsked()
       await expectStatus(await buyClass(imported, id), 409, 'trial_already_used')

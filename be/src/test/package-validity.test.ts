@@ -49,7 +49,7 @@ describe('package activation and expiry over HTTP', { skip: integrationTestsEnab
     ptId: string
   }
   type Member = { clientId: string; headers: Record<string, string> }
-  type Kind = 'credit_bundle' | 'unlimited' | 'trial' | 'pt'
+  type Kind = 'credit_bundle' | 'unlimited' | 'pt'
 
   let one!: Studio
   let two!: Studio
@@ -103,10 +103,10 @@ describe('package activation and expiry over HTTP', { skip: integrationTestsEnab
     const instructor = await staffAt(tenant, 'instructor', 'instructor')
     await harness.db.insert(schema.instructors).values({ tenantId: tenant.id, staffUserId: instructor.id })
 
-    const catalogue = async (values: Partial<typeof schema.classPackages.$inferInsert> & { kind: 'credit_bundle' | 'unlimited' | 'trial' }) => {
+    const catalogue = async (values: Partial<typeof schema.classPackages.$inferInsert> & { kind: 'credit_bundle' | 'unlimited' }) => {
       const [row] = await harness.db
         .insert(schema.classPackages)
-        .values({ tenantId: tenant.id, name: `${NAME} ${values.kind}`, priceSgd: '150.00', status: 'active', ...values })
+        .values({ tenantId: tenant.id, name: `${NAME} ${values.isTrial ? 'trial' : values.kind}`, priceSgd: '150.00', status: 'active', ...values })
         .returning({ id: schema.classPackages.id })
       return row!.id
     }
@@ -126,7 +126,7 @@ describe('package activation and expiry over HTTP', { skip: integrationTestsEnab
       instructor,
       bundleId: await catalogue({ kind: 'credit_bundle', credits: 10, validityDays: 30 }),
       unlimitedId: await catalogue({ kind: 'unlimited', durationMonths: 1 }),
-      trialId: await catalogue({ kind: 'trial', credits: 1, validityDays: 14, priceSgd: '0.00' }),
+      trialId: await catalogue({ kind: 'credit_bundle', isTrial: true, credits: 1, validityDays: 14, priceSgd: '0.00' }),
       ptId: pt!.id,
     }
   }
@@ -154,7 +154,7 @@ describe('package activation and expiry over HTTP', { skip: integrationTestsEnab
     at: Studio,
     who: Member,
     kind: Kind,
-    options: { credits?: number; expiresAt?: Date | null; locationId?: string; validityDays?: number } = {},
+    options: { credits?: number; expiresAt?: Date | null; locationId?: string; validityDays?: number; trial?: boolean } = {},
   ): Promise<string> {
     const unlimited = kind === 'unlimited'
     const [row] = await harness.db
@@ -163,7 +163,8 @@ describe('package activation and expiry over HTTP', { skip: integrationTestsEnab
         tenantId: at.id,
         clientId: who.clientId,
         kind,
-        sourceClassPackageId: kind === 'pt' ? null : { credit_bundle: at.bundleId, unlimited: at.unlimitedId, trial: at.trialId }[kind],
+        isTrial: options.trial ?? false,
+        sourceClassPackageId: kind === 'pt' ? null : options.trial ? at.trialId : { credit_bundle: at.bundleId, unlimited: at.unlimitedId }[kind],
         sourcePtPackageId: kind === 'pt' ? at.ptId : null,
         locationId: unlimited ? (options.locationId ?? at.locationId) : null,
         durationMonths: unlimited ? 1 : null,
@@ -516,9 +517,9 @@ describe('package activation and expiry over HTTP', { skip: integrationTestsEnab
   /* ── an Admin's hand on a package ───────────────────────────────────── */
 
   test('PKG-25 an Admin editing the expiry of a Credit Bundle, Unlimited Plan or Trial with a reason moves it and writes a zero-delta ledger row naming both dates', async () => {
-    for (const kind of ['credit_bundle', 'unlimited', 'trial'] as const) {
+    for (const [kind, trial] of [['credit_bundle', false], ['unlimited', false], ['credit_bundle', true]] as const) {
       const max = await member(one)
-      const held = await holds(one, max, kind, { expiresAt: days(10) })
+      const held = await holds(one, max, kind, { expiresAt: days(10), trial })
       const moved = days(40)
       const res = await expectStatus(await setExpiry(one.admin, max, held, moved, 'test: extended for an injury'), 200)
       assert.equal(new Date(res.expires_at).toISOString(), moved.toISOString())

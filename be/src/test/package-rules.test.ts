@@ -108,7 +108,7 @@ describe('package rules on a class and a series', { skip: integrationTestsEnable
 
     const catalogue = async (
       label: string,
-      values: Partial<typeof schema.classPackages.$inferInsert> & { kind: 'credit_bundle' | 'unlimited' | 'trial' },
+      values: Partial<typeof schema.classPackages.$inferInsert> & { kind: 'credit_bundle' | 'unlimited' },
     ) => {
       const [row] = await harness.db
         .insert(schema.classPackages)
@@ -137,7 +137,7 @@ describe('package rules on a class and a series', { skip: integrationTestsEnable
       mat: await catalogue('mat', { kind: 'credit_bundle', credits: 10, validityDays: 30 }),
       promo: await catalogue('promo', { kind: 'credit_bundle', credits: 10, validityDays: 30 }),
       unlimited: await catalogue('unlimited', { kind: 'unlimited', durationMonths: 1 }),
-      archived: await catalogue('archived', { kind: 'trial', credits: 1, validityDays: 14, status: 'archived', archivedAt: new Date() }),
+      archived: await catalogue('archived', { kind: 'credit_bundle', isTrial: true, credits: 1, validityDays: 14, status: 'archived', archivedAt: new Date() }),
       pt: pt!.id,
       corporate: corporate!.id,
     }
@@ -365,12 +365,12 @@ describe('package rules on a class and a series', { skip: integrationTestsEnable
     const list = await expectStatus(await send('GET', one.instructor.headers, '/api/v1/portal/instructor/catalog/class-packages'), 200)
     const ours = list.class_packages.filter((p: any) => p.name.startsWith(NAME))
     assert.deepEqual(
-      ours.map((p: any) => [p.name, p.kind, p.status]).sort(),
+      ours.map((p: any) => [p.name, p.kind, p.is_trial, p.status]).sort(),
       [
-        [`${NAME} archived`, 'trial', 'archived'],
-        [`${NAME} mat`, 'credit_bundle', 'active'],
-        [`${NAME} promo`, 'credit_bundle', 'active'],
-        [`${NAME} unlimited`, 'unlimited', 'active'],
+        [`${NAME} archived`, 'credit_bundle', true, 'archived'],
+        [`${NAME} mat`, 'credit_bundle', false, 'active'],
+        [`${NAME} promo`, 'credit_bundle', false, 'active'],
+        [`${NAME} unlimited`, 'unlimited', false, 'active'],
       ],
     )
     assert.ok(ours.every((p: any) => !('price_sgd' in p)))

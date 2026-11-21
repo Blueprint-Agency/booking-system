@@ -78,7 +78,7 @@ export async function countLiveUnlimitedAtLocation(
   return row?.count ?? 0
 }
 
-type PackageKind = 'credit_bundle' | 'unlimited' | 'trial' | 'pt'
+type PackageKind = 'credit_bundle' | 'unlimited' | 'pt'
 
 /**
  * The Home Location this purchase lands on — null for every kind that has none.

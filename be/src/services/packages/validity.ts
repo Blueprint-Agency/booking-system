@@ -1,6 +1,6 @@
 import { now as clockNow } from '../../lib/clock'
 
-export type PackageKind = 'credit_bundle' | 'unlimited' | 'trial' | 'pt'
+export type PackageKind = 'credit_bundle' | 'unlimited' | 'pt'
 
 export interface PackageValidity {
   kind: PackageKind

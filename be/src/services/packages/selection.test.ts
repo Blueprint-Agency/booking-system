@@ -365,9 +365,9 @@ const ok = (r: ReturnType<typeof selectPackage>) => {
   assert.strictEqual(r.creditsUsed, 2)
 }
 
-// A trial pass pays like a bundle, and starts like one.
+// A trial pass is a Credit Bundle ticked as a trial: it pays like a bundle, and starts like one.
 {
-  const t = dormantBundle({ kind: 'trial', creditsOrSessionsRemaining: 1, validityDays: 14 })
+  const t = dormantBundle({ kind: 'credit_bundle',creditsOrSessionsRemaining: 1, validityDays: 14 })
   const r = ok(select([t]))
   assert.strictEqual(r.clientPackageId, t.id)
   assert.strictEqual(r.activateUntil?.toISOString(), '2026-06-15T00:00:00.000Z')

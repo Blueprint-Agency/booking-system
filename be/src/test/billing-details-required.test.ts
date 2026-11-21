@@ -116,7 +116,7 @@ describe('every member purchase is billed to Billing details', { skip: integrati
 
   let products = 0
   async function classPackage(
-    values: Partial<typeof schema.classPackages.$inferInsert> & { kind: 'credit_bundle' | 'unlimited' | 'trial'; priceSgd: string },
+    values: Partial<typeof schema.classPackages.$inferInsert> & { kind: 'credit_bundle' | 'unlimited'; priceSgd: string },
   ): Promise<string> {
     const [row] = await harness.db
       .insert(schema.classPackages)
@@ -416,7 +416,7 @@ describe('every member purchase is billed to Billing details', { skip: integrati
 
     const purchases: [string, string, Record<string, unknown>][] = [
       ['a paid class package', PACKAGE, { package_kind: 'class', package_id: await classPackage({ kind: 'credit_bundle', priceSgd: '150.00' }) }],
-      ['a S$0 Trial Pass', PACKAGE, { package_kind: 'class', package_id: await classPackage({ kind: 'trial', credits: 1, validityDays: 14, priceSgd: '0.00' }) }],
+      ['a S$0 Trial Pass', PACKAGE, { package_kind: 'class', package_id: await classPackage({ kind: 'credit_bundle', isTrial: true, credits: 1, validityDays: 14, priceSgd: '0.00' }) }],
       ['a S$0 class package', PACKAGE, { package_kind: 'class', package_id: await classPackage({ kind: 'credit_bundle', priceSgd: '0.00' }) }],
       ['a paid workshop place', WORKSHOP, { workshop_id: paidPlace.id, workshop_tier_id: paidPlace.tierId }],
       ['a S$0 workshop place', WORKSHOP, { workshop_id: freePlace.id, workshop_tier_id: freePlace.tierId }],
@@ -443,7 +443,7 @@ describe('every member purchase is billed to Billing details', { skip: integrati
     const ivy = await member()
     await saves(ivy, HOME)
     const company = await saves(ivy, COMPANY)
-    const trial = await classPackage({ kind: 'trial', credits: 1, validityDays: 14, priceSgd: '0.00' })
+    const trial = await classPackage({ kind: 'credit_bundle', isTrial: true, credits: 1, validityDays: 14, priceSgd: '0.00' })
 
     await takeFree(ivy, PACKAGE, { package_kind: 'class', package_id: trial, billing_details_id: company })
 

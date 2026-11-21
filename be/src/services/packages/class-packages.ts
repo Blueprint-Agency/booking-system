@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
+import { and, eq, isNull, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { classPackages } from '../../db/schema/packages'
 import { BadRequestError, NotFoundError } from '../../shared/errors'
@@ -11,38 +11,14 @@ import {
 import { replacePromotionsForParent, type PromotionWriteInput } from './promotions'
 
 export type ClassPackageRow = typeof classPackages.$inferSelect
-/** What a class package is, as the API speaks: a trial is a tick on one of these (`isTrial`). */
+/** What a class package is: a trial is a tick on one of these (`isTrial`), not a kind. */
 export type ClassPackageKind = 'credit_bundle' | 'unlimited'
-/**
- * The stored kind. Nothing writes `trial` any more and migration 0151 folded
- * every row into `credit_bundle`, but the build before it still writes one, so
- * it is read until the enum loses the value.
- */
-type StoredClassPackageKind = ClassPackageKind | 'trial'
-
-/** The kind a stored row is, as the API speaks: a stored `trial` is a Credit Bundle trial. */
-export function catalogueKind(row: { kind: StoredClassPackageKind }): ClassPackageKind {
-  return row.kind === 'trial' ? 'credit_bundle' : row.kind
-}
-
-/**
- * The kind a request names, with the legacy `trial` a portal built before the
- * trial tick still sends read as a Credit Bundle trial. Any other kind keeps
- * the tick it came with.
- */
-export function requestedKind(
-  kind: StoredClassPackageKind,
-  isTrial: boolean | undefined,
-): { kind: ClassPackageKind; isTrial: boolean | undefined } {
-  return kind === 'trial' ? { kind: 'credit_bundle', isTrial: true } : { kind, isTrial }
-}
 
 export async function listClassPackages(
   tenantId: string,
   opts: {
     status?: 'active' | 'archived'
-    /** `trial` (legacy) lists the trials, as `isTrial: true` does. */
-    kind?: StoredClassPackageKind
+    kind?: ClassPackageKind
     /** Only trials (true) or only what is not one (false). */
     isTrial?: boolean
     entityId?: string
@@ -54,10 +30,8 @@ export async function listClassPackages(
   if (scope === null) return []
   const filters = [eq(classPackages.tenantId, tenantId), isNull(classPackages.deletedAt)]
   if (opts.status) filters.push(eq(classPackages.status, opts.status))
-  const asked = opts.kind ? requestedKind(opts.kind, opts.isTrial) : { kind: undefined, isTrial: opts.isTrial }
-  if (asked.kind === 'credit_bundle') filters.push(inArray(classPackages.kind, ['credit_bundle', 'trial']))
-  else if (asked.kind) filters.push(eq(classPackages.kind, asked.kind))
-  if (asked.isTrial !== undefined) filters.push(eq(classPackages.isTrial, asked.isTrial))
+  if (opts.kind) filters.push(eq(classPackages.kind, opts.kind))
+  if (opts.isTrial !== undefined) filters.push(eq(classPackages.isTrial, opts.isTrial))
   if (opts.entityId) filters.push(eq(classPackages.entityId, opts.entityId))
   if (scope.entityId) filters.push(eq(classPackages.entityId, scope.entityId))
   return db
@@ -189,13 +163,13 @@ export async function updateClassPackage(
   const merged: CreateClassPackageInput = {
     name: patch.name ?? current.name,
     description: patch.description ?? current.description,
-    kind: catalogueKind(current),
+    kind: current.kind,
     credits: patch.credits !== undefined ? patch.credits : current.credits,
     validityDays: patch.validityDays !== undefined ? patch.validityDays : current.validityDays,
     durationMonths: patch.durationMonths !== undefined ? patch.durationMonths : current.durationMonths,
     priceSgd: patch.priceSgd ?? current.priceSgd,
   }
-  validateKindFields(merged, catalogueKind(current))
+  validateKindFields(merged, current.kind)
 
   const changes = {
     ...(patch.name !== undefined ? { name: patch.name } : {}),

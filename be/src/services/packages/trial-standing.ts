@@ -34,7 +34,7 @@ export const TRIAL_TYPES: readonly TrialType[] = ['group', '1on1', '2on1']
 
 /** One package a member holds, reduced to what the trial rules read. */
 export interface HeldForTrial {
-  kind: 'credit_bundle' | 'unlimited' | 'trial' | 'pt'
+  kind: 'credit_bundle' | 'unlimited' | 'pt'
   /** Sold as a trial (`client_packages.is_trial`). */
   isTrial: boolean
   /** A PT package's 1on1 or 2on1, from its catalogue source; null on a class package or with no source. */
