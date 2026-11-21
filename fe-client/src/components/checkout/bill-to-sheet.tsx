@@ -2,8 +2,8 @@
 
 /**
  * Who a purchase with no review page is billed to: Merch, a S$0
- * package, workshop place or corporate package bought straight from its Buy
- * button, and the trial pass. Every purchase needs Billing details, free ones
+ * package (a free trial among them), workshop place or corporate package
+ * bought straight from its Buy button. Every purchase needs Billing details, free ones
  * included, so these paths stop here before they buy.
  *
  * It is the checkout picker in a sheet: the member's default selected, any

@@ -22,14 +22,18 @@ import {
   validityDaysField,
 } from './package-fields'
 
+// `trial` is still accepted from a portal built before the trial tick, and read
+// as a Credit Bundle trial (be/CONTEXT.md § Trial).
 const kindEnum = z.enum(['credit_bundle', 'unlimited', 'trial'], {
-  message: 'A class package is a credit bundle, an unlimited plan or a trial.',
+  message: 'A class package is a credit bundle or an unlimited plan.',
 })
+const isTrialField = z.boolean({ message: 'Trial is true or false.' })
 const statusEnum = z.enum(['active', 'archived'], { message: 'A status is active or archived.' })
 
 const listQuery = z.object({
   status: statusEnum.optional(),
   kind: kindEnum.optional(),
+  is_trial: z.enum(['true', 'false']).optional(),
   entity: entityFilterField.optional(),
 })
 
@@ -47,6 +51,7 @@ const createSchema = z.object({
   entity_id: entityIdField.optional(),
   description: descriptionField.nullish(),
   kind: kindEnum,
+  is_trial: isTrialField.optional(),
   credits: creditsField.nullish(),
   validity_days: validityDaysField.nullish(),
   duration_months: durationMonthsField.nullish(),
@@ -80,7 +85,8 @@ function serialize(
     ...entity,
     name: r.name,
     description: r.description,
-    kind: r.kind,
+    kind: svc.catalogueKind(r),
+    is_trial: r.isTrial,
     credits: r.credits,
     validity_days: r.validityDays,
     duration_months: r.durationMonths,
@@ -108,7 +114,12 @@ async function serializeWithPromos(tenant: string, r: svc.ClassPackageRow) {
 const app = new Hono()
   .get('/', zValidator('query', listQuery), async c => {
     const q = c.req.valid('query')
-    const rows = await svc.listClassPackages(tenantId(c), { status: q.status, kind: q.kind, entityId: q.entity })
+    const rows = await svc.listClassPackages(tenantId(c), {
+      status: q.status,
+      kind: q.kind,
+      isTrial: q.is_trial === undefined ? undefined : q.is_trial === 'true',
+      entityId: q.entity,
+    })
     const ids = rows.map(r => r.id)
     const promosByPkg = await listManagedPromotionsFor(tenantId(c), 'class_package', ids)
     const entities = await entityFieldsFor(tenantId(c), rows)
@@ -133,7 +144,7 @@ const app = new Hono()
         name: body.name,
         entityId: body.entity_id,
         description: body.description ?? null,
-        kind: body.kind,
+        ...svc.requestedKind(body.kind, body.is_trial),
         credits: body.credits ?? null,
         validityDays: body.validity_days ?? null,
         durationMonths: body.duration_months ?? null,

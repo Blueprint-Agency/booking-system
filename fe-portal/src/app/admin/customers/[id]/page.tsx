@@ -82,6 +82,8 @@ interface ApiPackage {
   /** The Purchase that paid for it: what the bell's `?purchase=` names. */
   purchase_id: string | null;
   kind: PackageKind;
+  /** Sold as a trial, whatever its kind. Optional: a server from before PT trials does not send it. */
+  is_trial?: boolean;
   source_package_id: string | null;
   package_name: string;
   credits_or_sessions_remaining: number | null;
@@ -1357,6 +1359,10 @@ function PackageCard({
           <div className="font-medium break-words text-ink">{p.package_name}</div>
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             <Badge tone={kind.tone}>{kind.label}</Badge>
+            {/* An Unlimited or PT trial: its kind badge says what it is, this
+                that it was sold as a trial. A Credit Bundle trial's kind badge
+                already says Trial. */}
+            {p.is_trial && p.kind !== "trial" && <Badge tone="sage">Trial</Badge>}
             {/* Said on the card, because "paid S$0" below reads as a full
                 discount otherwise, and this one was a gift. */}
             {p.complimentary && <Badge tone="neutral">Free</Badge>}

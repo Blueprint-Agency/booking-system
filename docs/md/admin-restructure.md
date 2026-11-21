@@ -78,7 +78,7 @@ Every date and time in the staff portal, and every time an admin or instructor t
 4. Global Policy — cancellation cap (applies to all clients across all session types)
 
 **Packages + Policies** (configure before creating scheduled sessions):
-5. Classes — Trial Pass, credit bundles, unlimited memberships (+ promotions)
+5. Classes — credit bundles and unlimited memberships, any of them a trial (+ promotions)
 6. Private Sessions — PT packages (+ promotions)
 7. Workshops — multi-day workshop editor (housed under Packages; global/shared, not workspace-scoped — each workshop still picks its own location)
 
@@ -259,20 +259,15 @@ Single source of truth for client-initiated class and PT cancellation. Workshops
 
 **Every package belongs to an Entity** (Packages → Classes, Packages → Private Sessions and Packages → Corporate alike; `be/CONTEXT.md` § Entity, `be-portal.md` § Package Entities). Each package form opens with an **Entity** dropdown that starts on the studio's first Entity and offers "+ New entity", which creates one in place (`POST /portal/admin/entities`) and selects it. Each card names its Entity, and the list has an Entity filter that is hidden while the studio has one. Editing a package and choosing a different Entity first asks the move preview how many members hold it and says so ("N members hold this package. It moves with it, and nothing is cancelled."); Save waits for that answer. A package in an Entity that has been archived cannot be unarchived until it is moved to a live one.
 
-`ClassPackageKind = "credit_bundle" | "unlimited" | "trial"`. Page lists Trial Pass first, then credit bundles, then unlimited memberships.
+`ClassPackageKind = "credit_bundle" | "unlimited"`, each with an `isTrial` tick. The page lists credit bundles, then unlimited memberships, each group with its trials first.
 
-### 5a. Trial Pass (one-per-client, quota-based)
+### 5a. Trials (a tick on a package, once per member per type)
 
-A standalone, quota-based pack that any client may purchase **once only** — enforced at purchase time. A warning header above the section explains the one-per-client rule.
+A trial is not a kind of package (`be/CONTEXT.md` § Trial). The class package form (Credit bundle / Unlimited) and the PT package form (1-on-1 / 2-on-1) each carry a **Trial** checkbox under the type choice, with a line saying who it is for ("For members new to group classes in this Entity…", "…new to 1-on-1 sessions…"). It is taken on create only (`is_trial`): editing a saved package shows the tick disabled, with "Set when the package is created; it can't be changed after." A trial needs a description, as the old Trial Pass did. Its card carries a **Trial** badge, on the Classes page and on Private Sessions alike, and a member's held Unlimited or PT trial shows a Trial badge beside its kind on their profile.
 
-**Trial Pass fields:**
-- `name` (e.g. "First-timer Trial")
-- `description` — short copy shown on the client packages page
-- `price_sgd`
-- `credits` — count of trial classes included
-- `validity_days: number | null` — optional; `null` means no expiry
-- Active / Archived toggle
-- `promotions: Promotion[]` (see §5d)
+The rule the server keeps: a member may buy one trial of each Trial Type (group, 1on1, 2on1) per Entity, ever, and only while new to that type there. An Admin may still comp a trial to a member who has held other packages, but not a second one of the same type in the same Entity.
+
+The old **Trial Pass** section, and its "Multiple active trial passes" warning, are gone: a studio may sell several trials (a group one and a 1-on-1 one, say), and members see each in its own tab.
 
 ### 5b. Credit Bundle package fields
 - `name` (e.g. "5-class pack")
@@ -305,7 +300,7 @@ A standalone, quota-based pack that any client may purchase **once only** — en
 
 **Surfacing:**
 - Active and future promotions render as pills on the `/admin/classes` package cards.
-- The Trial Pass section may also carry promotions, evaluated identically.
+- A trial carries promotions like any package, evaluated identically.
 
 ---
 
@@ -768,7 +763,7 @@ The page is **Customers** in the nav and lives at `/admin/customers`; `/admin/cl
 - The position (search, filter, sort, page, page size) is kept in the address bar (`?q=&filter=&sort=&page=&size=`), so opening a customer and pressing Back returns to the same page.
 - Each row shows: name, email, phone, join date, status chip. Row → the customer's profile.
 
-**Trials filter — the trial funnel.** Selecting **Trials** narrows the list to members who bought a Trial Pass and answers the three questions about them in one screen: how many bought a trial, how many attended it, how many converted. Three tiles sit above the list (each with its share of trials), and the table swaps Joined for **Trial started**, adds **Attended**, and reads the status column as **Converted** / **Follow up**.
+**Trials filter — the trial funnel.** Selecting **Trials** narrows the list to members who bought a trial of any type and answers the three questions about them in one screen: how many bought a trial, how many attended it, how many converted. Three tiles sit above the list (each with its share of trials), and the table swaps Joined for **Trial started**, adds **Attended**, and reads the status column as **Converted** / **Follow up**.
 
 - **Attended** is attendance *on the trial package*, never the member's attendance overall — someone who skipped their trial and returned later on a bundle reads zero, and zero is the follow-up signal.
 - **Converted** means they paid for a package that is not another trial. A comped grant is not a conversion; a second trial is not one either.

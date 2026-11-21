@@ -175,7 +175,8 @@ describe('customers directory and detail', { skip: integrationTestsEnabled ? fal
     trialCatalogId = (
       await classPackagesSvc.createClassPackage(one.id, {
         name: `${PREFIX} Trial`,
-        kind: 'trial',
+        kind: 'credit_bundle',
+        isTrial: true,
         credits: 1,
         validityDays: 7,
         priceSgd: '20.00',

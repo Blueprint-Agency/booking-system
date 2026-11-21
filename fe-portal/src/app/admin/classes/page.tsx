@@ -1,7 +1,7 @@
 "use client";
 import { LoadFailure } from "@/components/ui/load-failure";
 import { useCallback, useEffect, useState } from "react";
-import { Plus, Pencil, Archive, AlertTriangle, Loader2, RotateCcw, Trash2 } from "lucide-react";
+import { Plus, Pencil, Archive, Loader2, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   Button,
@@ -33,7 +33,9 @@ interface ApiClassPackage {
   id: string;
   name: string;
   description: string | null;
-  kind: ClassPackageKind;
+  // `trial` only from a server built before the trial tick: a Credit Bundle trial.
+  kind: ClassPackageKind | "trial";
+  is_trial?: boolean;
   credits: number | null;
   validity_days: number | null;
   duration_months: number | null;
@@ -52,7 +54,8 @@ function fromApi(r: ApiClassPackage): ClassPackage {
     ...packageEntityFromApi(r),
     name: r.name,
     description: r.description ?? "",
-    kind: r.kind,
+    kind: r.kind === "trial" ? "credit_bundle" : r.kind,
+    isTrial: r.is_trial ?? r.kind === "trial",
     credits: r.credits,
     validityDays: r.validity_days,
     durationMonths: r.duration_months,
@@ -98,8 +101,6 @@ export default function ClassPackagesPage() {
   const shown = filterByEntity(packages, entityFilter);
   const active = shown.filter((p) => p.status === "active");
   const archived = shown.filter((p) => p.status === "archived");
-  // The trial warning is about what customers see, whatever the filter shows.
-  const activeTrials = packages.filter((p) => p.status === "active" && p.kind === "trial");
 
   async function handleSave(pkg: ClassPackage) {
     if (!api) return;
@@ -118,7 +119,7 @@ export default function ClassPackagesPage() {
       if (isEdit) {
         await api.patch(`/portal/admin/class-packages/${pkg.id}`, payload);
       } else {
-        await api.post("/portal/admin/class-packages", { ...payload, kind: pkg.kind });
+        await api.post("/portal/admin/class-packages", { ...payload, kind: pkg.kind, is_trial: pkg.isTrial });
       }
       setDialog(null);
       reloadEntities();
@@ -179,7 +180,7 @@ export default function ClassPackagesPage() {
     <div className="mx-auto max-w-5xl">
       <PageHeader
         title="Classes"
-        description="Class packages customers can purchase. Trial Pass is one-time-only per customer. Class scheduling happens on the Schedule page; cancellation policy lives in Global Policy."
+        description="Class packages customers can purchase. A package marked Trial is sold once to each member new to group classes in its Entity. Class scheduling happens on the Schedule page; cancellation policy lives in Global Policy."
         actions={
           <Button onClick={() => setDialog({ kind: "create" })}>
             <Plus className="h-4 w-4" /> Add package
@@ -196,7 +197,7 @@ export default function ClassPackagesPage() {
       ) : packages.length === 0 ? (
         <EmptyState
           title="No packages yet"
-          description="Start with a Trial Pass, then add credit bundles."
+          description="Start with a trial credit bundle, then add the packages members keep buying."
           cta={
             <Button onClick={() => setDialog({ kind: "create" })}>
               <Plus className="h-4 w-4" /> Add package
@@ -217,30 +218,16 @@ export default function ClassPackagesPage() {
           {view === "active" && (
             <div className="space-y-6">
               <PackageGroup
-                title="Trial Pass"
-                description="A one-time-only introductory pass. Each customer can purchase at most one."
-                packages={active.filter((p) => p.kind === "trial")}
-                onEdit={(pkg) => setDialog({ kind: "edit", pkg })}
-                onArchive={archive}
-                warning={
-                  activeTrials.length > 1
-                    ? "Multiple active trial passes — customers will see the first."
-                    : null
-                }
-              />
-              <PackageGroup
                 title="Credit bundles"
-                description="Fixed number of credits valid for a period."
-                packages={active
-                  .filter((p) => p.kind === "credit_bundle")
-                  .sort((a, b) => (a.credits ?? 0) - (b.credits ?? 0))}
+                description="Fixed number of credits valid for a period. Trials first."
+                packages={trialsFirst(active.filter((p) => p.kind === "credit_bundle"))}
                 onEdit={(pkg) => setDialog({ kind: "edit", pkg })}
                 onArchive={archive}
               />
               <PackageGroup
                 title="Unlimited"
-                description="Time-based passes — unlimited classes for a duration."
-                packages={active.filter((p) => p.kind === "unlimited")}
+                description="Time-based passes — unlimited classes for a duration. Trials first."
+                packages={trialsFirst(active.filter((p) => p.kind === "unlimited"))}
                 onEdit={(pkg) => setDialog({ kind: "edit", pkg })}
                 onArchive={archive}
               />
@@ -278,6 +265,12 @@ export default function ClassPackagesPage() {
   );
 }
 
+/** A group's trials ahead of the rest, each part smallest first (fewest credits, shortest plan). */
+function trialsFirst(pkgs: ClassPackage[]): ClassPackage[] {
+  const size = (p: ClassPackage) => p.credits ?? p.durationMonths ?? 0;
+  return [...pkgs].sort((a, b) => Number(b.isTrial) - Number(a.isTrial) || size(a) - size(b));
+}
+
 function PackageGroup({
   title,
   description,
@@ -287,7 +280,6 @@ function PackageGroup({
   onUnarchive,
   onDelete,
   archived,
-  warning,
 }: {
   title: string;
   description: string | null;
@@ -297,7 +289,6 @@ function PackageGroup({
   onUnarchive?: (pkg: ClassPackage) => void;
   onDelete?: (pkg: ClassPackage) => void;
   archived?: boolean;
-  warning?: string | null;
 }) {
   const { visible, pagination } = usePaged(packages);
   if (packages.length === 0) return null;
@@ -306,11 +297,6 @@ function PackageGroup({
       <div className="mb-3">
         <h2 className="text-sm font-semibold text-ink">{title}</h2>
         {description && <p className="text-xs text-muted">{description}</p>}
-        {warning && (
-          <p className="mt-1 inline-flex items-center gap-1 rounded bg-warning/10 px-2 py-1 text-xs text-warning">
-            <AlertTriangle className="h-3 w-3" /> {warning}
-          </p>
-        )}
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         {visible.map((pkg) => (
@@ -357,14 +343,7 @@ function PackageCard({
   const subtitleLines: string[] =
     pkg.kind === "credit_bundle"
       ? [pkg.name, `${pkg.validityDays}-day validity`]
-      : pkg.kind === "unlimited"
-      ? [`${pkg.durationMonths}-month pass`]
-      : pkg.kind === "trial"
-      ? [
-          `${pkg.credits} class${(pkg.credits ?? 0) === 1 ? "" : "es"}`,
-          pkg.validityDays ? `${pkg.validityDays}-day validity` : "no expiry",
-        ]
-      : [];
+      : [`${pkg.durationMonths}-month pass`];
   return (
     <div
       className={`rounded-xl border border-border bg-card p-4 shadow-soft transition sm:p-5 ${
@@ -381,6 +360,7 @@ function PackageCard({
           ))}
         </div>
         <div className="flex shrink-0 flex-wrap justify-end gap-1">
+          {pkg.isTrial && <Badge tone="accent">Trial</Badge>}
           <EntityBadge name={pkg.entityName} />
           {archived && <Badge tone="neutral">Archived</Badge>}
         </div>

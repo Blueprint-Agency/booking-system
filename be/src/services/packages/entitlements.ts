@@ -19,10 +19,9 @@ import { publicObjectUrl } from '../../lib/r2'
 
 export interface ClientEntitlements {
   /**
-   * The client has held a trial in ANY Entity. The trial rules are per Entity
-   * (`trialStandingsByEntity`, which the member Packages page reads); this is
-   * the studio-wide answer, the same as the per-Entity one at a studio with
-   * one Entity.
+   * The client has held a trial of any type in ANY Entity. The trial rules are
+   * per Entity and Trial Type (`trialStandingsByEntity`, which the member
+   * Packages page reads); this is the studio-wide answer.
    */
   trialUsed: boolean
   /** True iff the client owns NO packages yet, in any Entity (see `trialUsed`). */
@@ -96,6 +95,7 @@ export async function getClientEntitlements(
     .select({
       id: clientPackages.id,
       kind: clientPackages.kind,
+      isTrial: clientPackages.isTrial,
       active: clientPackages.active,
       expiresAt: clientPackages.expiresAt,
       remaining: clientPackages.creditsOrSessionsRemaining,
@@ -133,8 +133,8 @@ export async function getClientEntitlements(
       if (familyOf(r.kind) === 'pt') ptFamilyRunning = true
       else classFamilyRunning = true
     }
+    if (r.isTrial) trialUsed = true // any trial ever (active or expired) counts as used
     if (r.kind === 'trial') {
-      trialUsed = true // any trial ever (active or expired) counts as used
       if (consumable && balance > 0) hasActiveBundleCredits = true
     } else if (r.kind === 'unlimited') {
       if (consumable) {
@@ -197,6 +197,8 @@ export async function getClientEntitlements(
 export interface ClientPackageWithSource {
   id: string
   kind: 'credit_bundle' | 'unlimited' | 'trial' | 'pt'
+  /** Sold as a trial (be/CONTEXT.md § Trial), whatever its kind. */
+  isTrial: boolean
   sourcePackageId: string | null
   packageName: string
   creditsOrSessionsRemaining: number | null
@@ -297,6 +299,7 @@ export async function listClientPackages(
     .select({
       id: clientPackages.id,
       kind: clientPackages.kind,
+      isTrial: clientPackages.isTrial,
       sourceClassPackageId: clientPackages.sourceClassPackageId,
       sourcePtPackageId: clientPackages.sourcePtPackageId,
       creditsOrSessionsRemaining: clientPackages.creditsOrSessionsRemaining,
@@ -338,6 +341,7 @@ export async function listClientPackages(
   return rows.map(r => ({
     id: r.id,
     kind: r.kind as ClientPackageWithSource['kind'],
+    isTrial: r.isTrial,
     sourcePackageId: r.sourceClassPackageId ?? r.sourcePtPackageId,
     packageName: r.classPackageName ?? r.ptPackageName ?? 'Package',
     creditsOrSessionsRemaining: r.creditsOrSessionsRemaining,

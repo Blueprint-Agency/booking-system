@@ -53,6 +53,13 @@ export const classPackages = pgTable(
     name: text('name').notNull(),
     description: text('description'),
     kind: classPackageKindEnum('kind').notNull(),
+    // **Trial** (be/CONTEXT.md § Trial): a package of its kind, for members new
+    // to that type in its Entity, once each. Set when the package is made and
+    // never edited. A Credit Bundle trial is still stored as kind `trial` too, so
+    // a build from before this column treats it as a trial; a later contract
+    // migration folds `trial` into `credit_bundle` (migrations/README.md rule 0).
+    // Read trial-ness from this column, and the shape from `kind`.
+    isTrial: boolean('is_trial').notNull().default(false),
     credits: integer('credits'),
     validityDays: integer('validity_days'),
     // Duration is whole calendar months (spec §4). A 6-month plan activated on
@@ -107,6 +114,9 @@ export const ptPackages = pgTable(
     name: text('name').notNull(),
     description: text('description'),
     sessionType: ptSessionTypeEnum('session_type').notNull(),
+    // **Trial**: see `class_packages.is_trial`. A PT trial is a 1on1 or 2on1
+    // package like any other, sold once to a member new to that type.
+    isTrial: boolean('is_trial').notNull().default(false),
     numSessions: integer('num_sessions').notNull(),
     // **Instructor-Bound**: a member buying this package must choose one active
     // instructor at checkout, and the purchase lands tied to them. The flag
@@ -338,6 +348,9 @@ export const clientPackages = pgTable(
     // how much, stays in the studio's accounts without saying to whom.
     clientId: uuid('client_id').references(() => clients.id, { onDelete: 'restrict' }),
     kind: clientPackageKindEnum('kind').notNull(),
+    // Frozen from the catalogue package at purchase: this was sold as a trial.
+    // The trial rules, the Trial Funnel, finance and the confirmation email read it.
+    isTrial: boolean('is_trial').notNull().default(false),
     sourceClassPackageId: uuid('source_class_package_id').references(() => classPackages.id, {
       onDelete: 'restrict',
     }),

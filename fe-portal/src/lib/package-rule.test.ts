@@ -92,6 +92,13 @@ test("a catalogue row becomes a picker package; archived by status, and never a 
   assert.equal(rulePackageFromApi({ id: "x", name: "PT 5", kind: "pt", status: "active" }), null);
 });
 
+test("a trial is listed under Trials whatever its kind, and a legacy kind trial still is", () => {
+  for (const kind of ["credit_bundle", "unlimited"] as const) {
+    assert.equal(rulePackageFromApi({ id: "t", name: "Intro", kind, is_trial: true, status: "active" })?.kind, "trial");
+  }
+  assert.equal(rulePackageFromApi({ id: "t", name: "Intro", kind: "trial", status: "active" })?.kind, "trial");
+});
+
 test("the request body sends the mode and the ticked packages, and none under All group packages", () => {
   assert.deepEqual(packageRuleBody(ACCEPTS_ALL_DRAFT), { mode: "all", package_ids: [] });
   assert.deepEqual(packageRuleBody({ mode: "only", packageIds: ["p2", "p1", "p2"] }), {

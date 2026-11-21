@@ -12,7 +12,7 @@ import type { Tx } from './ledger'
 import { computeActive, crossLocationMonths, crossLocationPriceSgd } from './validity'
 import { classPackageTerms, ptPackageTerms, soldTermsForKind, type SoldTerms } from './sold-terms'
 import { logger } from '../../shared/logger'
-import { assertNoTrialInEntity } from './trial-standing'
+import { assertNoTrialInEntity, trialTypeOf, type TrialType } from './trial-standing'
 
 /**
  * The client's live Unlimited Plans. Live means active and either Activated with
@@ -478,6 +478,9 @@ export async function grantPackage(
   let sourcePtPackageId: string | null = null
   /** The Entity of the catalogue package: where a trial is judged. */
   let entityId: string | null = null
+  /** The catalogue package is a trial, and the type it is a trial of. */
+  let isTrial = false
+  let trialType: TrialType = 'group'
   let catalogueTerms: SoldTerms
   /** The catalogue's Instructor-Bound flag, read at purchase — never a class package's. */
   let instructorBound = false
@@ -499,6 +502,7 @@ export async function grantPackage(
     kind = row.kind
     sourceClassPackageId = row.id
     entityId = row.entityId
+    isTrial = row.isTrial
     catalogueTerms = classPackageTerms(row)
   } else {
     const [row] = await db
@@ -516,6 +520,9 @@ export async function grantPackage(
     if (!input.alreadySold && row.status !== 'active') throw new BadRequestError('pt_package_not_active')
     kind = 'pt'
     sourcePtPackageId = row.id
+    entityId = row.entityId
+    isTrial = row.isTrial
+    trialType = trialTypeOf({ kind: 'pt', sessionType: row.sessionType })
     catalogueTerms = ptPackageTerms(row)
     instructorBound = row.instructorBound
   }
@@ -560,10 +567,11 @@ export async function grantPackage(
     validityDays = terms.validityDays
   }
 
-  // One trial per member per Entity. Before the insert and under the member's
-  // row lock, so it holds for every way a trial is granted and for two of them
-  // racing (the webhook and the sync, two checkouts, a comp beside a sale).
-  if (kind === 'trial') await assertNoTrialInEntity(tenantId, input.clientId, entityId)
+  // One trial per member per Trial Type per Entity. Before the insert and under
+  // the member's row lock, so it holds for every way a trial is granted and for
+  // two of them racing (the webhook and the sync, two checkouts, a comp beside
+  // a sale).
+  if (isTrial) await assertNoTrialInEntity(tenantId, input.clientId, entityId, trialType)
 
   try {
     // In its own savepoint: this runs inside the caller's Tenant transaction,
@@ -576,6 +584,7 @@ export async function grantPackage(
         tenantId,
         clientId: input.clientId,
         kind,
+        isTrial,
         sourceClassPackageId,
         sourcePtPackageId,
         appliedPromotionId: input.appliedPromotionId ?? null,
@@ -656,8 +665,10 @@ export async function grantFreePurchase(
 }
 
 /**
- * Free trial pass purchase — no Stripe, no payment intent. Reuses grantPackage
- * so the one-trial-per-Entity rule holds here too. `salePurchaseId`
+ * Free class-package trial — no Stripe, no payment intent. Reuses grantPackage
+ * so the once-per-type-per-Entity rule holds here too. (A free PT trial takes
+ * checkout's general zero-total path, which grants through the same function.)
+ * `salePurchaseId`
  * is the settled Purchase its checkout opened, whose Receipt the confirmation
  * carries.
  */
@@ -666,6 +677,8 @@ export async function purchaseFreeTrial(
   clientId: string,
   classPackageId: string,
   salePurchaseId: string,
+  /** The Home Location an Unlimited trial lands on; refused for any other kind, as on every grant. */
+  locationId: string | null = null,
 ): Promise<{ clientPackageId: string; created: boolean }> {
   const [pkg] = await db
     .select()
@@ -680,7 +693,7 @@ export async function purchaseFreeTrial(
     .limit(1)
   if (!pkg) throw new NotFoundError('class_package_not_found')
   if (pkg.status !== 'active') throw new BadRequestError('class_package_not_active')
-  if (pkg.kind !== 'trial') throw new BadRequestError('not_a_trial_package')
+  if (!pkg.isTrial) throw new BadRequestError('not_a_trial_package')
 
   const promos = await listActivePromotionsFor(tenantId, 'class_package', [pkg.id])
   const eff = bestPrice(pkg.priceSgd, promos[pkg.id] ?? [])
@@ -696,6 +709,7 @@ export async function purchaseFreeTrial(
     packageKind: 'class',
     packageId: pkg.id,
     appliedPromotionId: eff.appliedPromotionId,
+    locationId,
   })
 
   // A free trial has no sale to be idempotent on, so it reaches here

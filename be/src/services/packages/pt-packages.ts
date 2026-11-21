@@ -60,6 +60,8 @@ export interface CreatePtPackageInput {
    * changes shape unless they opt in.
    */
   instructorBound?: boolean
+  /** Sold as a trial of its session type (be/CONTEXT.md § Trial). Fixed once made. */
+  isTrial?: boolean
   priceSgd: string
   /** The Entity it is sold under. Left out, it goes in the studio's first live Entity; the admin routes always send it. */
   entityId?: string
@@ -80,6 +82,7 @@ export async function createPtPackage(
       numSessions: input.numSessions,
       validityDays: input.validityDays,
       instructorBound: input.instructorBound ?? false,
+      isTrial: input.isTrial ?? false,
       priceSgd: input.priceSgd,
       status: 'active',
     })

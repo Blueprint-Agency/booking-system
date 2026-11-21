@@ -7,6 +7,7 @@ import type { TrialEntitlements } from "./trial-standing";
 
 // ── Wire types (snake_case as returned by BE) ────────────────────────────────
 
+/** `trial` comes only from a server built before the trial tick, for a credit bundle trial. */
 export type ApiClassPackageKind = "credit_bundle" | "unlimited" | "trial";
 export type ApiPtSessionType = "1on1" | "2on1";
 
@@ -25,6 +26,8 @@ export interface ApiClassPackage {
   name: string;
   description: string | null;
   kind: ApiClassPackageKind;
+  /** Sold as a trial: once, to a member new to group classes in its Entity. Read it with `isTrialPackage`. */
+  is_trial?: boolean;
   credits: number | null;
   validity_days: number | null;
   duration_months: number | null;
@@ -57,11 +60,24 @@ export interface ApiPtPackage {
    * at checkout, and the purchase lands tied to them. False asks nothing.
    */
   instructor_bound: boolean;
+  /** Sold as a trial: once, to a member new to this session type in its Entity. Absent from an older server. */
+  is_trial?: boolean;
   price_sgd: string;
   effective_price_sgd: string;
   applied_promotion_id: string | null;
   promotions: ApiPromotion[];
+  entity_id?: string | null;
   entity?: ApiPackageEntity | null;
+}
+
+/** A catalogue package is a trial: its tick, or an older server's `trial` kind. */
+export function isTrialPackage(pkg: ApiClassPackage | ApiPtPackage): boolean {
+  return pkg.is_trial ?? ("kind" in pkg && pkg.kind === "trial");
+}
+
+/** The kind a class package is, as its card draws it: an older server's `trial` is a credit bundle trial. */
+export function classPackageShape(pkg: ApiClassPackage): "credit_bundle" | "unlimited" {
+  return pkg.kind === "unlimited" ? "unlimited" : "credit_bundle";
 }
 
 export interface CatalogEntitlements extends TrialEntitlements {

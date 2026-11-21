@@ -1051,6 +1051,13 @@
       "when": 1795099756165,
       "tag": "0149_client_packages_client_id_index",
       "breakpoints": true
+    },
+    {
+      "idx": 150,
+      "version": "7",
+      "when": 1795239408339,
+      "tag": "0150_trial_flag",
+      "breakpoints": true
     }
   ]
 }

@@ -117,7 +117,7 @@ export interface ClientDirectoryPage {
 
 /** `cp` is a trial: any, or, under an Entity, one whose catalogue package is in it. */
 const isTrial = (entity?: string) =>
-  entity ? sql`cp.kind = 'trial' and ${isOfEntity(entity)}` : sql`cp.kind = 'trial'`
+  entity ? sql`cp.is_trial and ${isOfEntity(entity)}` : sql`cp.is_trial`
 
 /**
  * `cp` is a package of the Entity: a class package or a private package whose
@@ -142,7 +142,7 @@ const hasConverted = (tenantId: string, clientId: SQL, entity?: string) => sql`e
   select 1 from ${clientPackages} cp
   where cp.tenant_id = ${tenantId}::uuid
     and cp.client_id = ${clientId}
-    and cp.kind <> 'trial'
+    and not cp.is_trial
     and cp.amount_paid_sgd > 0
     and not cp.complimentary
     ${entity ? sql`and ${isOfEntity(entity)}` : sql``}

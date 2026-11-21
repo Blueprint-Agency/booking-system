@@ -65,6 +65,10 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
     freeTrialId: string
     bundleId: string
     ptId: string
+    /** A 1on1 PT trial (priced 90.00, free) and a 2on1 PT package that is no trial. */
+    ptTrialId: string
+    freePtTrialId: string
+    pt2on1Id: string
   }
   type Member = { clientId: string; email: string; headers: Record<string, string> }
 
@@ -138,16 +142,22 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
         .values({ tenantId: tenant.id, name: `${NAME} ${name}`, slug: `${name.toLowerCase()}-${run}`, position })
         .returning({ id: schema.entities.id })
       const entityId = entity!.id
-      const [ptRow] = await harness.db
-        .insert(schema.ptPackages)
-        .values({ tenantId: tenant.id, entityId, name: `${NAME} ${name} pt`, sessionType: '1on1', numSessions: 5, validityDays: 90, priceSgd: '400.00' })
-        .returning({ id: schema.ptPackages.id })
+      const ptAt = async (values: Partial<typeof schema.ptPackages.$inferInsert> & { name: string }) => {
+        const [ptRow] = await harness.db
+          .insert(schema.ptPackages)
+          .values({ tenantId: tenant.id, entityId, sessionType: '1on1', numSessions: 5, validityDays: 90, priceSgd: '400.00', ...values, name: `${NAME} ${name} ${values.name}` })
+          .returning({ id: schema.ptPackages.id })
+        return ptRow!.id
+      }
       return {
         id: entityId,
         trialId: await catalogue(tenant.id, { kind: 'trial', entityId, credits: 1, validityDays: 14, priceSgd: '20.00', name: `${NAME} ${name} trial` }),
         freeTrialId: await catalogue(tenant.id, { kind: 'trial', entityId, credits: 1, validityDays: 14, priceSgd: '0.00', name: `${NAME} ${name} free trial` }),
         bundleId: await catalogue(tenant.id, { kind: 'credit_bundle', entityId, credits: 10, validityDays: 90, name: `${NAME} ${name} bundle` }),
-        ptId: ptRow!.id,
+        ptId: await ptAt({ name: 'pt' }),
+        ptTrialId: await ptAt({ name: 'pt trial', isTrial: true, numSessions: 1, validityDays: 30, priceSgd: '90.00' }),
+        freePtTrialId: await ptAt({ name: 'free pt trial', isTrial: true, numSessions: 1, validityDays: 30, priceSgd: '0.00' }),
+        pt2on1Id: await ptAt({ name: 'pt 2on1', sessionType: '2on1' }),
       }
     }
 
@@ -1518,11 +1528,10 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
     }
   })
 
-  test('PKG-28 a member who never held a Trial Pass but holds or held another package is refused it 409 trial_not_eligible before any charge', async () => {
+  test('PKG-28 a member who never held a group trial but holds or held another group package is refused it 409 trial_not_eligible before any charge', async () => {
     for (const [kind, options] of [
       ['credit_bundle', {}],
       ['unlimited', {}],
-      ['pt', {}],
       ['credit_bundle', { expiresAt: new Date(Date.now() - DAY), active: false }],
     ] as const) {
       const sam = await member(one)
@@ -1635,10 +1644,9 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
     }
   })
 
-  test('PKG-71 a trial is for a member new to its Entity: any package they hold or held there refuses it 409 trial_not_eligible, and any held in another Entity does not', async () => {
+  test('PKG-71 a group trial is for a member new to group classes in its Entity: any group package they hold or held there refuses it 409 trial_not_eligible, and any held in another Entity does not', async () => {
     for (const [kind, held] of [
       ['credit_bundle', { source: { class: one.pilates.bundleId } }],
-      ['pt', { source: { pt: one.pilates.ptId } }],
       ['credit_bundle', { source: { class: one.pilates.bundleId }, expiresAt: new Date(Date.now() - DAY), active: false }],
     ] as const) {
       const sam = await member(one)
@@ -1804,6 +1812,73 @@ describe('buying packages over HTTP', { skip: integrationTestsEnabled ? false : 
     assert.equal(after.trial_eligible, false, 'studio-wide: a package held anywhere')
     assert.deepEqual(after.trial_by_entity[one.pilates.id], { trial_used: true, trial_eligible: false })
     assert.deepEqual(after.trial_by_entity[one.yoga.id], { trial_used: false, trial_eligible: true })
+  })
+
+  /* ── trials, one per member per Trial Type per Entity ───────────────── */
+
+  const buyPt = (who: Member, packageId: string) => checkout(who, { package_kind: 'pt', package_id: packageId })
+  const byType = async (who: Member, entityId: string) => (await trialStandingsOf(who)).trial_by_entity_type[entityId]
+
+  test('PKG-81 a trial is judged by its type: a private package does not stand in the way of the group trial, nor a group package or a 2on1 one of the 1on1 trial, and a 1on1 package does', async () => {
+    const ptRegular = await member(one)
+    await holds(one, ptRegular, 'pt', { source: { pt: one.pilates.ptId } })
+    assert.deepEqual(await byType(ptRegular, one.pilates.id), {
+      group: { trial_used: false, trial_eligible: true },
+      '1on1': { trial_used: false, trial_eligible: false },
+      '2on1': { trial_used: false, trial_eligible: true },
+    })
+    await expectStatus(await buyClass(ptRegular, one.pilates.freeTrialId), 201)
+    const asked = sessionsAsked()
+    await expectStatus(await buyPt(ptRegular, one.pilates.ptTrialId), 409, 'trial_not_eligible')
+    await expectStatus(await buyPt(ptRegular, one.pilates.freePtTrialId), 409, 'trial_not_eligible')
+    assert.equal(sessionsAsked(), asked, 'the provider was asked for a session')
+
+    for (const [kind, source] of [
+      ['credit_bundle', { class: one.pilates.bundleId }],
+      ['pt', { pt: one.pilates.pt2on1Id }],
+    ] as const) {
+      const regular = await member(one)
+      await holds(one, regular, kind, { source })
+      await expectStatus(await buyPt(regular, one.pilates.freePtTrialId), 201)
+      const [trial] = (await packagesOf(regular)).filter(p => p.isTrial)
+      assert.equal(trial!.kind, 'pt')
+      assert.equal(trial!.sourcePtPackageId, one.pilates.freePtTrialId)
+    }
+  })
+
+  test('PKG-82 a PT trial is once per member per Entity: priced, it is bought through the provider and lands a trial; a second there is refused 409 trial_already_used, priced or free, and one in another Entity is not', async () => {
+    const tom = await member(one)
+    const granted = await purchase(tom, { package_kind: 'pt', package_id: one.pilates.ptTrialId })
+    assert.equal(granted.kind, 'pt')
+    assert.equal(granted.isTrial, true)
+    assert.equal(granted.amountPaidSgd, '90.00')
+
+    const asked = sessionsAsked()
+    await expectStatus(await buyPt(tom, one.pilates.ptTrialId), 409, 'trial_already_used')
+    await expectStatus(await buyPt(tom, one.pilates.freePtTrialId), 409, 'trial_already_used')
+    assert.equal(sessionsAsked(), asked, 'the provider was asked for a session')
+    assert.deepEqual((await byType(tom, one.pilates.id))['1on1'], { trial_used: true, trial_eligible: false })
+
+    // Another Entity's, and another type's in this one, are still theirs.
+    await expectStatus(await buyPt(tom, one.yoga.freePtTrialId), 201)
+    await expectStatus(await buyClass(tom, one.pilates.freeTrialId), 201)
+    assert.equal((await packagesOf(tom)).filter(p => p.isTrial).length, 3)
+  })
+
+  test('PKG-84 a free Unlimited trial bought with the Cross-Location Add-On charges the Add-On through the provider, and the trial lands carrying it', async () => {
+    const trial = await catalogue(one.id, { kind: 'unlimited', isTrial: true, entityId: one.pilates.id, durationMonths: 1, priceSgd: '0.00', name: `${NAME} free unlimited trial ${run}` })
+    const ivy = await member(one)
+    await expectStatus(await buyClass(ivy, trial, { location_id: one.locationId, cross_location_add_on: true }), 200)
+    const { params } = lastSession()
+    assert.equal(sessionTotal(params), Math.round(Number(one.rateSgd) * 100), 'the provider charges the Add-On, one month of it')
+
+    await expectStatus(await deliver(), 200)
+    const [held] = (await packagesOf(ivy)).filter(p => p.sourceClassPackageId === trial)
+    assert.ok(held, 'the webhook granted nothing')
+    assert.equal(held.kind, 'unlimited')
+    assert.equal(held.isTrial, true)
+    assert.equal(held.amountPaidSgd, '0.00')
+    assert.equal(held.crossLocationPaidSgd, Number(one.rateSgd).toFixed(2))
   })
 
   /* ── prices: Promotions and Promo Codes ─────────────────────────────── */

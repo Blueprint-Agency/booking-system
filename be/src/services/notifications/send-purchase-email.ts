@@ -196,6 +196,7 @@ async function packageEmail(tenantId: string, clientPackageId: string, salePurch
   const [row] = await db
     .select({
       kind: clientPackages.kind,
+      isTrial: clientPackages.isTrial,
       creditsOrSessions: clientPackages.creditsOrSessionsRemaining,
       expiresAt: clientPackages.expiresAt,
       durationMonths: clientPackages.durationMonths,
@@ -227,6 +228,7 @@ async function packageEmail(tenantId: string, clientPackageId: string, salePurch
 
   const { slug, variables } = composePurchaseEmail({
     kind: row.kind,
+    isTrial: row.isTrial,
     clientName: row.clientName,
     packageName: row.classPackageName ?? row.ptPackageName ?? 'Your package',
     creditsOrSessions: row.creditsOrSessions,

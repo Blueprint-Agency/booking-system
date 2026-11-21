@@ -2,12 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams, usePathname, useRouter } from "next/navigation";
-import { Check, Loader2, MessageCircle } from "lucide-react";
-import { useMemberSession } from "@/lib/member-auth";
-import { useAuthGate } from "@/components/auth/auth-gate";
+import { Check, MessageCircle } from "lucide-react";
 import { BuyButton } from "@/components/checkout/buy-button";
-import { BillToSheet } from "@/components/checkout/bill-to-sheet";
-import { blockedByPayments, NO_ONLINE_PAYMENTS, useOnlinePayments } from "@/lib/online-payments";
 import { cn, formatDurationMonths } from "@/lib/utils";
 import { BookingSurface } from "@/components/booking/booking-surface";
 import { PageHeader } from "@/components/booking/page-header";
@@ -30,15 +26,15 @@ import {
   SHEET_PANEL,
   SHEET_TITLE,
 } from "@/components/ui/styles";
-import { useApi } from "@/lib/api";
-import { ERROR_CODES } from "@/lib/error-codes";
 import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import {
   ApiClassPackage,
   ApiPtPackage,
+  classPackageShape,
   formatSgd,
   hasDiscount,
+  isTrialPackage,
   usePackagesCatalog,
 } from "@/lib/packages";
 import {
@@ -53,19 +49,38 @@ import { usePackagesEntity } from "@/lib/public-entities";
 import {
   trialClosedLabel,
   trialClosedText,
-  trialRefusalText,
   trialStandingFor,
   type TrialStanding,
+  type TrialType,
 } from "@/lib/trial-standing";
 
 // ── Tab definitions ────────────────────────────────────────────────────────────
 
 type MainTab = "group" | "private" | "corporate";
-type ClassSubTab = "bundle" | "unlimited" | "trial";
+type ClassSubTab = "bundle" | "unlimited";
 type PrivateSubTab = "1on1" | "2on1";
 
 /**
- * The studio's own terms for its trial pass — who may buy it and what happens
+ * What the cards need to sell a trial: whether this member may take it, and
+ * the studio's terms step before the purchase goes on. A trial sits among the
+ * packages of its own kind — a credit bundle trial with the bundles, a 1-on-1
+ * trial with the 1-on-1 packages — first, with a Trial badge.
+ */
+interface TrialSale {
+  standingOf: (pkg: ApiClassPackage | ApiPtPackage, type: TrialType) => TrialStanding;
+  /** The Entity a closed trial's note names; null when the page shows one Entity's. */
+  entityNameOf: (pkg: ApiClassPackage | ApiPtPackage) => string | null;
+  /** The studio's terms step, or undefined when it has written none. */
+  beforeProceed: ((proceed: () => void) => void) | undefined;
+}
+
+/** A tab's packages with its trials first, keeping the catalogue's order otherwise. */
+function trialsFirst<P extends ApiClassPackage | ApiPtPackage>(pkgs: P[]): P[] {
+  return [...pkgs].sort((a, b) => Number(isTrialPackage(b)) - Number(isTrialPackage(a)));
+}
+
+/**
+ * The studio's own terms for its trials — who may buy one and what happens
  * if they turn out not to qualify — from `tenant_settings.copy`. Studio policy,
  * so it is the studio's words or none: with no terms set, the trial is sold
  * without a notice or an acknowledgement step. Plain text; blank lines survive.
@@ -86,35 +101,22 @@ export default function PackagesPage() {
   const { entity, entities } = usePackagesEntity(routeParams.entity);
   // Set only for a studio with two or more Entities selling packages.
   const currentEntity = entities?.find((e) => e.slug === entity);
-  const { data, loading, error, refresh } = usePackagesCatalog(entity);
+  const { data, loading, error } = usePackagesCatalog(entity);
   const {
     data: corporateData,
     loading: corporateLoading,
     error: corporateError,
     refresh: refreshCorporate,
   } = useCorporatePackages(entity);
-  const api = useApi();
   const [activeTab, setActiveTab] = useState<MainTab>("group");
   const [classSubTab, setClassSubTab] = useState<ClassSubTab>("bundle");
   const [privateSubTab, setPrivateSubTab] = useState<PrivateSubTab>("1on1");
-  const [claimingTrialId, setClaimingTrialId] = useState<string | null>(null);
-  const [pendingTrial, setPendingTrial] = useState<ApiClassPackage | null>(null);
-  // The trial whose Billing details are being asked for, after its terms.
-  const [billingTrial, setBillingTrial] = useState<ApiClassPackage | null>(null);
-  const [trialMessage, setTrialMessage] = useState<
-    { kind: "ok" | "err"; text: string } | null
-  >(null);
+  // `#trial`: open the first tab holding a trial, once the catalogue is here.
+  const [wantsTrial, setWantsTrial] = useState(false);
+  // The rest of a trial purchase, waiting on the member accepting the studio's terms.
+  const [pendingTerms, setPendingTerms] = useState<(() => void) | null>(null);
   const trialTerms = useBrandCopy(TRIAL_TERMS_COPY_KEY, "");
   const trialAck = useBrandCopy(TRIAL_ACK_COPY_KEY, "I have read and accept these terms.");
-  // Terms to accept → the acknowledgement step first; none → straight on to
-  // who it is billed to. A trial is a purchase, so it is billed to the
-  // member's Billing details like any other, free or not.
-  const askBillTo = (pkg: ApiClassPackage) => {
-    setPendingTrial(null);
-    setBillingTrial(pkg);
-  };
-  const requestTrial = (pkg: ApiClassPackage) =>
-    trialTerms ? setPendingTrial(pkg) : askBillTo(pkg);
 
   useEffect(() => {
     function fromHash(): {
@@ -127,8 +129,10 @@ export default function PackagesPage() {
           ? window.location.hash.replace(/^#/, "").toLowerCase()
           : "";
       const none = { main: null, sub: null, priv: null };
-      if (h === "trial" || h === "trial-pass")
-        return { main: "group", sub: "trial", priv: null };
+      if (h === "trial" || h === "trial-pass") {
+        setWantsTrial(true);
+        return none;
+      }
       if (h === "unlimited") return { main: "group", sub: "unlimited", priv: null };
       if (h === "bundle" || h === "bundles")
         return { main: "group", sub: "bundle", priv: null };
@@ -164,25 +168,40 @@ export default function PackagesPage() {
   }, []);
 
   const bundles = useMemo(
-    () => (data?.classPackages ?? []).filter((p) => p.kind === "credit_bundle"),
+    () => trialsFirst((data?.classPackages ?? []).filter((p) => classPackageShape(p) === "credit_bundle")),
     [data],
   );
   const unlimited = useMemo(
-    () => (data?.classPackages ?? []).filter((p) => p.kind === "unlimited"),
-    [data],
-  );
-  const trials = useMemo(
-    () => (data?.classPackages ?? []).filter((p) => p.kind === "trial"),
+    () => trialsFirst((data?.classPackages ?? []).filter((p) => classPackageShape(p) === "unlimited")),
     [data],
   );
   const pt1on1 = useMemo(
-    () => (data?.ptPackages ?? []).filter((p) => p.session_type === "1on1"),
+    () => trialsFirst((data?.ptPackages ?? []).filter((p) => p.session_type === "1on1")),
     [data],
   );
   const pt2on1 = useMemo(
-    () => (data?.ptPackages ?? []).filter((p) => p.session_type === "2on1"),
+    () => trialsFirst((data?.ptPackages ?? []).filter((p) => p.session_type === "2on1")),
     [data],
   );
+
+  // `#trial` opens the first tab that holds a trial, in the page's own order.
+  useEffect(() => {
+    if (!wantsTrial || !data) return;
+    setWantsTrial(false);
+    const first = (
+      [
+        [bundles, "group", "bundle", null],
+        [unlimited, "group", "unlimited", null],
+        [pt1on1, "private", null, "1on1"],
+        [pt2on1, "private", null, "2on1"],
+      ] as const
+    ).find(([pkgs]) => pkgs.some(isTrialPackage));
+    if (!first) return;
+    const [, main, sub, priv] = first;
+    setActiveTab(main);
+    if (sub) setClassSubTab(sub);
+    if (priv) setPrivateSubTab(priv);
+  }, [wantsTrial, data, bundles, unlimited, pt1on1, pt2on1]);
 
   const corporate = useMemo(
     () => (corporateData ?? []).filter((p) => p.status === "active"),
@@ -192,71 +211,24 @@ export default function PackagesPage() {
   const ent = data?.entitlements ?? null;
   const hasUnlimited = ent?.has_active_unlimited ?? false;
   const hasBundle = ent?.has_active_bundle_credits ?? false;
-  // A trial is for a member new to its Entity, so each one reads its own
-  // Entity's standing. Signed out (entitlements null) every trial reads open —
-  // the auth gate runs on click.
-  const standingOf = (pkg: ApiClassPackage) => trialStandingFor(ent, pkg.entity_id);
+  // A trial is for a member new to its type in its Entity, so each one reads
+  // that standing. Signed out (entitlements null) every trial reads open — the
+  // auth gate runs on click.
+  const trials = [...bundles, ...unlimited, ...pt1on1, ...pt2on1].filter(isTrialPackage);
   // The sentence names the Entity only when trials of several are on the page.
   const namesEntities = new Set(trials.map((p) => p.entity_id ?? null)).size > 1;
-  const entityNameOf = (pkg: ApiClassPackage) =>
-    namesEntities ? (pkg.entity?.name ?? null) : null;
+  const trialSale: TrialSale = {
+    standingOf: (pkg, type) => trialStandingFor(ent, pkg.entity_id, type),
+    entityNameOf: (pkg) => (namesEntities ? (pkg.entity?.name ?? null) : null),
+    // Terms to accept → the acknowledgement step first; none → straight on.
+    beforeProceed: trialTerms ? (proceed) => setPendingTerms(() => proceed) : undefined,
+  };
 
   const MAIN_TABS: { key: MainTab; label: string; hidden?: boolean }[] = [
     { key: "group", label: "Group" },
     { key: "private", label: "Private" },
     { key: "corporate", label: "Corporate" },
   ];
-
-  // Runs after the member accepts the studio's trial terms, when it has any.
-  // A $0 trial is granted immediately; a priced trial returns a Stripe Checkout
-  // URL we redirect to.
-  async function purchaseTrial(pkg: ApiClassPackage, billingDetailsId: string) {
-    setBillingTrial(null);
-    setClaimingTrialId(pkg.id);
-    setTrialMessage(null);
-    try {
-      const res = await api.post<{
-        outcome?: string;
-        url?: string;
-        client_package_id?: string;
-      }>("/me/checkout/package", {
-        package_kind: "class",
-        package_id: pkg.id,
-        billing_details_id: billingDetailsId,
-      });
-      // Priced trial → off to Stripe Checkout.
-      if (res?.url) {
-        window.location.href = res.url;
-        return;
-      }
-      // Free trial → granted immediately.
-      setTrialMessage({
-        kind: "ok",
-        text: "Trial pass added. Book a class from the schedule.",
-      });
-      await refresh();
-      setClaimingTrialId(null);
-    } catch (err) {
-      const body =
-        err && typeof err === "object" && "body" in err
-          ? (err as { body: unknown }).body
-          : null;
-      const code =
-        body && typeof body === "object" && "error" in body
-          ? String((body as { error: unknown }).error)
-          : "";
-      const text =
-        code === ERROR_CODES.trial_already_used
-          ? trialRefusalText("trial_already_used", entityNameOf(pkg))
-          : code === ERROR_CODES.trial_not_eligible
-            ? trialRefusalText("trial_not_eligible", entityNameOf(pkg))
-            : code === ERROR_CODES.payments_not_configured
-              ? NO_ONLINE_PAYMENTS
-              : "Couldn't get the trial pass. Try again.";
-      setTrialMessage({ kind: "err", text });
-      setClaimingTrialId(null);
-    }
-  }
 
   return (
     <>
@@ -308,16 +280,11 @@ export default function PackagesPage() {
                 <ClassCreditsSection
                   bundles={bundles}
                   unlimited={unlimited}
-                  trials={trials}
                   subTab={classSubTab}
                   setSubTab={setClassSubTab}
                   hasUnlimited={hasUnlimited}
                   hasBundle={hasBundle}
-                  standingOf={standingOf}
-                  entityNameOf={entityNameOf}
-                  claimingTrialId={claimingTrialId}
-                  trialBanner={trialMessage}
-                  onRequestTrial={requestTrial}
+                  trialSale={trialSale}
                 />
               )}
 
@@ -328,6 +295,7 @@ export default function PackagesPage() {
                   pt2on1={pt2on1}
                   subTab={privateSubTab}
                   setSubTab={setPrivateSubTab}
+                  trialSale={trialSale}
                 />
               )}
 
@@ -343,21 +311,15 @@ export default function PackagesPage() {
           )}
       </BookingSurface>
 
-      {pendingTrial && (
+      {pendingTerms && (
         <TrialTermsModal
           terms={trialTerms}
           acknowledgement={trialAck}
-          onCancel={() => setPendingTrial(null)}
-          onConfirm={() => askBillTo(pendingTrial)}
-        />
-      )}
-
-      {billingTrial && (
-        <BillToSheet
-          item={billingTrial.name}
-          confirmLabel={Number(billingTrial.effective_price_sgd) === 0 ? "Claim trial pass" : "Continue to payment"}
-          onConfirm={(id) => void purchaseTrial(billingTrial, id)}
-          onClose={() => setBillingTrial(null)}
+          onCancel={() => setPendingTerms(null)}
+          onConfirm={() => {
+            setPendingTerms(null);
+            pendingTerms();
+          }}
         />
       )}
     </>
@@ -371,37 +333,76 @@ const SHARED_BLURBS = {
   pt2on1: "Train with a partner and share the cost. 1 session = 60 min.",
 };
 
+/**
+ * One sentence per closed trial in a tab, above its cards: a used trial is
+ * told it was used, one the member is not new to who it is for. One per Entity
+ * (one at a studio with a single Entity).
+ */
+function ClosedTrialNotes({
+  pkgs,
+  type,
+  trialSale,
+}: {
+  pkgs: (ApiClassPackage | ApiPtPackage)[];
+  type: TrialType;
+  trialSale: TrialSale;
+}) {
+  const notes = new Map<string, string>();
+  for (const p of pkgs) {
+    if (!isTrialPackage(p)) continue;
+    const standing = trialSale.standingOf(p, type);
+    if (standing.eligible) continue;
+    const name = trialSale.entityNameOf(p);
+    notes.set(name ?? "", trialClosedText(standing.used, name, type));
+  }
+  return (
+    <>
+      {[...notes.values()].map((text) => (
+        <p key={text} className={NOTE}>
+          {text}
+        </p>
+      ))}
+    </>
+  );
+}
+
+/**
+ * The trial side of a card: its badge, and a closed trial's button in place of
+ * the purchase. Null for a package that is no trial.
+ */
+function trialCardProps(
+  pkg: ApiClassPackage | ApiPtPackage,
+  type: TrialType,
+  trialSale: TrialSale,
+): { closed: string | null; beforeProceed: TrialSale["beforeProceed"] } | null {
+  if (!isTrialPackage(pkg)) return null;
+  const standing = trialSale.standingOf(pkg, type);
+  return {
+    closed: standing.eligible ? null : trialClosedLabel(standing),
+    beforeProceed: trialSale.beforeProceed,
+  };
+}
+
 function ClassCreditsSection({
   bundles,
   unlimited,
-  trials,
   subTab,
   setSubTab,
   hasUnlimited,
   hasBundle,
-  standingOf,
-  entityNameOf,
-  claimingTrialId,
-  trialBanner,
-  onRequestTrial,
+  trialSale,
 }: {
   bundles: ApiClassPackage[];
   unlimited: ApiClassPackage[];
-  trials: ApiClassPackage[];
   subTab: ClassSubTab;
   setSubTab: (s: ClassSubTab) => void;
   hasUnlimited: boolean;
   hasBundle: boolean;
-  standingOf: (pkg: ApiClassPackage) => TrialStanding;
-  entityNameOf: (pkg: ApiClassPackage) => string | null;
-  claimingTrialId: string | null;
-  trialBanner: { kind: "ok" | "err"; text: string } | null;
-  onRequestTrial: (pkg: ApiClassPackage) => void;
+  trialSale: TrialSale;
 }) {
-  const subTabs: { key: ClassSubTab; label: string; hidden?: boolean }[] = [
+  const subTabs: { key: ClassSubTab; label: string }[] = [
     { key: "bundle", label: "Credit bundles" },
     { key: "unlimited", label: "Unlimited" },
-    { key: "trial", label: "Trial pass", hidden: trials.length === 0 },
   ];
 
   return (
@@ -409,7 +410,7 @@ function ClassCreditsSection({
       <SubTabs
         label="Class package type"
         centered
-        tabs={subTabs.filter((t) => !t.hidden).map((t) => ({ value: t.key, label: t.label }))}
+        tabs={subTabs.map((t) => ({ value: t.key, label: t.label }))}
         value={subTab}
         onChange={setSubTab}
       />
@@ -427,12 +428,13 @@ function ClassCreditsSection({
               starts the first time you book a class with it.
             </p>
           )}
+          <ClosedTrialNotes pkgs={bundles} type="group" trialSale={trialSale} />
           {bundles.length === 0 ? (
             <EmptyCatalog kind="bundle" />
           ) : (
             <div className={PACKAGE_GRID}>
               {bundles.map((p) => (
-                <BundleCard key={p.id} pkg={p} disabled={false} disabledReason="" />
+                <BundleCard key={p.id} pkg={p} trial={trialCardProps(p, "group", trialSale)} />
               ))}
             </div>
           )}
@@ -453,107 +455,18 @@ function ClassCreditsSection({
               class with it, and can be for any home studio.
             </p>
           )}
+          <ClosedTrialNotes pkgs={unlimited} type="group" trialSale={trialSale} />
           {unlimited.length === 0 ? (
             <EmptyCatalog kind="unlimited" />
           ) : (
             <div className={PACKAGE_GRID}>
               {unlimited.map((p) => (
-                <UnlimitedCard key={p.id} pkg={p} disabled={false} disabledReason="" />
+                <UnlimitedCard key={p.id} pkg={p} trial={trialCardProps(p, "group", trialSale)} />
               ))}
             </div>
           )}
         </>
       )}
-
-      {subTab === "trial" && (
-        <TrialSection
-          trials={trials}
-          standingOf={standingOf}
-          entityNameOf={entityNameOf}
-          claimingId={claimingTrialId}
-          banner={trialBanner}
-          onRequestTrial={onRequestTrial}
-        />
-      )}
-    </div>
-  );
-}
-
-function TrialSection({
-  trials,
-  standingOf,
-  entityNameOf,
-  claimingId,
-  banner,
-  onRequestTrial,
-}: {
-  trials: ApiClassPackage[];
-  standingOf: (pkg: ApiClassPackage) => TrialStanding;
-  entityNameOf: (pkg: ApiClassPackage) => string | null;
-  claimingId: string | null;
-  banner: { kind: "ok" | "err"; text: string } | null;
-  onRequestTrial: (pkg: ApiClassPackage) => void;
-}) {
-  const terms = useBrandCopy(TRIAL_TERMS_COPY_KEY, "");
-  if (trials.length === 0) {
-    return <EmptyCatalog kind="trial" />;
-  }
-  // Each trial is greyed out unless the member is new to its Entity. One who
-  // has had theirs is told they are not eligible rather than reminded they used it.
-  // One note per Entity that is closed (one at a studio with a single Entity).
-  const closedNotes = new Map<string, string>();
-  for (const p of trials) {
-    const standing = standingOf(p);
-    if (standing.eligible) continue;
-    const name = entityNameOf(p);
-    closedNotes.set(name ?? "", trialClosedText(standing.used, name));
-  }
-  return (
-    <div className="space-y-4">
-      <p className="text-center text-sm text-muted">For first-timers. One per member.</p>
-
-      {/* The studio's own trial terms, shown before purchase — or nothing. */}
-      {terms && (
-        <div className={NOTE}>
-          <p className="font-semibold">Terms</p>
-          <p className="mt-1 text-muted leading-relaxed whitespace-pre-line">{terms}</p>
-        </div>
-      )}
-
-      {banner && (
-        <div
-          role="status"
-          className={cn(
-            "rounded-xl border px-4 py-3 text-sm text-ink",
-            banner.kind === "ok"
-              ? "border-sage/25 bg-sage/10"
-              : "border-error/25 bg-error/10",
-          )}
-        >
-          {banner.text}
-        </div>
-      )}
-      {!banner &&
-        [...closedNotes.values()].map((text) => (
-          <p key={text} className={NOTE}>
-            {text}
-          </p>
-        ))}
-      <div className={PACKAGE_GRID}>
-        {trials.map((p) => {
-          const standing = standingOf(p);
-          return (
-            <TrialCard
-              key={p.id}
-              pkg={p}
-              disabled={!standing.eligible}
-              disabledReason={trialClosedLabel(standing)}
-              isClaiming={claimingId === p.id}
-              onRequestPurchase={() => onRequestTrial(p)}
-            />
-          );
-        })}
-      </div>
     </div>
   );
 }
@@ -563,11 +476,13 @@ function PrivateSection({
   pt2on1,
   subTab,
   setSubTab,
+  trialSale,
 }: {
   pt1on1: ApiPtPackage[];
   pt2on1: ApiPtPackage[];
   subTab: PrivateSubTab;
   setSubTab: (s: PrivateSubTab) => void;
+  trialSale: TrialSale;
 }) {
   const subTabs: { key: PrivateSubTab; label: string }[] = [
     { key: "1on1", label: "1-on-1" },
@@ -584,33 +499,47 @@ function PrivateSection({
         onChange={setSubTab}
       />
 
-      {subTab === "1on1" && <PtSection items={pt1on1} blurb={SHARED_BLURBS.pt1on1} />}
-      {subTab === "2on1" && <PtSection items={pt2on1} blurb={SHARED_BLURBS.pt2on1} />}
+      {subTab === "1on1" && (
+        <PtSection items={pt1on1} type="1on1" blurb={SHARED_BLURBS.pt1on1} trialSale={trialSale} />
+      )}
+      {subTab === "2on1" && (
+        <PtSection items={pt2on1} type="2on1" blurb={SHARED_BLURBS.pt2on1} trialSale={trialSale} />
+      )}
     </div>
   );
 }
 
-function PtSection({ items, blurb }: { items: ApiPtPackage[]; blurb: string }) {
+function PtSection({
+  items,
+  type,
+  blurb,
+  trialSale,
+}: {
+  items: ApiPtPackage[];
+  type: "1on1" | "2on1";
+  blurb: string;
+  trialSale: TrialSale;
+}) {
   if (items.length === 0) {
     return <EmptyCatalog kind="pt" />;
   }
   return (
     <div className="space-y-4">
       <p className="text-center text-sm text-muted">{blurb}</p>
+      <ClosedTrialNotes pkgs={items} type={type} trialSale={trialSale} />
       <div className={PACKAGE_GRID}>
         {items.map((p) => (
-          <PtCard key={p.id} pkg={p} />
+          <PtCard key={p.id} pkg={p} trial={trialCardProps(p, type, trialSale)} />
         ))}
       </div>
     </div>
   );
 }
 
-function EmptyCatalog({ kind }: { kind: "bundle" | "unlimited" | "trial" | "pt" }) {
+function EmptyCatalog({ kind }: { kind: "bundle" | "unlimited" | "pt" }) {
   const copy = {
     bundle: "No credit bundles on sale right now.",
     unlimited: "No Unlimited passes on sale right now.",
-    trial: "No trial pass on offer right now.",
     pt: "No private session packages on sale right now.",
   } as const;
   return <div className={cn(CARD, "px-6 py-10 text-center text-sm text-muted")}>{copy[kind]}</div>;
@@ -689,6 +618,12 @@ function validityLine(days: number | null | undefined, first: "class" | "session
 
 const promo = (pkg: ApiClassPackage | ApiPtPackage) => (hasDiscount(pkg) ? "Promo" : null);
 
+/** The trial side of a card (`trialCardProps`); null for a package that is no trial. */
+type CardTrial = ReturnType<typeof trialCardProps>;
+
+/** A trial says so on its badge, ahead of a Promo: its price is the offer. */
+const badgeOf = (pkg: ApiClassPackage | ApiPtPackage, trial: CardTrial) => (trial ? "Trial" : promo(pkg));
+
 const CARD_BUTTON = cn(BTN_PRIMARY, "w-full");
 
 function DisabledButton({ children }: { children: React.ReactNode }) {
@@ -711,15 +646,7 @@ function PriceBlock({ pkg }: { pkg: ApiClassPackage | ApiPtPackage }) {
   );
 }
 
-function BundleCard({
-  pkg,
-  disabled,
-  disabledReason,
-}: {
-  pkg: ApiClassPackage;
-  disabled: boolean;
-  disabledReason: string;
-}) {
+function BundleCard({ pkg, trial }: { pkg: ApiClassPackage; trial: CardTrial }) {
   const credits = pkg.credits ?? 0;
   // Signing in returns to this page, on this Entity.
   const here = usePathname();
@@ -728,12 +655,13 @@ function BundleCard({
       name={pkg.name}
       headline={`${credits} ${credits === 1 ? "credit" : "credits"}`}
       sub={validityLine(pkg.validity_days, "class")}
-      covers={coversAllLocations(pkg.kind) ? "all" : null}
-      badge={promo(pkg)}
+      covers={coversAllLocations(classPackageShape(pkg)) ? "all" : null}
+      badge={badgeOf(pkg, trial)}
+      highlight={trial !== null}
       price={<PriceBlock pkg={pkg} />}
     >
-      {disabled ? (
-        <DisabledButton>{disabledReason}</DisabledButton>
+      {trial?.closed ? (
+        <DisabledButton>{trial.closed}</DisabledButton>
       ) : (
         <BuyButton
           target={{ kind: "package", packageKind: "class", packageId: pkg.id }}
@@ -741,6 +669,7 @@ function BundleCard({
           itemName={pkg.name}
           gateHref={here}
           priceSgd={pkg.effective_price_sgd}
+          beforeProceed={trial?.beforeProceed}
           className={CARD_BUTTON}
         >
           Purchase
@@ -750,15 +679,7 @@ function BundleCard({
   );
 }
 
-function UnlimitedCard({
-  pkg,
-  disabled,
-  disabledReason,
-}: {
-  pkg: ApiClassPackage;
-  disabled: boolean;
-  disabledReason: string;
-}) {
+function UnlimitedCard({ pkg, trial }: { pkg: ApiClassPackage; trial: CardTrial }) {
   const here = usePathname();
   const months =
     pkg.duration_months != null
@@ -770,12 +691,13 @@ function UnlimitedCard({
       headline={months}
       sub="Starts at your first class"
       covers="home"
-      badge={promo(pkg)}
+      badge={badgeOf(pkg, trial)}
+      highlight={trial !== null}
       price={<PriceBlock pkg={pkg} />}
       features={["Unlimited group classes", "No weekly class limit"]}
     >
-      {disabled ? (
-        <DisabledButton>{disabledReason}</DisabledButton>
+      {trial?.closed ? (
+        <DisabledButton>{trial.closed}</DisabledButton>
       ) : (
         <BuyButton
           target={{ kind: "package", packageKind: "class", packageId: pkg.id }}
@@ -786,6 +708,7 @@ function UnlimitedCard({
           // A plan has a Home studio to pick, at every price — including one a
           // Promotion took to zero.
           requiresReview
+          beforeProceed={trial?.beforeProceed}
           className={CARD_BUTTON}
         >
           Purchase
@@ -795,69 +718,9 @@ function UnlimitedCard({
   );
 }
 
-function TrialCard({
-  pkg,
-  disabled,
-  disabledReason,
-  isClaiming,
-  onRequestPurchase,
-}: {
-  pkg: ApiClassPackage;
-  disabled: boolean;
-  disabledReason: string;
-  isClaiming: boolean;
-  onRequestPurchase: () => void;
-}) {
-  const { isSignedIn } = useMemberSession();
-  const { requireAuth, gate } = useAuthGate("buy a package");
-  const here = usePathname();
-  const credits = pkg.credits ?? 1;
-  const isFree = Number(pkg.effective_price_sgd) === 0;
-  const onlinePayments = useOnlinePayments();
-
-  const ctaClass = cn(CARD_BUTTON, isClaiming && "opacity-70 cursor-wait");
-
-  return (
-    <PackageCard
-      name={pkg.name}
-      headline={`${credits} ${credits === 1 ? "credit" : "credits"}`}
-      sub={validityLine(pkg.validity_days, "class")}
-      covers={coversAllLocations(pkg.kind) ? "all" : null}
-      badge="Trial"
-      highlight
-      price={<PriceBlock pkg={pkg} />}
-    >
-      {disabled ? (
-        <DisabledButton>{disabledReason}</DisabledButton>
-      ) : blockedByPayments(onlinePayments, pkg.effective_price_sgd) ? (
-        // A priced trial at a studio that takes no online payments.
-        <p className="text-sm text-muted text-center">{NO_ONLINE_PAYMENTS}</p>
-      ) : (
-        <>
-          <button
-            type="button"
-            disabled={isClaiming}
-            onClick={() => {
-              if (!isSignedIn) {
-                requireAuth(`${here}#trial`);
-                return;
-              }
-              if (!isClaiming) onRequestPurchase();
-            }}
-            className={ctaClass}
-          >
-            {isClaiming && <Loader2 className="h-4 w-4 animate-spin" />}
-            {isClaiming ? "Processing…" : isFree ? "Claim trial" : "Get trial pass"}
-          </button>
-          {gate}
-        </>
-      )}
-    </PackageCard>
-  );
-}
-
-// The studio's trial terms, accepted AFTER the member clicks purchase and BEFORE
-// checkout. Only shown when the studio has written terms (`trial.terms`).
+// The studio's trial terms, accepted AFTER the member clicks purchase on any
+// trial and BEFORE checkout. Only shown when the studio has written terms
+// (`trial.terms`).
 function TrialTermsModal({
   terms,
   acknowledgement,
@@ -887,7 +750,7 @@ function TrialTermsModal({
       >
         <span aria-hidden className={SHEET_HANDLE} />
         <h3 id="trial-terms-title" className={SHEET_TITLE}>
-          Trial pass terms
+          Trial terms
         </h3>
         <p className={cn(NOTE, "mt-3 max-h-[40dvh] overflow-y-auto leading-relaxed whitespace-pre-line text-ink/80")}>
           {terms}
@@ -908,7 +771,7 @@ function TrialTermsModal({
             Cancel
           </button>
           <button type="button" disabled={!ack} onClick={onConfirm} className={BTN_PRIMARY}>
-            {/* On to who the pass is billed to, which buys it. */}
+            {/* On with the purchase: who it is billed to, or the review page. */}
             Continue
           </button>
         </div>
@@ -918,7 +781,7 @@ function TrialTermsModal({
   );
 }
 
-function PtCard({ pkg }: { pkg: ApiPtPackage }) {
+function PtCard({ pkg, trial }: { pkg: ApiPtPackage; trial: CardTrial }) {
   const here = usePathname();
   const perSession = Math.round(Number(pkg.effective_price_sgd) / pkg.num_sessions);
   return (
@@ -927,7 +790,8 @@ function PtCard({ pkg }: { pkg: ApiPtPackage }) {
       headline={`${pkg.num_sessions} ${pkg.num_sessions === 1 ? "session" : "sessions"}`}
       sub={validityLine(pkg.validity_days, "session")}
       covers="all"
-      badge={promo(pkg)}
+      badge={badgeOf(pkg, trial)}
+      highlight={trial !== null}
       price={
         <div className="flex items-baseline justify-between gap-2">
           <PriceBlock pkg={pkg} />
@@ -942,16 +806,24 @@ function PtCard({ pkg }: { pkg: ApiPtPackage }) {
         pkg.instructor_bound ? "The same instructor every session" : "Any instructor, subject to availability",
       ]}
     >
-      <BuyButton
-        target={{ kind: "package", packageKind: "pt", packageId: pkg.id }}
-        context="buy a package"
-        itemName={pkg.name}
-        gateHref={here}
-        priceSgd={pkg.effective_price_sgd}
-        className={CARD_BUTTON}
-      >
-        Purchase
-      </BuyButton>
+      {trial?.closed ? (
+        <DisabledButton>{trial.closed}</DisabledButton>
+      ) : (
+        <BuyButton
+          target={{ kind: "package", packageKind: "pt", packageId: pkg.id }}
+          context="buy a package"
+          itemName={pkg.name}
+          gateHref={here}
+          priceSgd={pkg.effective_price_sgd}
+          // An Instructor-Bound package has its instructor to pick on the review
+          // page at every price, a free trial included.
+          requiresReview={pkg.instructor_bound}
+          beforeProceed={trial?.beforeProceed}
+          className={CARD_BUTTON}
+        >
+          Purchase
+        </BuyButton>
+      )}
     </PackageCard>
   );
 }

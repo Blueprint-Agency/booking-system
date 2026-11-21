@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql } from 'drizzle-orm'
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { classPackages } from '../../db/schema/packages'
 import { BadRequestError, NotFoundError } from '../../shared/errors'
@@ -11,13 +11,41 @@ import {
 import { replacePromotionsForParent, type PromotionWriteInput } from './promotions'
 
 export type ClassPackageRow = typeof classPackages.$inferSelect
-export type ClassPackageKind = 'credit_bundle' | 'unlimited' | 'trial'
+/** What a class package is, as the API speaks: a trial is a tick on one of these (`isTrial`). */
+export type ClassPackageKind = 'credit_bundle' | 'unlimited'
+/** The stored kind: a Credit Bundle trial is still written `trial` until the contract migration (see the schema). */
+type StoredClassPackageKind = ClassPackageKind | 'trial'
+
+/** The kind a stored row is, as the API speaks: a stored `trial` is a Credit Bundle trial. */
+export function catalogueKind(row: { kind: StoredClassPackageKind }): ClassPackageKind {
+  return row.kind === 'trial' ? 'credit_bundle' : row.kind
+}
+
+/** The kind to store: a Credit Bundle trial stays `trial`, so a build from before `is_trial` still reads it as one. */
+function storedKind(kind: ClassPackageKind, isTrial: boolean): StoredClassPackageKind {
+  return kind === 'credit_bundle' && isTrial ? 'trial' : kind
+}
+
+/**
+ * The kind a request names, with the legacy `trial` a portal built before the
+ * trial tick still sends read as a Credit Bundle trial. Any other kind keeps
+ * the tick it came with.
+ */
+export function requestedKind(
+  kind: StoredClassPackageKind,
+  isTrial: boolean | undefined,
+): { kind: ClassPackageKind; isTrial: boolean | undefined } {
+  return kind === 'trial' ? { kind: 'credit_bundle', isTrial: true } : { kind, isTrial }
+}
 
 export async function listClassPackages(
   tenantId: string,
   opts: {
     status?: 'active' | 'archived'
-    kind?: ClassPackageKind
+    /** `trial` (legacy) lists the trials, as `isTrial: true` does. */
+    kind?: StoredClassPackageKind
+    /** Only trials (true) or only what is not one (false). */
+    isTrial?: boolean
     entityId?: string
     /** `?entity=<slug>`: a slug naming no live Entity of the studio lists nothing. */
     entitySlug?: string
@@ -27,7 +55,10 @@ export async function listClassPackages(
   if (scope === null) return []
   const filters = [eq(classPackages.tenantId, tenantId), isNull(classPackages.deletedAt)]
   if (opts.status) filters.push(eq(classPackages.status, opts.status))
-  if (opts.kind) filters.push(eq(classPackages.kind, opts.kind))
+  const asked = opts.kind ? requestedKind(opts.kind, opts.isTrial) : { kind: undefined, isTrial: opts.isTrial }
+  if (asked.kind === 'credit_bundle') filters.push(inArray(classPackages.kind, ['credit_bundle', 'trial']))
+  else if (asked.kind) filters.push(eq(classPackages.kind, asked.kind))
+  if (asked.isTrial !== undefined) filters.push(eq(classPackages.isTrial, asked.isTrial))
   if (opts.entityId) filters.push(eq(classPackages.entityId, opts.entityId))
   if (scope.entityId) filters.push(eq(classPackages.entityId, scope.entityId))
   return db
@@ -56,6 +87,8 @@ export interface CreateClassPackageInput {
   name: string
   description?: string | null
   kind: ClassPackageKind
+  /** Sold as a trial (be/CONTEXT.md § Trial). Fixed once made, like the kind. */
+  isTrial?: boolean
   credits?: number | null
   validityDays?: number | null
   durationMonths?: number | null
@@ -65,6 +98,9 @@ export interface CreateClassPackageInput {
 }
 
 function validateKindFields(input: CreateClassPackageInput | UpdateClassPackageInput, kind: ClassPackageKind) {
+  // A Credit Bundle trial is a Credit Bundle: validity is REQUIRED for it as for
+  // any (spec §3). "Never expires" has left the domain: a null expiry now means
+  // Dormant, which only an Unlimited Plan can be.
   if (kind === 'credit_bundle') {
     if (input.credits == null || input.validityDays == null) {
       throw new BadRequestError('credit_bundle_requires_credits_and_validity')
@@ -78,15 +114,6 @@ function validateKindFields(input: CreateClassPackageInput | UpdateClassPackageI
     }
     if (input.credits != null || input.validityDays != null) {
       throw new BadRequestError('unlimited_disallows_credits_or_validity')
-    }
-  } else if (kind === 'trial') {
-    // Validity is REQUIRED for a trial (spec §3). "Never expires" has left the
-    // domain: a null expiry now means Dormant, which only an Unlimited Plan can be.
-    if (input.credits == null || input.validityDays == null) {
-      throw new BadRequestError('trial_requires_credits_and_validity')
-    }
-    if (input.durationMonths != null) {
-      throw new BadRequestError('trial_disallows_duration_months')
     }
   }
 }
@@ -104,7 +131,8 @@ export async function createClassPackage(
       entityId,
       name: input.name,
       description: input.description ?? null,
-      kind: input.kind,
+      kind: storedKind(input.kind, input.isTrial ?? false),
+      isTrial: input.isTrial ?? false,
       credits: input.credits ?? null,
       validityDays: input.validityDays ?? null,
       durationMonths: input.durationMonths ?? null,
@@ -162,13 +190,13 @@ export async function updateClassPackage(
   const merged: CreateClassPackageInput = {
     name: patch.name ?? current.name,
     description: patch.description ?? current.description,
-    kind: current.kind,
+    kind: catalogueKind(current),
     credits: patch.credits !== undefined ? patch.credits : current.credits,
     validityDays: patch.validityDays !== undefined ? patch.validityDays : current.validityDays,
     durationMonths: patch.durationMonths !== undefined ? patch.durationMonths : current.durationMonths,
     priceSgd: patch.priceSgd ?? current.priceSgd,
   }
-  validateKindFields(merged, current.kind)
+  validateKindFields(merged, catalogueKind(current))
 
   const changes = {
     ...(patch.name !== undefined ? { name: patch.name } : {}),

@@ -40,7 +40,14 @@ const app = new Hono()
   .get('/class-packages', async c => {
     const rows = await classPackagesSvc.listClassPackages(tenantId(c), {})
     return c.json({
-      class_packages: rows.map(r => ({ id: r.id, name: r.name, kind: r.kind, status: r.status })),
+      class_packages: rows.map(r => ({
+        id: r.id,
+        name: r.name,
+        kind: r.kind,
+        // The picker lists any trial under Trials, an Unlimited one included.
+        is_trial: r.isTrial,
+        status: r.status,
+      })),
     })
   })
   // The studio switches a scheduling form reads: the capacity fields label the

@@ -107,6 +107,16 @@ const PACKAGE_TYPE: Record<'credit_bundle' | 'unlimited' | 'trial' | 'pt', Money
   pt: 'pt_package',
 }
 
+/**
+ * A package purchase's type. A class trial (a Credit Bundle or Unlimited one)
+ * is a Trial, filed under Classes as it always was. A PT trial stays a PT
+ * Package: its Sale Category is Personal training, and Trial would file it
+ * under Classes.
+ */
+export function packageType(kind: keyof typeof PACKAGE_TYPE, isTrial: boolean): MoneyEventType {
+  return isTrial && kind !== 'pt' ? 'trial' : PACKAGE_TYPE[kind]
+}
+
 /** Payroll's row shape → a Money Event. Pay rows are the money-out side. */
 function payrollToEvent(r: PayrollRow): MoneyEvent {
   return {
@@ -153,6 +163,7 @@ async function listMoneyIn(tenantId: string, filter: FinanceFilter): Promise<Mon
       id: clientPackages.id,
       purchasedAt: clientPackages.purchasedAt,
       kind: clientPackages.kind,
+      isTrial: clientPackages.isTrial,
       listPriceSgd: clientPackages.listPriceSgd,
       amountPaidSgd: clientPackages.amountPaidSgd,
       crossLocationPaidSgd: clientPackages.crossLocationPaidSgd,
@@ -381,7 +392,7 @@ async function listMoneyIn(tenantId: string, filter: FinanceFilter): Promise<Mon
     events.push({
       ...base,
       kind: 'purchase',
-      type: PACKAGE_TYPE[r.kind],
+      type: packageType(r.kind, r.isTrial),
       id: r.id,
       entityId,
       occurredAt: r.purchasedAt,

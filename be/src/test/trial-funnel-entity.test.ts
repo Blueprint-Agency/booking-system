@@ -208,7 +208,8 @@ describe('trial funnel by entity', { skip: integrationTestsEnabled ? false : SKI
       (
         await classPackagesSvc.createClassPackage(one.id, {
           name: `${PREFIX} ${name}`,
-          kind,
+          kind: 'credit_bundle',
+          isTrial: kind === 'trial',
           credits: kind === 'trial' ? 1 : 10,
           validityDays: kind === 'trial' ? 7 : 30,
           priceSgd: kind === 'trial' ? '20.00' : '200.00',
