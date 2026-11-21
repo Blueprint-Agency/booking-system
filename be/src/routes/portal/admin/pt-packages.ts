@@ -48,6 +48,9 @@ const createSchema = z.object({
   // Absent means off — a studio that has never heard of binding keeps
   // selling open packages without sending the field.
   instructor_bound: instructorBoundField.optional(),
+  // A trial of its session type (be/CONTEXT.md § Trial). Absent means not one;
+  // fixed once made, so the update schema has no such field.
+  is_trial: z.boolean({ message: 'Trial is true or false.' }).optional(),
   price_sgd: priceField,
   promotions: promotionsField.optional(),
 })
@@ -80,6 +83,7 @@ function serialize(
     num_sessions: r.numSessions,
     validity_days: r.validityDays,
     instructor_bound: r.instructorBound,
+    is_trial: r.isTrial,
     price_sgd: r.priceSgd,
     effective_price_sgd: effective.effectivePriceSgd,
     applied_promotion_id: effective.appliedPromotionId,
@@ -134,6 +138,7 @@ const app = new Hono()
         numSessions: body.num_sessions,
         validityDays: body.validity_days,
         instructorBound: body.instructor_bound,
+        isTrial: body.is_trial,
         priceSgd: body.price_sgd,
       },
       (body.promotions ?? []).map(toPromotionWriteInput),

@@ -251,6 +251,7 @@ function packageView(p: ClientPackageWithSource, refund?: RefundState) {
     refund_promo_code: refund?.promoCode ?? null,
     id: p.id,
     kind: p.kind,
+    is_trial: p.isTrial,
     source_package_id: p.sourcePackageId,
     package_name: p.packageName,
     credits_or_sessions_remaining: p.creditsOrSessionsRemaining,

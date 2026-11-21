@@ -30,7 +30,8 @@ type AuthGateContext = "buy a package" | "book a workshop" | "buy merch";
  *
  * Signed out, the login modal sends the user to sign in and then on to the
  * review page when the purchase has one, or back to `gateHref` (the page they
- * were on) when it does not: merch, and a $0 item.
+ * were on) when it does not: merch, a $0 item, and any purchase with a
+ * `beforeProceed` step, which only that page can show.
  *
  * Every purchase is billed to the member's Billing details, free ones included.
  * The review page asks for them itself; the direct path asks first, in
@@ -50,6 +51,7 @@ export function BuyButton({
   children,
   loadingLabel = "Redirecting…",
   itemName,
+  beforeProceed,
 }: {
   target: BuyTarget;
   context: AuthGateContext;
@@ -68,6 +70,12 @@ export function BuyButton({
   loadingLabel?: string;
   /** What is being bought, named in the Billing details sheet. */
   itemName?: string;
+  /**
+   * A step the member takes once signed in and before the purchase goes on —
+   * a trial's studio terms to accept. Called with the rest of the purchase,
+   * which it runs once they accept and drops if they back out.
+   */
+  beforeProceed?: (proceed: () => void) => void;
 }) {
   const tz = useStudioZone();
   const router = useRouter();
@@ -177,18 +185,24 @@ export function BuyButton({
               : null;
           if (!isSignedIn) {
             // Signed in, a purchase with a review step lands on it (§7, PAY-01);
-            // anything else comes back to the page it was bought from.
-            requireAuth(review ?? gateHref);
+            // anything else comes back to the page it was bought from. A step
+            // the member must take first (a trial's terms) lives on that page,
+            // so a purchase with one always comes back to it.
+            requireAuth(beforeProceed ? gateHref : (review ?? gateHref));
             return;
           }
           if (busy) return;
-          if (review) {
-            setBusy(true);
-            router.push(review);
-            return;
-          }
-          setError(null);
-          setAskingBillTo(true);
+          const proceed = () => {
+            if (review) {
+              setBusy(true);
+              router.push(review);
+              return;
+            }
+            setError(null);
+            setAskingBillTo(true);
+          };
+          if (beforeProceed) beforeProceed(proceed);
+          else proceed();
         }}
         className={cn(
           className,

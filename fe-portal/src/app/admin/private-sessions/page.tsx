@@ -39,6 +39,8 @@ interface ApiPtPackage {
   num_sessions: number;
   validity_days: number;
   instructor_bound: boolean;
+  // Optional: a server built before PT trials does not send it.
+  is_trial?: boolean;
   price_sgd: string;
   status: "active" | "archived";
   archived_at: string | null;
@@ -57,6 +59,7 @@ function fromApi(r: ApiPtPackage): PtPackage {
     numSessions: r.num_sessions,
     validityDays: r.validity_days,
     instructorBound: r.instructor_bound,
+    isTrial: r.is_trial ?? false,
     priceSgd: Number(r.price_sgd),
     status: r.status,
     promotions: (r.promotions ?? []).map(promotionFromApi),
@@ -138,6 +141,7 @@ export default function PrivateSessionsPage() {
           num_sessions: pkg.numSessions,
           validity_days: pkg.validityDays,
           instructor_bound: pkg.instructorBound,
+          is_trial: pkg.isTrial,
           price_sgd: String(pkg.priceSgd),
           promotions: promosPayload,
         });
@@ -399,6 +403,7 @@ function PackageGroup({
               <div className="min-w-0">
                 <h4 className="truncate text-base font-semibold text-ink">{pkg.name}</h4>
                 <div className="mt-1 flex flex-wrap gap-1.5">
+                  {pkg.isTrial && <Badge tone="accent">Trial</Badge>}
                   <EntityBadge name={pkg.entityName} />
                   <Badge tone={pkg.sessionType === "1on1" ? "accent" : "cyan"}>
                     {pkg.sessionType === "1on1" ? "1-on-1" : "2-on-1"}

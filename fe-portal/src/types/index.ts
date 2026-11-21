@@ -53,7 +53,8 @@ export interface Promotion {
 
 // --- Packages (§5, §6) ---
 
-export type ClassPackageKind = "credit_bundle" | "unlimited" | "trial";
+/** What a class package is. A trial is a tick on one of these (`isTrial`), not a kind of its own. */
+export type ClassPackageKind = "credit_bundle" | "unlimited";
 
 export interface ClassPackage {
   id: string;
@@ -63,8 +64,13 @@ export interface ClassPackage {
   name: string;
   description: string;
   kind: ClassPackageKind;
-  credits: number | null;       // credit_bundle + trial
-  validityDays: number | null;  // credit_bundle + trial (required for both)
+  /**
+   * A trial: for members new to group classes in its Entity, once each. Set
+   * when the package is made and fixed after.
+   */
+  isTrial: boolean;
+  credits: number | null;       // credit_bundle only
+  validityDays: number | null;  // credit_bundle only (required)
   durationMonths: number | null;  // unlimited only — whole calendar months
   priceSgd: number;
   status: "active" | "archived";
@@ -88,6 +94,8 @@ export interface PtPackage {
    * already sold keep the binding they were sold with.
    */
   instructorBound: boolean;
+  /** A trial: for members new to this session type in its Entity, once each. Fixed once made. */
+  isTrial: boolean;
   priceSgd: number;
   status: "active" | "archived";
   promotions: Promotion[];

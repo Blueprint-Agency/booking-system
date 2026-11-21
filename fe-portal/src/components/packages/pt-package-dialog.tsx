@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Dialog, DialogFooter, Button, Input, Label } from "@/components/ui";
 import { PromotionsEditor } from "./promotions-editor";
 import { EntityPicker } from "./entity-picker";
+import { TrialCheckbox } from "./trial-checkbox";
 import { hasPromotionOverlap } from "@/lib/promotions";
 import type { PtPackage, PtSessionType, Promotion } from "@/types";
 
@@ -20,6 +21,8 @@ export function PtPackageDialog({
   const [numSessions, setNumSessions] = useState<string>(pkg?.numSessions.toString() ?? "");
   const [validityDays, setValidityDays] = useState<string>(pkg?.validityDays.toString() ?? "");
   const [instructorBound, setInstructorBound] = useState<boolean>(pkg?.instructorBound ?? false);
+  // Fixed once the package is made: the server takes it on create only.
+  const [isTrial, setIsTrial] = useState<boolean>(pkg?.isTrial ?? false);
   const [priceSgd, setPriceSgd] = useState<string>(pkg?.priceSgd.toString() ?? "");
   const [promotions, setPromotions] = useState<Promotion[]>(pkg?.promotions ?? []);
   // The Entity it is sold under; a new package starts in the studio's first.
@@ -38,6 +41,7 @@ export function PtPackageDialog({
       numSessions: Number(numSessions),
       validityDays: Number(validityDays),
       instructorBound,
+      isTrial,
       priceSgd: Number(priceSgd),
       status: pkg?.status ?? "active",
       promotions,
@@ -70,6 +74,14 @@ export function PtPackageDialog({
             ))}
           </div>
         </div>
+
+        <TrialCheckbox
+          id="pt-trial"
+          checked={isTrial}
+          onChange={setIsTrial}
+          locked={pkg !== null}
+          hint={`For members new to ${sessionType === "1on1" ? "1-on-1" : "2-on-1"} sessions in this Entity. Each member can buy one here, once.`}
+        />
 
         <EntityPicker
           value={entityId}

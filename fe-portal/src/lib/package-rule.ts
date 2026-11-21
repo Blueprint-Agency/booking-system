@@ -184,13 +184,15 @@ interface ApiRulePackage {
   id: string;
   name: string;
   kind: RulePackageKind | "pt";
+  /** Ticked as a trial; absent from a server that still sent `kind: "trial"`. */
+  is_trial?: boolean;
   status: "active" | "archived";
 }
 
-/** A catalogue row as the picker lists it. */
+/** A catalogue row as the picker lists it: any trial, Credit Bundle or Unlimited, under Trials. */
 export function rulePackageFromApi(r: ApiRulePackage): RulePackage | null {
   if (r.kind !== "unlimited" && r.kind !== "credit_bundle" && r.kind !== "trial") return null;
-  return { id: r.id, name: r.name, kind: r.kind, archived: r.status === "archived" };
+  return { id: r.id, name: r.name, kind: r.is_trial ? "trial" : r.kind, archived: r.status === "archived" };
 }
 
 /**

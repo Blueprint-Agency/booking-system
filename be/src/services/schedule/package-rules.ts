@@ -38,6 +38,7 @@ type Reader = Tx | typeof db
 export interface RulePackage {
   id: string
   name: string
+  /** `trial` for any trial, a Credit Bundle or an Unlimited one (be/CONTEXT.md § Trial). */
   kind: 'credit_bundle' | 'unlimited' | 'trial'
   /** Archived in the catalogue: no longer sold, still held by members who bought it. */
   archived: boolean
@@ -110,13 +111,13 @@ const KIND_ORDER: Record<RulePackage['kind'], number> = { unlimited: 0, credit_b
 export async function nameRule(reader: Reader, tenantId: string, rule: PackageRule): Promise<NamedPackageRule> {
   if (rule.packageIds.length === 0) return { mode: rule.mode, packages: [] }
   const rows = await reader
-    .select({ id: classPackages.id, name: classPackages.name, kind: classPackages.kind, status: classPackages.status })
+    .select({ id: classPackages.id, name: classPackages.name, kind: classPackages.kind, isTrial: classPackages.isTrial, status: classPackages.status })
     .from(classPackages)
     .where(and(eq(classPackages.tenantId, tenantId), inArray(classPackages.id, [...rule.packageIds])))
   return {
     mode: rule.mode,
     packages: rows
-      .map(r => ({ id: r.id, name: r.name, kind: r.kind, archived: r.status === 'archived' }))
+      .map(r => ({ id: r.id, name: r.name, kind: r.isTrial ? ('trial' as const) : r.kind, archived: r.status === 'archived' }))
       .sort((a, b) => KIND_ORDER[a.kind] - KIND_ORDER[b.kind] || a.name.localeCompare(b.name)),
   }
 }

@@ -109,18 +109,25 @@ export function amountPaid(amountSgd: string): string {
  * A first-timer's welcome and a $150 receipt are not the same email, and with
  * no conditionals in the renderer, different copy has no other home.
  *
- * Read off the granted package's **kind**, not the path that granted it: a
+ * Read off the granted package's trial flag, not the path that granted it: a
  * *priced* trial goes through the payment provider and the webhook, so a
- * path-based branch would send it the paid-package email.
+ * path-based branch would send it the paid-package email. A group trial (a
+ * Credit Bundle or Unlimited one) gets the welcome, whose copy is about booking a
+ * first class. A PT trial gets the package email: its sessions are scheduled with
+ * the studio, and that email names them and their instructor
+ * (be/CONTEXT.md § Trial).
  */
 export function purchaseSlug(
+  isTrial: boolean,
   kind: PurchasedKind,
 ): 'package_purchase_confirmed' | 'trial_pass_purchase_confirmed' {
-  return kind === 'trial' ? 'trial_pass_purchase_confirmed' : 'package_purchase_confirmed'
+  return isTrial && kind !== 'pt' ? 'trial_pass_purchase_confirmed' : 'package_purchase_confirmed'
 }
 
 export interface PurchaseEmailInput {
   kind: PurchasedKind
+  /** Sold as a trial (`client_packages.is_trial`). */
+  isTrial: boolean
   clientName: string
   packageName: string
   creditsOrSessions: number | null
@@ -159,7 +166,7 @@ export function composePurchaseEmail(input: PurchaseEmailInput): {
   variables: Record<string, string>
 } {
   return {
-    slug: purchaseSlug(input.kind),
+    slug: purchaseSlug(input.isTrial, input.kind),
     variables: {
       client_name: input.clientName,
       package_name: input.packageName,

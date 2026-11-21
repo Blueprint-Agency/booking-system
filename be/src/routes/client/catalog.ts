@@ -61,7 +61,8 @@ function serializeClassPackage(
     ...entity,
     name: r.name,
     description: r.description,
-    kind: r.kind,
+    kind: classSvc.catalogueKind(r),
+    is_trial: r.isTrial,
     credits: r.credits,
     validity_days: r.validityDays,
     duration_months: r.durationMonths,
@@ -89,6 +90,7 @@ function serializePtPackage(
     // Instructor-Bound — checkout asks for an instructor on a true, and
     // for nothing at all on a false.
     instructor_bound: r.instructorBound,
+    is_trial: r.isTrial,
     price_sgd: r.priceSgd,
     effective_price_sgd: effective.effectivePriceSgd,
     applied_promotion_id: effective.appliedPromotionId,
@@ -173,10 +175,21 @@ const app = new Hono()
         // are per Entity, so a page for one Entity reads `trial_by_entity`.
         trial_used: ent.trialUsed,
         trial_eligible: ent.trialEligible,
-        // By Entity id, for each live Entity: whether the member has held a trial
-        // there, and whether they are new to it (a trial is for them).
+        // By Entity id, for each live Entity: the group-class trial facts, as a
+        // member app from before PT trials reads them.
         trial_by_entity: Object.fromEntries(
-          Object.entries(trials).map(([id, t]) => [id, { trial_used: t.used, trial_eligible: t.eligible }]),
+          Object.entries(trials).map(([id, t]) => [id, { trial_used: t.group.used, trial_eligible: t.group.eligible }]),
+        ),
+        // By Entity id and then Trial Type (`group`, `1on1`, `2on1`): whether the
+        // member has held a trial of that type there, and whether they are new
+        // to the type (a trial of it is for them). be/CONTEXT.md § Trial.
+        trial_by_entity_type: Object.fromEntries(
+          Object.entries(trials).map(([id, byType]) => [
+            id,
+            Object.fromEntries(
+              Object.entries(byType).map(([type, t]) => [type, { trial_used: t.used, trial_eligible: t.eligible }]),
+            ),
+          ]),
         ),
         has_active_unlimited: ent.hasActiveUnlimited,
         unlimited_location: ent.unlimitedLocation,

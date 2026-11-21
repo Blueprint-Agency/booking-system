@@ -30,7 +30,8 @@ function serializeClassPackage(
     ...entity,
     name: r.name,
     description: r.description,
-    kind: r.kind,
+    kind: classSvc.catalogueKind(r),
+    is_trial: r.isTrial,
     credits: r.credits,
     validity_days: r.validityDays,
     duration_months: r.durationMonths,
@@ -58,6 +59,7 @@ function serializePtPackage(
     // Instructor-Bound — checkout asks for an instructor on a true, and
     // for nothing at all on a false.
     instructor_bound: r.instructorBound,
+    is_trial: r.isTrial,
     price_sgd: r.priceSgd,
     effective_price_sgd: effective.effectivePriceSgd,
     applied_promotion_id: effective.appliedPromotionId,

@@ -3,13 +3,13 @@ import { useState } from "react";
 import { Dialog, DialogFooter, Button, Input, Label } from "@/components/ui";
 import { PromotionsEditor } from "./promotions-editor";
 import { EntityPicker } from "./entity-picker";
+import { TrialCheckbox } from "./trial-checkbox";
 import { hasPromotionOverlap } from "@/lib/promotions";
 import type { ClassPackage, ClassPackageKind, Promotion } from "@/types";
 
 const KIND_LABELS: Record<ClassPackageKind, string> = {
   credit_bundle: "Credit bundle",
   unlimited: "Unlimited",
-  trial: "Trial pass",
 };
 
 export function ClassPackageDialog({
@@ -24,6 +24,8 @@ export function ClassPackageDialog({
   const [name, setName] = useState(pkg?.name ?? "");
   const [description, setDescription] = useState(pkg?.description ?? "");
   const [kind, setKind] = useState<ClassPackageKind>(pkg?.kind ?? "credit_bundle");
+  // Fixed once the package is made, like its type: the server takes it on create only.
+  const [isTrial, setIsTrial] = useState<boolean>(pkg?.isTrial ?? false);
   const [credits, setCredits] = useState<string>(pkg?.credits?.toString() ?? "");
   const [validityDays, setValidityDays] = useState<string>(pkg?.validityDays?.toString() ?? "");
   const [durationMonths, setDurationMonths] = useState<string>(pkg?.durationMonths?.toString() ?? "");
@@ -43,11 +45,11 @@ export function ClassPackageDialog({
       name: name.trim(),
       description: description.trim(),
       kind,
-      credits: kind === "credit_bundle" || kind === "trial" ? Number(credits) : null,
-      // A trial validity is required, not optional — "never expires" has left
-      // the domain. The days count from the member's first booking, not purchase.
-      validityDays:
-        kind === "credit_bundle" || kind === "trial" ? Number(validityDays) : null,
+      isTrial,
+      credits: kind === "credit_bundle" ? Number(credits) : null,
+      // Validity is required, not optional — "never expires" has left the
+      // domain. The days count from the member's first booking, not purchase.
+      validityDays: kind === "credit_bundle" ? Number(validityDays) : null,
       durationMonths: kind === "unlimited" ? Number(durationMonths) : null,
       priceSgd: Number(priceSgd),
       status: pkg?.status ?? "active",
@@ -65,13 +67,11 @@ export function ClassPackageDialog({
         <div className="space-y-1.5">
           <Label>Type</Label>
           <div className="flex gap-2">
-            {(["credit_bundle", "unlimited", "trial"] as const).map((k) => (
+            {(["credit_bundle", "unlimited"] as const).map((k) => (
               <button
                 key={k}
                 type="button"
                 onClick={() => setKind(k)}
-                // Tighter padding on a phone so the three labels keep to one
-                // line each instead of wrapping inside a third of a dialog.
                 className={`min-h-10 min-w-0 flex-1 rounded-lg border px-1.5 py-2 text-sm font-medium leading-tight transition sm:px-3 ${
                   kind === k
                     ? "border-accent bg-accent/10 text-accent"
@@ -83,6 +83,14 @@ export function ClassPackageDialog({
             ))}
           </div>
         </div>
+
+        <TrialCheckbox
+          id="pkg-trial"
+          checked={isTrial}
+          onChange={setIsTrial}
+          locked={pkg !== null}
+          hint="For members new to group classes in this Entity. Each member can buy one group trial here, once."
+        />
 
         <EntityPicker
           value={entityId}
@@ -101,22 +109,22 @@ export function ClassPackageDialog({
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder={
-              kind === "credit_bundle"
+              isTrial
+                ? "e.g. Intro Group Package"
+                : kind === "credit_bundle"
                 ? "e.g. 5-Class Pack"
-                : kind === "unlimited"
-                ? "e.g. Monthly Unlimited"
-                : "e.g. Trial Pass"
+                : "e.g. Monthly Unlimited"
             }
           />
         </div>
 
         <div className="space-y-1.5">
           <Label htmlFor="pkg-desc">
-            Description {kind === "trial" ? "" : "(optional)"}
+            Description {isTrial ? "" : "(optional)"}
           </Label>
           <textarea
             id="pkg-desc"
-            required={kind === "trial"}
+            required={isTrial}
             rows={2}
             maxLength={280}
             value={description}
@@ -166,36 +174,6 @@ export function ClassPackageDialog({
               value={durationMonths}
               onChange={(e) => setDurationMonths(e.target.value)}
             />
-          </div>
-        )}
-
-        {kind === "trial" && (
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="pkg-trial-quota">Class quota</Label>
-              <Input
-                id="pkg-trial-quota"
-                required
-                type="number"
-                min={1}
-                value={credits}
-                onChange={(e) => setCredits(e.target.value)}
-                placeholder="Usually 1"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="pkg-trial-validity">Validity (days)</Label>
-              <Input
-                id="pkg-trial-validity"
-                required
-                type="number"
-                min={1}
-                max={3650}
-                value={validityDays}
-                onChange={(e) => setValidityDays(e.target.value)}
-                placeholder="e.g. 30"
-              />
-            </div>
           </div>
         )}
 

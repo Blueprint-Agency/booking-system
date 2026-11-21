@@ -24,6 +24,7 @@ const ACCOUNT_URL = 'https://northwind.reservetoday.app/account'
 function input(over: Partial<PurchaseEmailInput> = {}): PurchaseEmailInput {
   return {
     kind: 'credit_bundle',
+    isTrial: false,
     clientName: 'Sarah',
     packageName: '10 Class Credit Bundle',
     creditsOrSessions: 10,
@@ -191,23 +192,32 @@ test('TEN-73 the expiry a purchase email prints is the day on the studio\'s cloc
   )
 }
 
-// --- the slug is chosen from the granted package's kind ----------------------
+// --- the slug is chosen from the granted package's trial flag ----------------
 // A *priced* trial goes through the payment provider and the webhook, so a
-// branch on the code path would send it the paid-package email.
+// branch on the code path would send it the paid-package email. A group trial
+// gets the welcome; a PT trial, scheduled with the studio, the package email.
 {
-  assert.strictEqual(purchaseSlug('trial'), 'trial_pass_purchase_confirmed')
-  for (const kind of ['credit_bundle', 'unlimited', 'pt'] as const) {
+  assert.strictEqual(purchaseSlug(true, 'credit_bundle'), 'trial_pass_purchase_confirmed')
+  assert.strictEqual(purchaseSlug(false, 'credit_bundle'), 'package_purchase_confirmed')
+  for (const kind of ['trial', 'credit_bundle', 'unlimited'] as const) {
     assert.strictEqual(
-      purchaseSlug(kind),
-      'package_purchase_confirmed',
-      `${kind} gets the package email`,
+      composePurchaseEmail(input({ kind, isTrial: true, creditsOrSessions: 3 })).slug,
+      'trial_pass_purchase_confirmed',
+      `a ${kind} trial gets the welcome`,
     )
   }
   assert.strictEqual(
-    composePurchaseEmail(input({ kind: 'trial', creditsOrSessions: 3 })).slug,
-    'trial_pass_purchase_confirmed',
-    'the composed email carries the kind-chosen slug',
+    composePurchaseEmail(input({ kind: 'pt', isTrial: true, creditsOrSessions: 1 })).slug,
+    'package_purchase_confirmed',
+    'a PT trial gets the package email, which names its sessions',
   )
+  for (const kind of ['credit_bundle', 'unlimited', 'pt'] as const) {
+    assert.strictEqual(
+      composePurchaseEmail(input({ kind, isTrial: false })).slug,
+      'package_purchase_confirmed',
+      `a ${kind} that is no trial gets the package email`,
+    )
+  }
 }
 
 // --- every declared variable is filled ---------------------------------------

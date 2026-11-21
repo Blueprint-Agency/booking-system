@@ -173,7 +173,8 @@ describe('complimentary package', { skip: integrationTestsEnabled ? false : SKIP
     trialCatalogId = (
       await classPackagesSvc.createClassPackage(tenantId, {
         name: `${NAME_PREFIX} Trial`,
-        kind: 'trial',
+        kind: 'credit_bundle',
+        isTrial: true,
         credits: 1,
         validityDays: 7,
         priceSgd: '20.00',

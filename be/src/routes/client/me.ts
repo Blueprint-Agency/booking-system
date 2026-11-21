@@ -58,6 +58,9 @@ function serializeClientPackage(r: Awaited<ReturnType<typeof listClientPackages>
   return {
     id: r.id,
     kind: r.kind,
+    // Sold as a trial, whatever its kind (be/CONTEXT.md § Trial). A Credit
+    // Bundle trial still says kind `trial` too, until the contract migration.
+    is_trial: r.isTrial,
     source_package_id: r.sourcePackageId,
     package_name: r.packageName,
     credits_or_sessions_remaining: r.creditsOrSessionsRemaining,

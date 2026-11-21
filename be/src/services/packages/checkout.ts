@@ -38,7 +38,7 @@ import {
   quoteCrossLocationAddOn,
   resolveBoundInstructor,
 } from './purchase'
-import { assertTrialEligible } from './trial-standing'
+import { assertTrialEligible, trialTypeOf } from './trial-standing'
 
 /**
  * The lines a plan-plus-Add-On purchase charges, and the charge itself. Pure, so
@@ -185,12 +185,15 @@ export async function beginPackageCheckout(input: PackageCheckoutInput): Promise
     const eff = bestPrice(pkg.priceSgd, promos[pkg.id] ?? [])
     promotion = promotionReduction(promos[pkg.id] ?? [], eff.appliedPromotionId, eff.effectivePriceSgd)
 
-    // Trial pass: new-member-only + once-per-client. Gate BEFORE any charge.
-    if (pkg.kind === 'trial') {
-      await assertTrialEligible(tenantId, clientId, pkg.entityId)
+    // A trial: for a member new to group classes in its Entity, once. Gate
+    // BEFORE any charge.
+    if (pkg.isTrial) {
+      await assertTrialEligible(tenantId, clientId, pkg.entityId, 'group')
       // A $0 trial is granted immediately (no Stripe). A priced trial falls
-      // through to the standard paid-class-package Checkout below.
-      if (grantsWithoutPaying(toCents(eff.effectivePriceSgd))) {
+      // through to the standard paid-class-package Checkout below, and so does
+      // a free Unlimited trial bought with the Cross-Location Add-On: the
+      // Add-On is its own money, which only that path charges and grants.
+      if (!crossLocation && grantsWithoutPaying(toCents(eff.effectivePriceSgd))) {
         // A sale is a sale whether or not money moved: the Purchase opens and
         // closes here, because a total of zero leaves nothing outstanding.
         // Opened before the grant, so the confirmation carries its Receipt; a
@@ -203,7 +206,7 @@ export async function beginPackageCheckout(input: PackageCheckoutInput): Promise
           lines: [saleLine({ description: pkg.name, listPriceSgd: pkg.priceSgd, reductions: [promotion] })],
           billTo: input.billTo,
         })
-        const result = await purchaseFreeTrial(tenantId, clientId, pkg.id, sale.id)
+        const result = await purchaseFreeTrial(tenantId, clientId, pkg.id, sale.id, locationId ?? null)
         return { outcome: 'granted', clientPackageId: result.clientPackageId }
       }
     }
@@ -232,6 +235,11 @@ export async function beginPackageCheckout(input: PackageCheckoutInput): Promise
     // roster as it stands then; this is the run that stops a member paying for
     // a purchase that was never going to land.
     await resolveBoundInstructor(tenantId, 'pt', pkg.instructorBound, instructorId)
+    // A PT trial: for a member new to its session type in its Entity, once.
+    // Before any charge; a free one then takes the zero-total path below.
+    if (pkg.isTrial) {
+      await assertTrialEligible(tenantId, clientId, pkg.entityId, trialTypeOf({ kind: 'pt', sessionType: pkg.sessionType }))
+    }
     if (input.crossLocationAddOn) await priceCrossLocationForNewPlan(tenantId, 'pt', null)
 
     const promos = await listActivePromotionsFor(tenantId, 'pt_package', [pkg.id])
